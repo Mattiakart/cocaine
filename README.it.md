@@ -12,8 +12,8 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
 - **Bustina piena = attivo.** Il Mac non va in stop, nemmeno col coperchio chiuso. Funziona anche su Apple Silicon,
   senza componenti aggiuntivi da installare.
 - **Bustina vuota = spento.** Il Mac si comporta normalmente.
-- **Un tocco.** Nel pannello tocchi lo specchietto: la polvere scende e si ammucchia quando Cocaine si attiva, e sparisce
-  quando si spegne.
+- **Un interruttore.** Quello in alto nel pannello attiva o spegne Cocaine; mentre si accende ci scende dentro una
+  sottile striscia di polvere.
 - **Parla la tua lingua:** italiano, inglese, cinese (semplificato e tradizionale), spagnolo, francese, tedesco e giapponese.
   Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.
 - **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di

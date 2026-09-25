@@ -14,7 +14,7 @@ INSTALLAZIONE
 
 USO
 - Clicca la bustina nella barra dei menu per aprire il pannello.
-- Nel pannello, tocca lo specchietto con la polvere per attivare o spegnere Cocaine.
+- Nel pannello, l'interruttore in alto attiva o spegne Cocaine.
 - Bustina piena = Cocaine attivo: il Mac non va in stop, nemmeno col coperchio chiuso.
 - Bustina vuota = Cocaine spento: il Mac si comporta normalmente.
 - Mentre è attivo puoi far abbassare la luminosità dopo qualche minuto di inattività. Non scende mai a zero,

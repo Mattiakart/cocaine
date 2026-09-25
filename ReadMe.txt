@@ -13,7 +13,7 @@ INSTALL
 
 USE
 - Click the baggie in the menu bar to open the panel.
-- In the panel, click the little mirror with the powder to turn Cocaine on or off.
+- In the panel, the switch at the top turns Cocaine on or off.
 - Full baggie = Cocaine is on: your Mac doesn't sleep, not even with the lid closed.
 - Empty baggie = Cocaine is off: your Mac behaves normally.
 - While it's on, it can dim the screen after a few idle minutes. It never goes fully dark, and it comes back
