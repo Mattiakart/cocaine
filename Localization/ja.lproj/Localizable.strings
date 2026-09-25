@@ -18,3 +18,5 @@
 "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Mac のスリープを防ぐため、Cocaine は管理者パスワードを一度だけ必要とします。";
 "Can't change Open at Login" = "「ログイン時に開く」を変更できません";
 "You can add Cocaine manually in System Settings → General → Login Items." = "「システム設定」→「一般」→「ログイン項目」で Cocaine を手動で追加できます。";
+"Same as Mac" = "Mac と同じ";
+"Language" = "言語";

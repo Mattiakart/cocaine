@@ -19,8 +19,39 @@ private let log = Logger(subsystem: "local.cocaine.toggle", category: "app")
 private let scriptPath = Bundle.main.path(forResource: "cocaine", ofType: nil) ?? "/nonexistent/cocaine"
 private let anyInput = CGEventType(rawValue: ~0)!   // kCGAnyInputEventType
 
-/// UI text in the Mac's language (Localization/*.lproj); English when that language isn't available.
-private func L(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+/// The UI language: the Mac's (the default; English when it isn't one of ours) or one picked in the panel.
+private enum Language {
+    static let codes = ["en", "it", "zh-Hans", "zh-Hant", "es", "fr", "de", "ja"]
+    private static var bundle = makeBundle(UserDefaults.standard.string(forKey: "language"))
+
+    /// nil = same as the Mac.
+    static var chosen: String? { UserDefaults.standard.string(forKey: "language") }
+
+    static func set(_ code: String?, persist: Bool = true) {
+        if persist {
+            if let code { UserDefaults.standard.set(code, forKey: "language") }
+            else { UserDefaults.standard.removeObject(forKey: "language") }
+        }
+        bundle = makeBundle(code)
+    }
+
+    private static func makeBundle(_ code: String?) -> Bundle {
+        guard let code, let path = Bundle.main.path(forResource: code, ofType: "lproj"), let b = Bundle(path: path)
+        else { return .main }                        // .main follows the Mac's languages, English as fallback
+        return b
+    }
+
+    /// A language's name written in that language, e.g. "Deutsch", "日本語".
+    static func nativeName(_ code: String) -> String {
+        let locale = Locale(identifier: code)
+        return locale.localizedString(forIdentifier: code)?.capitalized(with: locale) ?? code
+    }
+
+    static func text(_ key: String) -> String { bundle.localizedString(forKey: key, value: nil, table: nil) }
+}
+
+/// UI text in the current language (Localization/*.lproj).
+private func L(_ key: String) -> String { Language.text(key) }
 
 @discardableResult
 private func run(_ path: String, _ args: [String]) -> Int32 {
@@ -364,6 +395,12 @@ private final class PanelModel: ObservableObject {
     @Published var dimEnabled: Bool { didSet { settings.dimEnabled = dimEnabled } }
     @Published private(set) var levelPercent: Double
     @Published var delayMinutes: Int { didSet { if delayMinutes > 0 { settings.delay = Double(delayMinutes * 60) } } }
+    /// "" = same as the Mac, otherwise a code from Language.codes. Changes apply at once.
+    @Published var language: String = Language.chosen ?? "" {
+        didSet { Language.set(language.isEmpty ? nil : language, persist: persistLanguage); languageChanged() }
+    }
+    var persistLanguage = true
+    var languageChanged: () -> Void = {}
 
     // wired up by AppDelegate
     var toggleCocaine: () -> Void = {}
@@ -444,9 +481,24 @@ private struct PanelView: View {
             Divider()
 
             HStack {
-                Text(L("Open at login"))
+                Text(L("Open at login")).lineLimit(1)
+                Spacer(minLength: 6)
                 Toggle(L("Open at login"), isOn: Binding(get: { m.loginEnabled }, set: { m.setLogin($0) }))
                     .toggleStyle(.switch).labelsHidden().controlSize(.small)
+            }
+            HStack {
+                Menu {
+                    Picker(L("Language"), selection: $m.language) {
+                        Text(L("Same as Mac")).tag("")
+                        ForEach(Language.codes, id: \.self) { Text(Language.nativeName($0)).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label(m.language.isEmpty ? L("Same as Mac") : Language.nativeName(m.language), systemImage: "globe")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L("Language"))
                 Spacer()
                 Button(L("Quit")) { m.quit() }.controlSize(.small)
                     .help(L("Turns Cocaine off and quits"))
@@ -547,6 +599,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.preview = { [weak self] in self?.preview() }
         model.setLogin = { [weak self] in self?.setLogin($0) }
         model.quit = { NSApp.terminate(nil) }
+        model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
         hostView.sizingOptions = [.intrinsicContentSize]
         hostView.onSizeChange = { [weak self] in DispatchQueue.main.async { self?.fitPanel(animated: true) } }
@@ -667,10 +720,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Fills the baggie gradually when Cocaine turns on, empties it when it turns off.
-    private func refreshIcon(on: Bool) {
+    private func refreshIcon(on: Bool, animate: Bool = true) {
         guard let b = statusItem.button else { return }
         b.toolTip = on ? L("Cocaine is on") : L("Cocaine is off")
         b.setAccessibilityLabel(b.toolTip)
+        guard animate else { return }
         let target: CGFloat = on ? 1 : 0
         iconAnim?.invalidate()
         guard iconLevel >= 0 else { setIconLevel(target, pouring: false); return }   // first draw: no animation
@@ -834,8 +888,12 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
     let model = PanelModel()
-    model.on = true
-    model.fillLevel = 1
+    model.persistLanguage = false
+    if let i = CommandLine.arguments.firstIndex(of: "--lang"), i + 1 < CommandLine.arguments.count {
+        model.language = CommandLine.arguments[i + 1]
+    }
+    model.on = !CommandLine.arguments.contains("--off")
+    model.fillLevel = model.on ? 1 : 0
     model.needsAuth = CommandLine.arguments.contains("--needs-auth")
     model.holdMissing = CommandLine.arguments.contains("--hold-missing")
     let host = NSHostingView(rootView: PanelView(m: model))

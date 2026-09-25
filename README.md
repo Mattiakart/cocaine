@@ -16,7 +16,8 @@ A tiny, free, open-source menu bar app for macOS.</p>
 - Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
 - **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
-  It follows your Mac's language, and uses English otherwise. More translations are welcome.
+  It follows your Mac's language (English otherwise), or you can pick one from the 🌐 menu in the panel.
+  More translations are welcome.
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Cocaine's menu bar panel"></p>
 

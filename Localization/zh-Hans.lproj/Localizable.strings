@@ -18,3 +18,5 @@
 "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine 需要管理员密码（仅需一次），才能阻止 Mac 进入睡眠。";
 "Can't change Open at Login" = "无法更改“登录时打开”";
 "You can add Cocaine manually in System Settings → General → Login Items." = "你可以在“系统设置”→“通用”→“登录项”中手动添加 Cocaine。";
+"Same as Mac" = "跟随系统";
+"Language" = "语言";

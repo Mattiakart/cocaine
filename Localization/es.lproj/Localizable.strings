@@ -1,7 +1,7 @@
 /* Cocaine — es */
 
 "Your Mac stays awake" = "El Mac se mantiene activo";
-"Your Mac sleeps as usual" = "El Mac entra en reposo como siempre";
+"Your Mac sleeps as usual" = "El Mac reposa como siempre";
 "Keeping the screen on…" = "Reactivando la pantalla…";
 "Admin password needed" = "Se necesita la contraseña";
 "Dim the screen when idle" = "Atenuar la pantalla si está inactivo";
@@ -18,3 +18,5 @@
 "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine necesita tu contraseña de administrador una sola vez para poder evitar que el Mac entre en reposo.";
 "Can't change Open at Login" = "No se puede cambiar «Abrir al iniciar sesión»";
 "You can add Cocaine manually in System Settings → General → Login Items." = "Puedes añadir Cocaine manualmente en Ajustes del Sistema → General → Ítems de inicio de sesión.";
+"Same as Mac" = "Como el Mac";
+"Language" = "Idioma";

@@ -13,7 +13,7 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
   senza componenti aggiuntivi da installare.
 - **Bustina vuota = spento.** Il Mac si comporta normalmente.
 - **Parla la tua lingua:** italiano, inglese, cinese (semplificato e tradizionale), spagnolo, francese, tedesco e giapponese.
-  Segue la lingua del Mac, altrimenti usa l'inglese.
+  Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dal menu 🌐 nel pannello.
 - **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di
   inattività. Lo schermo non si spegne mai del tutto, e torna com'era appena tocchi tastiera o trackpad.
 

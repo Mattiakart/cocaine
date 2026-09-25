@@ -18,3 +18,5 @@
 "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine ha bisogno della password di amministratore, una sola volta, per poter impedire lo stop del Mac.";
 "Can't change Open at Login" = "Non riesco a cambiare l'apertura al login";
 "You can add Cocaine manually in System Settings → General → Login Items." = "Puoi aggiungere Cocaine a mano in Impostazioni di Sistema → Generali → Elementi login.";
+"Same as Mac" = "Come il Mac";
+"Language" = "Lingua";
