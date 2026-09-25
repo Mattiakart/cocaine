@@ -62,6 +62,9 @@ private enum Language {
     static func text(_ key: String) -> String { bundle.localizedString(forKey: key, value: nil, table: nil) }
 }
 
+/// The app's version as shown in the panel (CFBundleShortVersionString).
+private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+
 /// UI text in the current language (Localization/*.lproj).
 private func L(_ key: String) -> String { Language.text(key) }
 
@@ -528,7 +531,10 @@ private struct PanelView: View {
             HStack(spacing: 10) {
                 Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Cocaine").font(.headline)
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text("Cocaine").font(.headline)
+                        Text(appVersion).font(.caption2).foregroundStyle(.tertiary)   // e.g. "1.7"
+                    }
                     Text(status).font(.caption).lineLimit(1)
                         .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                 }
