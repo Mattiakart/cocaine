@@ -1,4 +1,4 @@
-COCAINE 1.7
+COCAINE 1.7.1
 Keeps your Mac awake, even with the lid closed. Turn it on and off from the baggie in the menu bar.
 Requires macOS 14 (Sonoma) or later. Runs on Apple Silicon and Intel Macs.
 Languages: English, Italian, Chinese, Spanish, French, German, Japanese. It follows your Mac's language (English otherwise), or pick one from the flag in the panel.

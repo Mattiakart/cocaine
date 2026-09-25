@@ -45,6 +45,35 @@ Touch ID per sudo, basta l'impronta. Nient'altro: nessuna finestra, niente "Apri
 In entrambi i casi quell'autorizzazione installa una regola sudo che permette solo `pmset -a disablesleep 1`,
 `pmset -a disablesleep 0` e la cancellazione della regola stessa. Nient'altro.
 
+## Avvisi quando un'AI finisce
+
+Lasci il Mac a lavorare con Cocaine attivo, e lui ti richiama quando un'AI finisce o ha bisogno di te. Se non sei al Mac
+riaccende gli schermi, riporta la luminosità, li fa lampeggiare e mostra chi ti cerca. Se sei al Mac, la bustina nella barra
+si ricarica e basta.
+
+Qualsiasi programma può suonare il "campanello":
+
+```
+open -g "cocaine://alert?from=Claude%20Code&event=done"     # event=done o event=input, oppure message=testo
+```
+
+**Claude Code:** aggiungi questi hook a `~/.claude/settings.json`.
+
+```json
+"hooks": {
+  "Stop":         [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=done'; true" }] }],
+  "Notification": [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=input'; true" }] }]
+}
+```
+
+**Codex CLI:** in `~/.codex/config.toml`
+
+```toml
+notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Codex&event=done'; true"]
+```
+
+`pgrep -qx Cocaine` fa sì che l'avviso parta solo se Cocaine è aperto, e non lo riapre se l'hai chiuso.
+
 ## Da sapere
 
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.

@@ -11,6 +11,7 @@
 import AppKit
 import ImageIO
 import IOKit
+import IOKit.pwr_mgt
 import Security
 import ServiceManagement
 import SwiftUI
@@ -611,6 +612,93 @@ private struct PanelView: View {
     }
 }
 
+// MARK: - Alerts ("an AI finished / needs you")
+
+/// Drives the overlay's animation (SwiftUI's @State needs full Xcode's macros, which the command-line tools lack).
+private final class AlertAnimation: ObservableObject {
+    @Published var tint = 0.0
+    @Published var shown = false
+
+    func start() {
+        withAnimation(.easeOut(duration: 0.25)) { shown = true }
+        for (i, value) in [0.55, 0, 0.55, 0].enumerated() {     // two flashes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Double(i)) {
+                withAnimation(.easeInOut(duration: 0.18)) { self.tint = value }
+            }
+        }
+    }
+}
+
+/// Full-screen overlay on every screen: two quick flashes, then a card with the message for a few seconds.
+private struct AlertView: View {
+    let title: String
+    let message: String
+    @ObservedObject var anim: AlertAnimation
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(anim.tint)
+            VStack(spacing: 10) {
+                Image(nsImage: Baggie.image(level: 1, size: 64))
+                Text(title).font(.system(size: 28, weight: .bold))
+                Text(message).font(.system(size: 20))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 36).padding(.vertical, 26)
+            .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 22))
+            .opacity(anim.shown ? 1 : 0)
+            .scaleEffect(anim.shown ? 1 : 0.92)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private final class Alerter {
+    private var windows: [NSWindow] = []
+    private(set) var shownAt: Date?
+
+    var isShowing: Bool { !windows.isEmpty }
+
+    func show(title: String, message: String) {
+        close(animated: false)
+        for screen in NSScreen.screens {
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: screen.frame.size), styleMask: .borderless,
+                             backing: .buffered, defer: false, screen: screen)
+            w.level = .screenSaver                           // above the menu bar, the Dock and full-screen apps
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.hasShadow = false
+            w.ignoresMouseEvents = true
+            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            let anim = AlertAnimation()
+            let host = NSHostingView(rootView: AlertView(title: title, message: message, anim: anim))
+            host.sizingOptions = []                          // the window sets the size; SwiftUI must not move it
+            host.appearance = NSAppearance(named: .darkAqua)    // light baggie on the dark card
+            w.contentView = host
+            w.setFrame(screen.frame, display: true)
+            log.notice("alert window at \(w.frame.debugDescription, privacy: .public) for screen \(screen.frame.debugDescription, privacy: .public)")
+            w.orderFrontRegardless()
+            windows.append(w)
+            DispatchQueue.main.async { anim.start() }
+        }
+        shownAt = Date()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+            if let at = self?.shownAt, Date().timeIntervalSince(at) >= 4.4 { self?.close(animated: true) }
+        }
+    }
+
+    func close(animated: Bool) {
+        let closing = windows
+        windows = []
+        shownAt = nil
+        guard animated else { closing.forEach { $0.orderOut(nil) }; return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.4
+            closing.forEach { $0.animator().alphaValue = 0 }
+        }, completionHandler: { closing.forEach { $0.orderOut(nil) } })
+    }
+}
+
 // MARK: - App
 
 /// Tells the app when the SwiftUI content's size changes (e.g. the brightness section appears).
@@ -688,6 +776,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dimT: Float = 0         // how far the current plan is applied (0 = normal, 1 = fully dimmed)
     private var supervising = false
     private let launchedAt = Date()
+    private let alerter = Alerter()
+    private var brightUntil = Date.distantPast   // after an alert, don't dim again right away
+    private var didFinishLaunching = false
+    private var launchedForAlert = false         // started only to show an alert: don't turn Cocaine on
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
 
@@ -722,7 +814,45 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         RunLoop.main.add(t, forMode: .common)
         ticker = t
         tick()
-        if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
+        didFinishLaunching = true
+        if launchedForAlert {                        // `open cocaine://…` started us: show it, then go away again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
+        } else if !System.cocaineOn {
+            toggleCocaine()                          // opening the app turns Cocaine on
+        }
+    }
+
+    /// `cocaine://alert?from=Claude%20Code&event=done|input` (or `&message=…`) from an AI agent's hook or any script.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "cocaine" && url.host == "alert" {
+            if !didFinishLaunching { launchedForAlert = true }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+            let message = value("message") ?? (value("event") == "input" ? L("needs your input") : L("has finished"))
+            alert(from: value("from") ?? "Cocaine", message: message, away: value("test") == "away" ? true : nil)
+        }
+    }
+
+    /// Away from the Mac (idle 20 s, or screens dimmed): wake the screens, restore brightness, flash them with the
+    /// message and play a sound. At the Mac: just refill the baggie in the menu bar.
+    private func alert(from: String, message: String, away forced: Bool? = nil) {
+        let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
+        log.notice("alert from \(from, privacy: .public) (away: \(away, privacy: .public))")
+        pulseIcon()
+        guard away else { return }
+        var activity: IOPMAssertionID = 0                // wakes a sleeping display
+        IOPMAssertionDeclareUserActivity("Cocaine alert" as CFString, kIOPMUserActiveLocal, &activity)
+        restore()
+        brightUntil = Date().addingTimeInterval(max(settings.delay, 60))
+        alerter.show(title: from, message: message)
+        NSSound(named: "Glass")?.play()
+    }
+
+    /// The fill animation again, as a small "something happened" in the menu bar.
+    private func pulseIcon() {
+        guard System.cocaineOn else { return }
+        iconLevel = 0.2
+        refreshIcon(on: true)
     }
 
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
@@ -835,6 +965,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if wantOn == nil && model.on != on { model.on = on }   // don't fight a switch the user just flipped
         if panel.isVisible && ticks % 4 == 0 { refreshPanelState() }
+        if alerter.isShowing, let at = alerter.shownAt, Date().timeIntervalSince(at) > 1.5, System.idleSeconds < 0.6 {
+            alerter.close(animated: true)            // the user is back
+        }
         updateDimming(on: on)
     }
 
@@ -924,7 +1057,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if ticks % 10 == 0, fadeTimer == nil {
                 for b in plan.backlit where (screens.brightness(b.id) ?? 0) > b.to + 0.02 { screens.setBrightness(b.id, b.to) }
             }
-        } else if on, settings.dimEnabled, idle >= settings.delay {
+        } else if on, settings.dimEnabled, idle >= settings.delay, Date() > brightUntil {
             dim(afterIdle: idle)
         }
     }

@@ -22,3 +22,5 @@
 "Language" = "言語";
 "Cocaine needs your permission once, to keep your Mac awake." = "Mac をスリープさせないために、Cocaine は一度だけ許可を必要とします。";
 "Cocaine is removing its permission." = "Cocaine は権限を削除しています。";
+"has finished" = "完了しました";
+"needs your input" = "入力が必要です";

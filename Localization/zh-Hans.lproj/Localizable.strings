@@ -22,3 +22,5 @@
 "Language" = "语言";
 "Cocaine needs your permission once, to keep your Mac awake." = "Cocaine 需要你授权一次，才能让 Mac 保持唤醒。";
 "Cocaine is removing its permission." = "Cocaine 正在移除其权限。";
+"has finished" = "已完成";
+"needs your input" = "需要你的输入";

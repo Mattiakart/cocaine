@@ -46,6 +46,35 @@ on Touch ID for sudo, it's a fingerprint instead. That's all: no pop-ups, no "Op
 Either way, that authorization installs a sudo rule that allows exactly `pmset -a disablesleep 1`,
 `pmset -a disablesleep 0`, and deleting the rule itself. Nothing else. [See the code](cocaine.zsh).
 
+## Alerts when an AI finishes
+
+Leave the Mac working with Cocaine on, and it can call you back when an AI agent finishes or needs you. When you're
+away, it wakes the screens, restores the brightness, flashes them and shows who's calling. When you're at the Mac,
+the baggie in the menu bar just refills.
+
+Anything can ring it:
+
+```
+open -g "cocaine://alert?from=Claude%20Code&event=done"     # event=done or event=input, or message=anything
+```
+
+**Claude Code:** add these hooks to `~/.claude/settings.json`.
+
+```json
+"hooks": {
+  "Stop":         [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=done'; true" }] }],
+  "Notification": [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=input'; true" }] }]
+}
+```
+
+**Codex CLI:** add this to `~/.codex/config.toml`.
+
+```toml
+notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Codex&event=done'; true"]
+```
+
+`pgrep -qx Cocaine` keeps a closed Cocaine closed: the alert only goes out while the app is running.
+
 ## Good to know
 
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.

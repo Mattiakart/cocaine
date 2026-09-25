@@ -1,4 +1,4 @@
-COCAINE 1.7
+COCAINE 1.7.1
 Tiene sveglio il Mac, anche col coperchio chiuso. Si accende e si spegne dalla bustina nella barra dei menu.
 Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel.
 Lingue: italiano, inglese, cinese, spagnolo, francese, tedesco, giapponese. Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.
