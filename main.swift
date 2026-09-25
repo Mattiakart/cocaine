@@ -41,6 +41,17 @@ private enum Language {
         return b
     }
 
+    /// Flag shown on the language button; both Chinese scripts use China's flag (the menu tells them apart by name).
+    static func flag(_ code: String) -> String {
+        ["en": "🇬🇧", "it": "🇮🇹", "zh-Hans": "🇨🇳", "zh-Hant": "🇨🇳", "es": "🇪🇸", "fr": "🇫🇷", "de": "🇩🇪", "ja": "🇯🇵"][code] ?? "🌐"
+    }
+
+    /// The language actually in use when following the Mac (English if the Mac's isn't one of ours).
+    static var system: String {
+        let first = Bundle.main.preferredLocalizations.first ?? "en"
+        return codes.contains(first) ? first : "en"
+    }
+
     /// A language's name written in that language, e.g. "Deutsch", "日本語".
     static func nativeName(_ code: String) -> String {
         let locale = Locale(identifier: code)
@@ -480,32 +491,37 @@ private struct PanelView: View {
 
             Divider()
 
-            HStack {
-                Text(L("Open at login")).lineLimit(1)
-                Spacer(minLength: 6)
-                Toggle(L("Open at login"), isOn: Binding(get: { m.loginEnabled }, set: { m.setLogin($0) }))
-                    .toggleStyle(.switch).labelsHidden().controlSize(.small)
-            }
-            HStack {
-                Menu {
-                    Picker(L("Language"), selection: $m.language) {
-                        Text(L("Same as Mac")).tag("")
-                        ForEach(Language.codes, id: \.self) { Text(Language.nativeName($0)).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label(m.language.isEmpty ? L("Same as Mac") : Language.nativeName(m.language), systemImage: "globe")
+            HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
+                HStack(spacing: 6) {
+                    Text(L("Open at login")).lineLimit(1)
+                    Toggle(L("Open at login"), isOn: Binding(get: { m.loginEnabled }, set: { m.setLogin($0) }))
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small).fixedSize()
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help(L("Language"))
-                Spacer()
-                Button(L("Quit")) { m.quit() }.controlSize(.small)
-                    .help(L("Turns Cocaine off and quits"))
+                .layoutPriority(1)                     // text first, empty space last
+                Spacer(minLength: 6)
+                HStack(spacing: 6) {
+                    Menu {
+                        Picker(L("Language"), selection: $m.language) {
+                            Text("\(L("Same as Mac"))  \(Language.flag(Language.system))").tag("")
+                            ForEach(Language.codes, id: \.self) { Text("\(Language.flag($0))  \(Language.nativeName($0))").tag($0) }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Text(Language.flag(m.language.isEmpty ? Language.system : m.language))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .frame(width: 22)                  // just the flag, no invisible padding
+                    .help(L("Language"))
+                    Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
+                        .help(L("Turns Cocaine off and quits"))
+                }
+                .layoutPriority(2)                     // never truncated
             }
         }
         .padding(14)
-        .frame(width: 300, alignment: .topLeading)     // never centered, so nothing can slide out sideways
+        .frame(width: 312, alignment: .topLeading)     // never centered, so nothing can slide out sideways
         .fixedSize(horizontal: false, vertical: true)
         .focusEffectDisabled()
     }
@@ -889,9 +905,8 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     _ = NSApplication.shared
     let model = PanelModel()
     model.persistLanguage = false
-    if let i = CommandLine.arguments.firstIndex(of: "--lang"), i + 1 < CommandLine.arguments.count {
-        model.language = CommandLine.arguments[i + 1]
-    }
+    let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
+    model.language = langArg ?? ""                  // never the user's saved choice: "" = same as the Mac
     model.on = !CommandLine.arguments.contains("--off")
     model.fillLevel = model.on ? 1 : 0
     model.needsAuth = CommandLine.arguments.contains("--needs-auth")
