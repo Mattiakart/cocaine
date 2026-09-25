@@ -531,6 +531,7 @@ private final class PanelModel: ObservableObject {
     @Published var previewing = false
     @Published var fillLevel: CGFloat = 0
     @Published var pouring = false
+    @Published var panelVisible = false    // animations run only while the panel is on screen
     @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
     @Published var settingAI = false
     @Published var aiExpanded = UserDefaults.standard.bool(forKey: "aiExpanded") {
@@ -605,6 +606,120 @@ private let warningColor = Color(nsColor: NSColor(name: nil) { appearance in
         ? NSColor(srgbRed: 1.0, green: 0.72, blue: 0.30, alpha: 1)
         : NSColor(srgbRed: 0.63, green: 0.28, blue: 0.0, alpha: 1)
 })
+
+/// The main switch: white powder on a small dark mirror. Tapping it turns Cocaine on (the powder pours in and heaps up,
+/// in step with the menu-bar baggie) or off (the heap goes); while on, a few grains glint now and then.
+private struct PowderToggle: View {
+    let level: CGFloat               // 0 = empty mirror … 1 = full heap: the menu-bar baggie's own fill level
+    let pouring: Bool
+    let on: Bool
+    let animating: Bool              // only while the panel is on screen
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            TimelineView(.animation(minimumInterval: pouring ? 1.0 / 30 : 1.0 / 12, paused: !animating || !(on || pouring))) { tl in
+                Canvas { g, size in
+                    PowderMirror.draw(g, size, level: level, pouring: pouring, glint: on && !pouring,
+                                      t: tl.date.timeIntervalSinceReferenceDate)
+                }
+            }
+            .frame(width: 56, height: 32)
+        }
+        .buttonStyle(PressScale())
+        .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+        .help(on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
+        .accessibilityLabel("Cocaine")
+        .accessibilityValue(on ? L("Cocaine is on") : L("Cocaine is off"))
+    }
+}
+
+private struct PressScale: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.scaleEffect(configuration.isPressed ? 0.94 : 1).animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private enum PowderMirror {
+    /// Grains in a heap-shaped cloud: u across (-1…1, a little past the edges for loose powder), v up (0…1 of the heap's
+    /// height at u), size and brightness. Fixed, so the heap looks the same every time.
+    static let grains: [(u: CGFloat, v: CGFloat, r: CGFloat, a: CGFloat)] = {
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func rnd() -> CGFloat {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return CGFloat(seed >> 33) / CGFloat(UInt64(1) << 31)
+        }
+        var out: [(CGFloat, CGFloat, CGFloat, CGFloat)] = []
+        while out.count < 150 {
+            let u = rnd() * 2.4 - 1.2, v = rnd()
+            if abs(u) > 1 ? v < 0.1 : v <= 1.04 { out.append((u, v, 0.25 + rnd() * 0.5, 0.45 + rnd() * 0.55)) }
+        }
+        return out
+    }()
+
+    /// Dust left on the mirror, also when it's empty: position as a fraction of the tile, size.
+    static let dust: [(x: CGFloat, y: CGFloat, r: CGFloat)] =
+        [(0.16, 0.74, 0.5), (0.24, 0.83, 0.4), (0.78, 0.8, 0.45), (0.86, 0.7, 0.35), (0.7, 0.88, 0.4), (0.33, 0.9, 0.35)]
+
+    static func draw(_ g: GraphicsContext, _ size: CGSize, level: CGFloat, pouring: Bool, glint: Bool, t: Double) {
+        let tile = Path(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5), cornerRadius: 9)
+        g.fill(tile, with: .linearGradient(Gradient(colors: [Color(white: 0.26), Color(white: 0.08)]),
+                                           startPoint: .zero, endPoint: CGPoint(x: size.width * 0.35, y: size.height)))
+        var shine = Path()                               // the mirror's faint diagonal reflection
+        shine.move(to: CGPoint(x: size.width * 0.55, y: 0.5))
+        shine.addLine(to: CGPoint(x: size.width * 0.72, y: 0.5))
+        shine.addLine(to: CGPoint(x: size.width * 0.42, y: size.height - 0.5))
+        shine.addLine(to: CGPoint(x: size.width * 0.25, y: size.height - 0.5))
+        shine.closeSubpath()
+        g.fill(shine, with: .color(.white.opacity(0.05)))
+        g.stroke(tile, with: .color(.white.opacity(0.16)), lineWidth: 0.8)
+
+        func speck(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat, _ a: CGFloat) {
+            g.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)), with: .color(.white.opacity(a)))
+        }
+        for d in dust { speck(d.x * size.width, d.y * size.height, d.r, 0.28) }
+
+        let lvl = min(max(level, 0), 1)
+        let cx = size.width / 2, base = size.height - 6
+        let halfW = size.width * (0.15 + 0.23 * lvl), h = (size.height - 17) * lvl   // a low, wide pile
+        func height(_ u: CGFloat) -> CGFloat { abs(u) >= 1 ? 0 : h * pow(1 - u * u, 1.1) }
+        if lvl > 0.02 {
+            var heap = Path()                            // the pile's body; grains on top give it texture
+            heap.move(to: CGPoint(x: cx - halfW, y: base))
+            heap.addCurve(to: CGPoint(x: cx, y: base - h), control1: CGPoint(x: cx - halfW * 0.5, y: base - h * 0.1),
+                          control2: CGPoint(x: cx - halfW * 0.45, y: base - h))
+            heap.addCurve(to: CGPoint(x: cx + halfW, y: base), control1: CGPoint(x: cx + halfW * 0.45, y: base - h),
+                          control2: CGPoint(x: cx + halfW * 0.5, y: base - h * 0.1))
+            heap.closeSubpath()
+            g.fill(heap, with: .linearGradient(Gradient(colors: [.white.opacity(0.95), .white.opacity(0.7)]),
+                                               startPoint: CGPoint(x: cx - halfW * 0.3, y: base - h), endPoint: CGPoint(x: cx + halfW * 0.4, y: base)))
+            for gr in grains {
+                let y = base - gr.v * max(height(gr.u), h * 0.08)
+                speck(cx + gr.u * halfW, y, gr.r, gr.a * min(1, lvl * 1.5))
+            }
+        }
+        if pouring {                                     // a thin stream of grains falling onto the heap
+            let top: CGFloat = 3, bottom = base - h
+            for i in 0..<10 {
+                let p = CGFloat((t * 1.8 + Double(i) / 10).truncatingRemainder(dividingBy: 1))
+                speck(cx + CGFloat(sin(Double(i) * 7.3)) * 1.3, top + p * max(bottom - top, 1), 0.7, 0.9)
+            }
+        }
+        if glint && lvl > 0.9 {                          // now and then a grain catches the light
+            for (i, gr) in grains.prefix(7).enumerated() {
+                let a = pow(max(0, sin(t * 1.3 + Double(i) * 2.1)), 12)
+                guard a > 0.05 else { continue }
+                let x = cx + gr.u * halfW * 0.8, y = base - gr.v * height(gr.u * 0.8) * 0.9
+                speck(x, y, 1.1, CGFloat(a))
+                let arm = 2.4 * CGFloat(a)
+                var star = Path()
+                star.move(to: CGPoint(x: x - arm, y: y)); star.addLine(to: CGPoint(x: x + arm, y: y))
+                star.move(to: CGPoint(x: x, y: y - arm)); star.addLine(to: CGPoint(x: x, y: y + arm))
+                g.stroke(star, with: .color(.white.opacity(Double(a) * 0.8)), lineWidth: 0.5)
+            }
+        }
+    }
+}
 
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
@@ -839,8 +954,7 @@ private struct PanelView: View {
                         .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
                 }
                 Spacer(minLength: 6)
-                Toggle("Cocaine", isOn: Binding(get: { m.on }, set: { _ in m.toggleCocaine() }))
-                    .toggleStyle(.switch).labelsHidden()
+                PowderToggle(level: m.fillLevel, pouring: m.pouring, on: m.on, animating: m.panelVisible) { m.toggleCocaine() }
             }
 
             if m.on {                                  // brightness options exist only while Cocaine is on
@@ -1711,6 +1825,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         panelTop = (screen.visibleFrame.maxY - 6).rounded()          // just under that screen's menu bar
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.makeKeyAndOrderFront(nil)
+        model.panelVisible = true
         statusItem.button?.highlight(true)
         // Clicks elsewhere close it; a click on the icon itself (which also arrives here on macOS 27) toggles instead.
         let iconZone = NSRect(x: anchorX - 18, y: screen.frame.maxY - 44, width: 36, height: 44)
@@ -1755,6 +1870,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         panelMonitors.forEach(NSEvent.removeMonitor)
         panelMonitors.removeAll()
         panel.orderOut(nil)
+        model.panelVisible = false
+        NSCursor.arrow.set()                                // in case it closed with the pointer on the mirror
         statusItem.button?.highlight(false)
     }
 
@@ -2093,6 +2210,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
     if CommandLine.arguments.contains("--dark") { window.appearance = NSAppearance(named: .darkAqua) }
+    if CommandLine.arguments.contains("--light") { window.appearance = NSAppearance(named: .aqua) }
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!

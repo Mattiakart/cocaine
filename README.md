@@ -11,6 +11,8 @@ A tiny, free, open-source menu bar app for macOS.</p>
 
 - **Full baggie = on.** Your Mac doesn't sleep, not even with the lid shut. This works on Apple Silicon too, with no extra helper to install.
 - **Empty baggie = off.** Normal sleep behaviour.
+- **One tap.** In the panel, click the little mirror: the powder pours in and heaps up as Cocaine turns on, and goes
+  when it turns off.
 - **Screen dimming.** While Cocaine is on, it can dim the built-in display to a level you choose after a few idle minutes.
   The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
 - **External monitors too.** Apple displays dim their backlight, any other monitor dims in software, and with the lid
