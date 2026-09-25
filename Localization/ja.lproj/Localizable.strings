@@ -20,3 +20,5 @@
 "You can add Cocaine manually in System Settings → General → Login Items." = "「システム設定」→「一般」→「ログイン項目」で Cocaine を手動で追加できます。";
 "Same as Mac" = "Mac と同じ";
 "Language" = "言語";
+"Cocaine needs your permission once, to keep your Mac awake." = "Mac をスリープさせないために、Cocaine は一度だけ許可を必要とします。";
+"Cocaine is removing its permission." = "Cocaine は権限を削除しています。";

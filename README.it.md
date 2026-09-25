@@ -29,15 +29,16 @@ Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel, 
 brew install --cask mattiakart/tap/cocaine
 ```
 
-Poi apri Cocaine. Ti chiede **una volta** l'**impronta digitale** (o la password) e basta: niente "Apri comunque", nessun altro
-passaggio. `brew upgrade` non chiede mai nulla, e `brew uninstall --cask cocaine` toglie tutto senza chiedere.
+Homebrew ti chiede la password del Mac **una volta**, direttamente nel Terminale, per dare il permesso a Cocaine. Se hai attivato
+Touch ID per sudo, basta l'impronta. Nient'altro: nessuna finestra, niente "Apri comunque".
+`brew upgrade` non chiede mai nulla, e `brew uninstall --cask cocaine` toglie tutto senza chiedere.
 
 **Oppure scarica il .dmg** dalla pagina [Releases](../../releases/latest):
 
 1. Apri il `.dmg` e trascina **Cocaine** in **Applicazioni**.
 2. Aprila. macOS la blocca, perché l'app non è firmata da uno sviluppatore registrato presso Apple:
    vai in **Impostazioni di Sistema → Privacy e sicurezza** e clicca **"Apri comunque"**. Serve solo la prima volta.
-3. Cocaine chiede **una volta** l'impronta digitale (o la password).
+3. Cocaine chiede **una volta** la password. macOS la mostra con un avviso perché l'app non è verificata da Apple: è normale.
 
 In entrambi i casi quell'autorizzazione installa una regola sudo che permette solo `pmset -a disablesleep 1`,
 `pmset -a disablesleep 0` e la cancellazione della regola stessa. Nient'altro.

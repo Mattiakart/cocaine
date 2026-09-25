@@ -20,3 +20,5 @@
 "You can add Cocaine manually in System Settings → General → Login Items." = "你可以在“系统设置”→“通用”→“登录项”中手动添加 Cocaine。";
 "Same as Mac" = "跟随系统";
 "Language" = "语言";
+"Cocaine needs your permission once, to keep your Mac awake." = "Cocaine 需要你授权一次，才能让 Mac 保持唤醒。";
+"Cocaine is removing its permission." = "Cocaine 正在移除其权限。";

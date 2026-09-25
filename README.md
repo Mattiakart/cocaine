@@ -29,7 +29,8 @@ A tiny, free, open-source menu bar app for macOS.</p>
 brew install --cask mattiakart/tap/cocaine
 ```
 
-Then open Cocaine. It asks for **Touch ID** (or your password) **once**, and that's all: no "Open Anyway", no other steps.
+Homebrew asks for your Mac password **once**, right there in Terminal, to give Cocaine its permission. If you've turned
+on Touch ID for sudo, it's a fingerprint instead. That's all: no pop-ups, no "Open Anyway".
 `brew upgrade` never asks for anything, and `brew uninstall --cask cocaine` removes everything without asking.
 
 **Or download the .dmg** from [Releases](../../releases/latest):
@@ -37,7 +38,8 @@ Then open Cocaine. It asks for **Touch ID** (or your password) **once**, and tha
 1. Drag **Cocaine** into **Applications**.
 2. Open it. The first time, macOS blocks it because it isn't notarized by Apple: it's a free app, built without a
    paid developer account. Go to **System Settings → Privacy & Security** and click **Open Anyway**. You only do this once.
-3. Cocaine asks for **Touch ID** (or your password) once.
+3. Cocaine asks for your password once. macOS shows it with a warning because the app isn't notarized by Apple.
+   That's expected.
 
 Either way, that authorization installs a sudo rule that allows exactly `pmset -a disablesleep 1`,
 `pmset -a disablesleep 0`, and deleting the rule itself. Nothing else. [See the code](cocaine.zsh).

@@ -11,6 +11,7 @@
 import AppKit
 import ImageIO
 import IOKit
+import Security
 import ServiceManagement
 import SwiftUI
 import os
@@ -122,16 +123,71 @@ private enum Authorization {
             + "/usr/bin/install -m 0440 \(owner)\"$t\" '\(dest)'; r=$?; /bin/rm -f \"$t\"; exit $r"
     }
 
-    static func appleScript(for command: String, admin: Bool) -> String {
+    static func appleScript(for command: String, admin: Bool) -> String {   // only for --auth-selftest
         let quoted = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let prompt = L("Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping.")
-        return "do shell script \"\(quoted)\"" + (admin ? " with prompt \"\(prompt)\" with administrator privileges" : "")
+        return "do shell script \"\(quoted)\"" + (admin ? " with administrator privileges" : "")
     }
 
-    /// Shows the standard macOS admin-password dialog and installs the rule. True on success.
+    /// Shows the standard macOS admin prompt ("Cocaine wants to make changes", Touch ID or password) and installs
+    /// the rule. True on success.
     static func install() -> Bool {
         guard let cmd = installCommand(user: NSUserName()) else { return false }
-        return run("/usr/bin/osascript", ["-e", appleScript(for: cmd, admin: true)]) == 0
+        return runAsRoot(cmd, prompt: L("Cocaine needs your permission once, to keep your Mac awake."))
+    }
+
+    /// Removes the rule (used by the Homebrew uninstall when the rule predates self-removal).
+    static func remove() -> Bool {
+        runAsRoot("/bin/rm -f \(rulePath)", prompt: L("Cocaine is removing its permission."))
+    }
+
+    /// Asks for admin rights through Authorization Services; with `execute: false` it only shows the prompt.
+    static func authorize(prompt: String, then body: (AuthorizationRef) -> Bool) -> Bool {
+        var ref: AuthorizationRef?
+        guard AuthorizationCreate(nil, nil, [], &ref) == errAuthorizationSuccess, let auth = ref else { return false }
+        defer { AuthorizationFree(auth, [.destroyRights]) }
+        // Every C string handed to Authorization Services must stay alive for the whole call.
+        let status: OSStatus = kAuthorizationRightExecute.withCString { right in
+            kAuthorizationEnvironmentPrompt.withCString { promptKey in
+                prompt.withCString { text in
+                    var rightItem = AuthorizationItem(name: right, valueLength: 0, value: nil, flags: 0)
+                    var promptItem = AuthorizationItem(name: promptKey, valueLength: strlen(text),
+                                                       value: UnsafeMutableRawPointer(mutating: text), flags: 0)
+                    return withUnsafeMutablePointer(to: &rightItem) { rightPtr in
+                        withUnsafeMutablePointer(to: &promptItem) { promptPtr in
+                            var rights = AuthorizationRights(count: 1, items: rightPtr)
+                            var env = AuthorizationEnvironment(count: 1, items: promptPtr)
+                            return AuthorizationCopyRights(auth, &rights, &env,
+                                                           [.interactionAllowed, .extendRights, .preAuthorize], nil)
+                        }
+                    }
+                }
+            }
+        }
+        return status == errAuthorizationSuccess && body(auth)
+    }
+
+    /// Runs `/bin/sh -c command` as root. AuthorizationExecuteWithPrivileges is deprecated and hidden from Swift,
+    /// but it's still the only way to run one command as root without a paid-developer-signed helper.
+    static func runAsRoot(_ command: String, prompt: String) -> Bool {
+        typealias AEWP = @convention(c) (AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags,
+                                         UnsafePointer<UnsafeMutablePointer<CChar>?>,
+                                         UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?) -> OSStatus
+        guard let security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY),
+              let sym = dlsym(security, "AuthorizationExecuteWithPrivileges") else { return false }
+        let execute = unsafeBitCast(sym, to: AEWP.self)
+        return authorize(prompt: prompt) { auth in
+            // The command reports its own exit code on stdout, since AEWP doesn't hand back the child's status.
+            let args: [UnsafeMutablePointer<CChar>?] = [strdup("-c"), strdup(command + "; echo \"rc=$?\""), nil]
+            defer { args.forEach { free($0) } }
+            var pipe: UnsafeMutablePointer<FILE>?
+            let rc = args.withUnsafeBufferPointer { execute(auth, "/bin/sh", [], $0.baseAddress!, &pipe) }
+            guard rc == errAuthorizationSuccess, let pipe else { return false }
+            var output = ""
+            var buffer = [CChar](repeating: 0, count: 256)
+            while fgets(&buffer, 256, pipe) != nil { output += String(cString: buffer) }
+            fclose(pipe)
+            return output.contains("rc=0")
+        }
     }
 }
 
@@ -904,6 +960,15 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftes
     // writing the rule to the given file instead of /etc/sudoers.d.
     let cmd = Authorization.installCommand(user: NSUserName(), dest: CommandLine.arguments[2], asRoot: false)!
     exit(run("/usr/bin/osascript", ["-e", Authorization.appleScript(for: cmd, admin: false)]))
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--auth-preview" {
+    // Shows the admin prompt without running anything (to check how it looks).
+    _ = NSApplication.shared
+    exit(Authorization.authorize(prompt: L("Cocaine needs your permission once, to keep your Mac awake.")) { _ in true } ? 0 : 1)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule" {
+    _ = NSApplication.shared
+    exit(Authorization.remove() ? 0 : 1)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.

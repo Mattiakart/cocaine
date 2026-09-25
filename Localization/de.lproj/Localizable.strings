@@ -20,3 +20,5 @@
 "You can add Cocaine manually in System Settings → General → Login Items." = "Du kannst Cocaine manuell hinzufügen: Systemeinstellungen → Allgemein → Anmeldeobjekte.";
 "Same as Mac" = "Wie der Mac";
 "Language" = "Sprache";
+"Cocaine needs your permission once, to keep your Mac awake." = "Cocaine braucht einmalig deine Erlaubnis, um den Mac wach zu halten.";
+"Cocaine is removing its permission." = "Cocaine entfernt seine Berechtigung.";
