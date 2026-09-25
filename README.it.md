@@ -1,19 +1,23 @@
 <p align="center"><img src="docs/icona.png" width="128" alt="Icona di Cocaine"></p>
 
-# Cocaine
+<h1 align="center">Cocaine</h1>
+
+<p align="center"><b>Tiene sveglio il Mac, anche col coperchio chiuso.</b><br>
+Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
+
+<p align="center"><img src="docs/demo.gif" width="360" alt="La bustina nella barra dei menu si riempie quando Cocaine si attiva"></p>
 
 🇬🇧 [Read in English](README.md)
 
-Tiene sveglio il Mac, anche col coperchio chiuso. Si accende e si spegne dalla bustina nella barra dei menu.
-
-- **Bustina piena** = attivo: il Mac non va in stop, nemmeno col coperchio chiuso.
-- **Bustina vuota** = spento: il Mac si comporta normalmente.
-- Mentre è attivo puoi far abbassare la luminosità dopo qualche minuto di inattività. Non scende mai a zero, e torna com'era al primo tocco.
+- **Bustina piena = attivo.** Il Mac non va in stop, nemmeno col coperchio chiuso. Funziona anche su Apple Silicon,
+  senza componenti aggiuntivi da installare.
+- **Bustina vuota = spento.** Il Mac si comporta normalmente.
+- **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di
+  inattività. Lo schermo non si spegne mai del tutto, e torna com'era appena tocchi tastiera o trackpad.
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Il pannello di Cocaine"></p>
-<p align="center"><img src="docs/demo.gif" width="360" alt="La bustina si riempie quando Cocaine si attiva"></p>
 
-Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel. È gratis.
+Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel, pesa circa 600 KB, è gratis.
 
 ## Download
 
