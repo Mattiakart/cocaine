@@ -73,12 +73,13 @@
 "On screen" = "On screen";
 "How long the alert stays" = "How long the alert stays";
 "While you're away, for up to 30 minutes" = "While you're away, for up to 30 minutes";
+"Try it" = "Try it";
 "Shows an alert with these settings" = "Shows an alert with these settings";
 "Active" = "Active";
+"Paused until %@" = "Paused until %@";
+"No alerts until then" = "No alerts until then";
 "Resume" = "Resume";
 "Silences every alert for a while" = "Silences every alert for a while";
 "Recent alerts" = "Recent alerts";
 "Alerts you receive will show up here" = "Alerts you receive will show up here";
 "Clear" = "Clear";
-"See how it looks" = "See how it looks";
-"Back" = "Back";

@@ -73,12 +73,13 @@
 "On screen" = "顯示時間";
 "How long the alert stays" = "提醒停留多久";
 "While you're away, for up to 30 minutes" = "離開期間，最多 30 分鐘";
+"Try it" = "試試看";
 "Shows an alert with these settings" = "以這些設定顯示一次提醒";
 "Active" = "已啟用";
+"Paused until %@" = "暫停至 %@";
+"No alerts until then" = "在此之前不提醒";
 "Resume" = "恢復";
 "Silences every alert for a while" = "暫時靜音所有提醒";
 "Recent alerts" = "最近的提醒";
 "Alerts you receive will show up here" = "收到的提醒會顯示在這裡";
 "Clear" = "清除";
-"See how it looks" = "看看效果";
-"Back" = "返回";

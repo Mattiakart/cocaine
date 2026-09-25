@@ -51,11 +51,11 @@ Lasci il Mac a lavorare, e Cocaine ti richiama quando un'AI finisce o ha bisogno
 schermi, riporta la luminosità, li fa lampeggiare e mostra chi ti cerca e in quale progetto. Se sei al Mac, la bustina
 nella barra si ricarica e basta.
 
-Apri **Avvisi AI** nel pannello. Funziona come il Centro di Controllo: un pulsante tondo per ogni AI la collega o la
-scollega, i riquadri **Quando** e **Come** aprono le loro opzioni (finisce, ha bisogno di te, anche quando sei al Mac;
-lampeggio, suono, voce, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti mentre sei via),
-**Pausa** silenzia gli avvisi per 30 minuti, un'ora o fino a domani e **Prova** ne mostra uno. Sotto, separati dalle
-impostazioni, gli ultimi avvisi con il progetto da cui arrivano.
+Apri **Avvisi AI** nel pannello. I suoi quattro gruppi mostrano un riassunto in una riga e si aprono uno alla volta:
+**AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando
+sei al Mac), **Come** (lampeggio, suono, voce, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
+mentre sei via, e una prova) e **Pausa** (30 minuti, un'ora o fino a domani). Sotto, separati dalle impostazioni,
+gli **Ultimi avvisi**: gli ultimi tre, con il progetto da cui arrivano.
 
 | AI | Finisce | Ha bisogno di te | Dove va l'hook di Cocaine |
 |---|---|---|---|

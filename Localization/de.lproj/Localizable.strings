@@ -73,12 +73,13 @@
 "On screen" = "Auf dem Bildschirm";
 "How long the alert stays" = "Wie lange der Hinweis bleibt";
 "While you're away, for up to 30 minutes" = "Während du weg bist, höchstens 30 Minuten";
+"Try it" = "Ausprobieren";
 "Shows an alert with these settings" = "Zeigt einen Hinweis mit diesen Einstellungen";
 "Active" = "Aktiv";
+"Paused until %@" = "Pausiert bis %@";
+"No alerts until then" = "Bis dahin keine Hinweise";
 "Resume" = "Fortsetzen";
 "Silences every alert for a while" = "Schaltet alle Hinweise eine Weile stumm";
 "Recent alerts" = "Letzte Hinweise";
 "Alerts you receive will show up here" = "Hier erscheinen die erhaltenen Hinweise";
 "Clear" = "Löschen";
-"See how it looks" = "So sieht es aus";
-"Back" = "Zurück";
