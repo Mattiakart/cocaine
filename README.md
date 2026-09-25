@@ -1,54 +1,65 @@
-<p align="center"><img src="docs/icona.png" width="128" alt="Icona di Cocaine"></p>
+<p align="center"><img src="docs/icona.png" width="128" alt="Cocaine app icon"></p>
 
-# Cocaine
+<h1 align="center">Cocaine</h1>
 
-Tiene sveglio il Mac, anche col coperchio chiuso. Si accende e si spegne dalla bustina nella barra dei menu.
+<p align="center"><b>Keep your Mac awake, even with the lid closed.</b><br>
+A tiny, free, open-source menu bar app for macOS.</p>
 
-- **Bustina piena** = attivo: il Mac non va in stop, nemmeno col coperchio chiuso.
-- **Bustina vuota** = spento: il Mac si comporta normalmente.
-- Mentre è attivo puoi far abbassare la luminosità dopo qualche minuto di inattività. Non scende mai a zero, e torna com'era al primo tocco.
+<p align="center"><img src="docs/demo.gif" width="360" alt="The baggie in the menu bar fills up when Cocaine turns on"></p>
 
-<p align="center"><img src="docs/pannello.png" width="340" alt="Il pannello di Cocaine"></p>
-<p align="center"><img src="docs/animazione.png" width="360" alt="La bustina si riempie quando Cocaine si attiva"></p>
+🇮🇹 [Leggi in italiano](README.it.md)
 
-Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel. È gratis.
+- **Full baggie = on.** Your Mac doesn't sleep, not even with the lid shut. This works on Apple Silicon too, with no extra helper to install.
+- **Empty baggie = off.** Normal sleep behaviour.
+- **Screen dimming.** While Cocaine is on, it can dim the built-in display to a level you choose after a few idle minutes.
+  The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
+- Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
-## Download
+> The interface is currently in Italian. Translations are welcome.
 
-Scarica **Cocaine-1.0.dmg** dalla pagina [Releases](../../releases/latest).
+<p align="center"><img src="docs/pannello.png" width="340" alt="Cocaine's menu bar panel"></p>
 
-## Installazione
+## Install
 
-1. Apri il `.dmg` e trascina **Cocaine** in **Applicazioni**.
-2. Aprila. macOS la blocca, perché l'app non è firmata da uno sviluppatore registrato presso Apple:
-   vai in **Impostazioni di Sistema → Privacy e sicurezza** e clicca **"Apri comunque"**. Serve solo la prima volta.
-3. Al primo avvio Cocaine chiede la **password di amministratore**, una volta sola. Le serve il permesso di
-   cambiare un'unica impostazione di sistema: `pmset disablesleep`, quella che impedisce lo stop.
+Download **Cocaine-1.0.dmg** from [Releases](../../releases/latest), or use Homebrew:
 
-## Da sapere
+```
+brew install --cask mattiakart/tap/cocaine
+```
 
-- Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.
-- A batteria e col coperchio chiuso il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
-- Quando apri l'app, Cocaine si attiva. "Esci" chiude solo l'icona.
+1. Drag **Cocaine** into **Applications**.
+2. Open it. The first time, macOS blocks it because it isn't notarized by Apple: it's a free app, built without a
+   paid developer account. Go to **System Settings → Privacy & Security** and click **Open Anyway**. You only do this once.
+3. On first launch Cocaine asks for your **admin password**, once. It uses it to install a sudo rule that allows
+   exactly two commands, `pmset -a disablesleep 1` and `pmset -a disablesleep 0`, and nothing else.
+   [See the code](cocaine.zsh).
 
-## Disinstallazione
+## Good to know
 
-Spegni Cocaine, esci dall'app, spostala nel Cestino, poi nel Terminale:
+- While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.
+- On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
+- Opening the app turns Cocaine on. **Quit** only removes the icon.
+
+## Uninstall
+
+Turn Cocaine off, quit it, move it to the Trash, then run this in Terminal:
 
 ```
 sudo rm /etc/sudoers.d/cocaine
 ```
 
-## Come funziona
+If you installed with Homebrew, `brew uninstall --cask cocaine` turns the override off and removes the rule for you.
 
-- `pmset -a disablesleep 1` impedisce lo stop, anche a coperchio chiuso. L'app installa una regola sudo che
-  permette senza password **solo** i due comandi `pmset -a disablesleep 1` e `pmset -a disablesleep 0`.
-- Mentre è attivo, `caffeinate -d` tiene acceso lo schermo.
-- La luminosità è gestita con le API DisplayServices di macOS.
+## How it works
 
-Codice: `main.swift` (app per la barra dei menu, Swift/SwiftUI) e `cocaine.zsh` (lo script "motore").
-Per compilare: `./build.sh --dmg`.
+- `pmset -a disablesleep 1` is the only setting that keeps a Mac awake with the lid closed. `caffeinate` doesn't
+  survive a lid close, and changing this setting needs root, hence the narrow sudo rule.
+- While Cocaine is on, a small helper holds `caffeinate -d` so the display doesn't idle-sleep.
+- The app itself is a Swift/SwiftUI menu bar app ([`main.swift`](main.swift)). The engine is a short zsh script
+  ([`cocaine.zsh`](cocaine.zsh)). Screen dimming uses macOS's DisplayServices.
 
-## Licenza
+Build it yourself with `./build.sh --dmg`.
 
-MIT: vedi [LICENSE](LICENSE).
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -9,6 +9,7 @@
 // screen never goes off), restoring the previous brightness on the next keyboard/trackpad input.
 
 import AppKit
+import ImageIO
 import IOKit
 import ServiceManagement
 import SwiftUI
@@ -275,6 +276,45 @@ private enum Assets {
         Baggie.draw(in: NSRect(x: body.midX - g / 2, y: body.midY - g / 2, width: g, height: g), level: 1,
                     palette: .init(outline: NSColor.white.withAlphaComponent(0.85), fill: NSColor.white.withAlphaComponent(0.14),
                                    powder: .white, powderEdge: nil))
+    }
+
+    /// Animated GIF for the README: the baggie filling and emptying, on a light and a dark background.
+    static func renderDemoGIF(to url: URL) {
+        let fps = 20.0
+        var frames: [(level: CGFloat, pouring: Bool)] = []
+        func hold(_ level: CGFloat, _ secs: Double) { for _ in 0..<Int(secs * fps) { frames.append((level, false)) } }
+        func ramp(_ a: CGFloat, _ b: CGFloat, _ secs: Double, filling: Bool) {
+            let n = Int(secs * fps)
+            for i in 1...n {
+                let f = CGFloat(i) / CGFloat(n), e = filling ? 1 - (1 - f) * (1 - f) : f * f   // same easing as the app
+                frames.append((a + (b - a) * e, filling && i < n))
+            }
+        }
+        hold(0, 0.7); ramp(0, 1, 1.4, filling: true); hold(1, 1.6); ramp(1, 0, 0.7, filling: false)
+
+        let tile = 180, w = tile * 2, h = tile
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "com.compuserve.gif" as CFString, frames.count, nil)
+        else { return }
+        CGImageDestinationSetProperties(dest, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
+        for frame in frames {
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8,
+                                       samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            for (i, dark) in [false, true].enumerated() {
+                (dark ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
+                let cell = NSRect(x: i * tile, y: 0, width: tile, height: tile)
+                cell.fill()
+                let g = CGFloat(tile) * 0.62
+                Baggie.draw(in: NSRect(x: cell.midX - g / 2, y: cell.midY - g / 2, width: g, height: g),
+                            level: frame.level, pouring: frame.pouring, palette: Baggie.palette(dark: dark))
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            CGImageDestinationAddImage(dest, rep.cgImage!,
+                                       [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 1 / fps]] as CFDictionary)
+        }
+        CGImageDestinationFinalize(dest)
     }
 
     static func render(to dir: URL) {
@@ -783,6 +823,10 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftes
     // writing the rule to the given file instead of /etc/sudoers.d.
     let cmd = Authorization.installCommand(user: NSUserName(), dest: CommandLine.arguments[2], asRoot: false)!
     exit(run("/usr/bin/osascript", ["-e", Authorization.appleScript(for: cmd, admin: false)]))
+}
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-demo-gif" {
+    Assets.renderDemoGIF(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    exit(0)
 }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-assets" {
     Assets.render(to: URL(fileURLWithPath: CommandLine.arguments[2]))
