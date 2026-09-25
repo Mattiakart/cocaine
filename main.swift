@@ -191,9 +191,11 @@ private enum Authorization {
     }
 }
 
-// MARK: - Built-in display brightness (DisplayServices, private framework)
+// MARK: - Screen dimming (every display)
 
-private final class Backlight {
+/// Dims every screen. The built-in panel and Apple displays go through DisplayServices (the real backlight); any
+/// other monitor is dimmed through its gamma table, which macOS restores by itself if the app quits or crashes.
+private final class Screens {
     private typealias GetFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
     private typealias SetFn = @convention(c) (CGDirectDisplayID, Float) -> Int32
     private typealias CanFn = @convention(c) (CGDirectDisplayID) -> Bool
@@ -207,24 +209,38 @@ private final class Backlight {
         canFn = dlsym(h, "DisplayServicesCanChangeBrightness").map { unsafeBitCast($0, to: CanFn.self) }
     }
 
-    private var display: CGDirectDisplayID? {
+    var online: [CGDirectDisplayID] {
         var ids = [CGDirectDisplayID](repeating: 0, count: 16)
         var n: UInt32 = 0
-        guard CGGetOnlineDisplayList(16, &ids, &n) == .success else { return nil }
-        return ids.prefix(Int(n)).first { CGDisplayIsBuiltin($0) != 0 && (canFn?($0) ?? false) }
+        guard CGGetOnlineDisplayList(16, &ids, &n) == .success else { return [] }
+        return Array(ids.prefix(Int(n)))
     }
 
-    var value: Float? {
-        guard let d = display, let get = getFn else { return nil }
+    func hasBacklight(_ d: CGDirectDisplayID) -> Bool { canFn?(d) ?? false }
+
+    func brightness(_ d: CGDirectDisplayID) -> Float? {
+        guard let get = getFn else { return nil }
         var b: Float = 0
         return get(d, &b) == 0 ? b : nil
     }
 
     /// Never below 1%: dimmed, not off.
-    func set(_ v: Float) {
-        guard let d = display, let s = setFn else { return }
-        _ = s(d, min(max(v, 0.01), 1))
+    func setBrightness(_ d: CGDirectDisplayID, _ v: Float) { _ = setFn?(d, min(max(v, 0.01), 1)) }
+
+    /// Software dimming for monitors without a controllable backlight: 1 = normal, lower = darker.
+    func setGamma(_ d: CGDirectDisplayID, _ scale: Float) {
+        CGSetDisplayTransferByFormula(d, 0, scale, 1, 0, scale, 1, 0, scale, 1)
     }
+
+    func restoreGamma() { CGDisplayRestoreColorSyncSettings() }
+}
+
+/// What one dim changes on each screen, so it can be faded in and out and undone exactly.
+private struct DimPlan {
+    struct Backlit { let id: CGDirectDisplayID; let from: Float; let to: Float }
+    var backlit: [Backlit] = []
+    var gamma: [(id: CGDirectDisplayID, to: Float)] = []
+    var displays: Set<CGDirectDisplayID> { Set(backlit.map(\.id) + gamma.map(\.id)) }
 }
 
 // MARK: - Settings
@@ -247,12 +263,16 @@ private struct Settings {
         get { d.object(forKey: "dimDelaySeconds") as? Double ?? 120 }
         nonmutating set { d.set(newValue, forKey: "dimDelaySeconds") }
     }
-    /// Brightness to put back if the app quit or crashed while the screen was lowered.
-    var savedBrightness: Float? {
-        get { (d.object(forKey: "savedBrightness") as? Double).map(Float.init) }
+    /// Brightness to put back, per display, if the app quit or crashed while screens were lowered.
+    var savedBrightness: [CGDirectDisplayID: Float] {
+        get {
+            (d.dictionary(forKey: "savedBrightnesses") as? [String: Double] ?? [:]).reduce(into: [:]) { out, kv in
+                if let id = CGDirectDisplayID(kv.key) { out[id] = Float(kv.value) }
+            }
+        }
         nonmutating set {
-            if let v = newValue { d.set(Double(v), forKey: "savedBrightness") }
-            else { d.removeObject(forKey: "savedBrightness") }
+            if newValue.isEmpty { d.removeObject(forKey: "savedBrightnesses"); return }
+            d.set(Dictionary(uniqueKeysWithValues: newValue.map { (String($0.key), Double($0.value)) }), forKey: "savedBrightnesses")
         }
     }
 }
@@ -642,7 +662,6 @@ private final class MenuPanel: NSPanel {
 
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings()
-    private let backlight = Backlight()
     private let model = PanelModel()
     private var statusItem: NSStatusItem!
     private var panel: MenuPanel!
@@ -657,8 +676,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ticks = 0
     private var lastOn: Bool?
     private var lastIdle = 0.0
-    private var dimmedFrom: Float?      // brightness before we lowered it; nil when not lowered
-    private var previewFrom: Float?     // same, during "Preview"
+    private let screens = Screens()
+    private var dimPlan: DimPlan?       // screens lowered after idle time; nil when not lowered
+    private var previewPlan: DimPlan?   // same, during "Preview"
+    private var dimT: Float = 0         // how far the current plan is applied (0 = normal, 1 = fully dimmed)
     private var supervising = false
     private let launchedAt = Date()
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
@@ -680,10 +701,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         hostView.onSizeChange = { [weak self] in DispatchQueue.main.async { self?.fitPanel(animated: true) } }
         panel = MenuPanel(content: hostView)
 
-        if let saved = settings.savedBrightness {   // quit or crashed while the screen was lowered
-            if let cur = backlight.value, cur < saved { backlight.set(saved) }
-            settings.savedBrightness = nil
+        for (id, saved) in settings.savedBrightness {   // quit or crashed while screens were lowered
+            if let cur = screens.brightness(id), cur < saved { screens.setBrightness(id, saved) }
         }
+        settings.savedBrightness = [:]
+        UserDefaults.standard.removeObject(forKey: "savedBrightness")   // pre-1.6 single-display key
 
         signal(SIGTERM, SIG_IGN)                     // quit cleanly (restoring brightness) on kill/pkill
         sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
@@ -700,8 +722,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
         fadeTimer?.invalidate()
-        if let saved = dimmedFrom ?? previewFrom { backlight.set(saved) }
-        settings.savedBrightness = nil
+        if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
+        settings.savedBrightness = [:]
         if System.cocaineOn { engine("off") }
     }
 
@@ -709,26 +731,35 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // An `open` right after launch (Homebrew reopening the app after an upgrade) isn't a request for the panel.
         guard Date().timeIntervalSince(launchedAt) > 5 else { return false }
-        if !panel.isVisible { showPanel() }
+        if !panel.isVisible { showPanel(fromClick: false) }
         return false
     }
 
     @objc private func togglePanel() {
-        if panel.isVisible { hidePanel() } else { showPanel() }
+        if panel.isVisible { hidePanel() } else { showPanel(fromClick: true) }
     }
 
-    private func showPanel() {
-        guard let button = statusItem.button, let barWindow = button.window else { return }
+    /// Opens the panel under the icon that was clicked. With several screens the icon is in every screen's menu bar,
+    /// so the click position, not the icon's own window, says which one.
+    private func showPanel(fromClick: Bool) {
         refreshPanelState()
-        let icon = barWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        panelTop = (icon.minY - 6).rounded()
-        fitPanel(animated: false, centeredOn: icon.midX, screen: barWindow.screen)
+        let mouse = NSEvent.mouseLocation
+        let clicked = fromClick ? NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } : nil
+        var screen = clicked ?? NSScreen.main
+        var anchorX = mouse.x
+        if let button = statusItem.button, let bar = button.window {
+            let icon = bar.convertToScreen(button.convert(button.bounds, to: nil))
+            if clicked == nil || clicked == bar.screen { screen = bar.screen ?? screen; anchorX = icon.midX }
+        }
+        guard let screen else { return }
+        panelTop = (screen.visibleFrame.maxY - 6).rounded()          // just under that screen's menu bar
+        fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.makeKeyAndOrderFront(nil)
-        button.highlight(true)
-        // Clicks in other apps (or elsewhere in the menu bar) close it; clicks on our own icon toggle it instead.
+        statusItem.button?.highlight(true)
+        // Clicks elsewhere close it; a click on the icon itself (which also arrives here on macOS 27) toggles instead.
+        let iconZone = NSRect(x: anchorX - 18, y: screen.frame.maxY - 44, width: 36, height: 44)
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            // On macOS 27 a click on our own icon also arrives here; leave that one to togglePanel.
-            if !icon.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) { self?.hidePanel() }
+            if !iconZone.contains(NSEvent.mouseLocation) { self?.hidePanel() }
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
             if e.keyCode == 53 { self?.hidePanel(); return nil }   // Esc
@@ -742,12 +773,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         hostView.layoutSubtreeIfNeeded()
         let size = hostView.fittingSize
         guard size.height > 0 else { return }
-        var x = panel.frame.minX
+        var frame = NSRect(x: panel.frame.minX, y: panelTop - size.height, width: size.width, height: size.height)
         if let midX {
-            let vis = (screen ?? NSScreen.main)?.visibleFrame ?? .zero
-            x = min(max(midX - size.width / 2, vis.minX + 8), vis.maxX - size.width - 8).rounded()
+            frame = Self.panelFrame(size: size, anchorX: midX, top: panelTop,
+                                    visible: (screen ?? NSScreen.main)?.visibleFrame ?? .zero)
         }
-        let frame = NSRect(x: x, y: panelTop - size.height, width: size.width, height: size.height)
         guard frame != panel.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -757,6 +787,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             panel.setFrame(frame, display: true)
         }
+    }
+
+    /// Centred under the icon, kept 8 pt inside the screen it opens on.
+    static func panelFrame(size: NSSize, anchorX: CGFloat, top: CGFloat, visible: NSRect) -> NSRect {
+        let x = min(max(anchorX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8).rounded()
+        return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
     }
 
     private func hidePanel() {
@@ -872,48 +908,70 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Dimming
 
     private func updateDimming(on: Bool) {
-        guard previewFrom == nil else { return }
+        guard previewPlan == nil else { return }
         let idle = System.idleSeconds
         defer { lastIdle = idle }
-        if dimmedFrom != nil {
-            if idle < lastIdle || !on || !settings.dimEnabled { restore(); return }   // input since last tick
+        if let plan = dimPlan {
+            let unplugged = !plan.displays.isSubset(of: Set(screens.online))
+            if idle < lastIdle || !on || !settings.dimEnabled || unplugged { restore(); return }   // input since last tick
             // automatic brightness can creep back up while the screen is lowered
-            if ticks % 10 == 0, fadeTimer == nil, let cur = backlight.value, cur > settings.level + 0.02 {
-                backlight.set(settings.level)
+            if ticks % 10 == 0, fadeTimer == nil {
+                for b in plan.backlit where (screens.brightness(b.id) ?? 0) > b.to + 0.02 { screens.setBrightness(b.id, b.to) }
             }
-        } else if on, settings.dimEnabled, idle >= settings.delay, !System.lidClosed {
+        } else if on, settings.dimEnabled, idle >= settings.delay {
             dim(afterIdle: idle)
         }
     }
 
+    /// Every screen that's on: the built-in panel is skipped only with the lid shut (it's off anyway).
+    private func makePlan(level: Float) -> DimPlan {
+        var plan = DimPlan()
+        let lidClosed = System.lidClosed
+        for d in screens.online {
+            if CGDisplayIsBuiltin(d) != 0 && lidClosed { continue }
+            if screens.hasBacklight(d) {
+                if let cur = screens.brightness(d), cur > level { plan.backlit.append(.init(id: d, from: cur, to: level)) }
+            } else {
+                plan.gamma.append((d, 0.12 + 0.88 * level))           // software: dimmed, never black
+            }
+        }
+        return plan
+    }
+
     private func dim(afterIdle idle: Double) {
-        guard let cur = backlight.value else { return }
-        let target = settings.level
-        dimmedFrom = cur
-        settings.savedBrightness = cur
-        log.notice("dim \(cur, privacy: .public) -> \(target, privacy: .public) after \(Int(idle), privacy: .public)s idle")
-        if cur > target { fade(to: target, over: 1.5) }
+        let plan = makePlan(level: settings.level)
+        dimPlan = plan                                              // even if empty, so we don't retry every tick
+        settings.savedBrightness = Dictionary(uniqueKeysWithValues: plan.backlit.map { ($0.id, $0.from) })
+        log.notice("dim \(plan.backlit.count, privacy: .public) backlit + \(plan.gamma.count, privacy: .public) gamma screens after \(Int(idle), privacy: .public)s idle")
+        fade(plan, to: 1, over: 1.5)
     }
 
     private func restore() {
-        guard let saved = dimmedFrom else { return }
-        dimmedFrom = nil
-        settings.savedBrightness = nil
-        log.notice("restore -> \(saved, privacy: .public)")
-        fade(to: saved, over: 0.25)
+        guard let plan = dimPlan else { return }
+        dimPlan = nil
+        settings.savedBrightness = [:]
+        log.notice("restore \(plan.displays.count, privacy: .public) screens")
+        fade(plan, to: 0, over: 0.25) { if !plan.gamma.isEmpty { self.screens.restoreGamma() } }
     }
 
-    private func fade(to target: Float, over seconds: Double, then done: (() -> Void)? = nil) {
+    /// Puts every screen in `plan` at `t` (0 = as it was, 1 = fully dimmed).
+    private func apply(_ plan: DimPlan, _ t: Float) {
+        dimT = t
+        for b in plan.backlit { screens.setBrightness(b.id, b.from + (b.to - b.from) * t) }
+        for g in plan.gamma { screens.setGamma(g.id, 1 + (g.to - 1) * t) }
+    }
+
+    private func fade(_ plan: DimPlan, to target: Float, over seconds: Double, then done: (() -> Void)? = nil) {
         fadeTimer?.invalidate()
         fadeTimer = nil
-        guard let start = backlight.value else { done?(); return }
+        let start = dimT
         let steps = max(1, Int(seconds / 0.025))
         var i = 0
         let t = Timer(timeInterval: seconds / Double(steps), repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             i += 1
             let f = Float(i) / Float(steps)
-            self.backlight.set(start + (target - start) * f * f * (3 - 2 * f))   // smoothstep
+            self.apply(plan, start + (target - start) * f * f * (3 - 2 * f))   // smoothstep
             if i >= steps { t.invalidate(); self.fadeTimer = nil; done?() }
         }
         RunLoop.main.add(t, forMode: .common)
@@ -921,15 +979,17 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func preview() {
-        guard previewFrom == nil, dimmedFrom == nil, let cur = backlight.value else { return }
-        previewFrom = cur
-        settings.savedBrightness = cur
+        guard previewPlan == nil, dimPlan == nil else { return }
+        let plan = makePlan(level: settings.level)
+        previewPlan = plan
+        settings.savedBrightness = Dictionary(uniqueKeysWithValues: plan.backlit.map { ($0.id, $0.from) })
         model.previewing = true
-        fade(to: settings.level, over: 0.6) {
+        fade(plan, to: 1, over: 0.6) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                self.fade(to: cur, over: 0.4) {
-                    self.previewFrom = nil
-                    self.settings.savedBrightness = nil
+                self.fade(plan, to: 0, over: 0.4) {
+                    if !plan.gamma.isEmpty { self.screens.restoreGamma() }
+                    self.previewPlan = nil
+                    self.settings.savedBrightness = [:]
                     self.model.previewing = false
                 }
             }
@@ -960,6 +1020,35 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftes
     // writing the rule to the given file instead of /etc/sudoers.d.
     let cmd = Authorization.installCommand(user: NSUserName(), dest: CommandLine.arguments[2], asRoot: false)!
     exit(run("/usr/bin/osascript", ["-e", Authorization.appleScript(for: cmd, admin: false)]))
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--layout-test" {
+    // Where the panel lands for a click on the icon of each screen, for two-monitor layouts.
+    let size = NSSize(width: 312, height: 198)
+    let layouts: [(String, NSRect, CGFloat)] = [   // name, visible frame (below its menu bar), click x
+        ("MacBook, icon near right edge", NSRect(x: 0, y: 0, width: 1512, height: 945), 1460),
+        ("external on the right",         NSRect(x: 1512, y: -200, width: 2560, height: 1415), 3900),
+        ("external on the left",          NSRect(x: -1920, y: 0, width: 1920, height: 1055), -60),
+        ("external above",                NSRect(x: 0, y: 982, width: 1920, height: 1055), 1850),
+    ]
+    for (name, vis, x) in layouts {
+        let f = AppDelegate.panelFrame(size: size, anchorX: x, top: vis.maxY - 6, visible: vis)
+        print("\(name): panel \(f.debugDescription)  inside that screen: \(vis.contains(f))")
+    }
+    exit(0)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--gamma-test" {
+    // Software dimming on the main screen for a moment (what non-Apple monitors get), then restored.
+    let d = CGMainDisplayID(), screens = Screens()
+    func maxRed() -> Float {
+        var rMin: CGGammaValue = 0, rMax: CGGammaValue = 0, rG: CGGammaValue = 0, gMin: CGGammaValue = 0, gMax: CGGammaValue = 0
+        var gG: CGGammaValue = 0, bMin: CGGammaValue = 0, bMax: CGGammaValue = 0, bG: CGGammaValue = 0
+        CGGetDisplayTransferByFormula(d, &rMin, &rMax, &rG, &gMin, &gMax, &gG, &bMin, &bMax, &bG)
+        return rMax
+    }
+    print("before: \(maxRed())")
+    screens.setGamma(d, 0.4); usleep(800_000); print("dimmed: \(maxRed())")
+    screens.restoreGamma(); usleep(200_000); print("restored: \(maxRed())")
+    exit(0)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--auth-preview" {
     // Shows the admin prompt without running anything (to check how it looks).

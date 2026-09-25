@@ -16,6 +16,8 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
   Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.
 - **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di
   inattività. Lo schermo non si spegne mai del tutto, e torna com'era appena tocchi tastiera o trackpad.
+- **Anche con monitor esterni.** I monitor Apple abbassano la retroilluminazione, gli altri si scuriscono via software, e col
+  coperchio chiuso si abbassano solo gli schermi esterni. Il pannello si apre sotto l'icona che clicchi, su qualunque schermo.
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Il pannello di Cocaine"></p>
 

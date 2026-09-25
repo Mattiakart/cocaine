@@ -13,6 +13,8 @@ A tiny, free, open-source menu bar app for macOS.</p>
 - **Empty baggie = off.** Normal sleep behaviour.
 - **Screen dimming.** While Cocaine is on, it can dim the built-in display to a level you choose after a few idle minutes.
   The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
+- **External monitors too.** Apple displays dim their backlight, any other monitor dims in software, and with the lid
+  closed only the external screens dim. The panel opens under the icon you click, on whichever screen.
 - Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
 - **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
