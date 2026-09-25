@@ -1,4 +1,4 @@
-COCAINE 1.3
+COCAINE 1.4
 Keeps your Mac awake, even with the lid closed. Turn it on and off from the baggie in the menu bar.
 Requires macOS 14 (Sonoma) or later. Runs on Apple Silicon and Intel Macs.
 Languages: English, Italian, Chinese, Spanish, French, German, Japanese. It follows your Mac's language (English otherwise), or pick one from the flag in the panel.
@@ -7,7 +7,7 @@ INSTALL
 1. Drag Cocaine into the Applications folder.
 2. Open it. macOS blocks it because it isn't notarized by Apple (it's a free app).
    Go to System Settings > Privacy & Security, scroll down and click "Open Anyway". You only do this once.
-3. On first launch Cocaine asks for your administrator password, once. It needs permission to change
+3. On first launch Cocaine asks for Touch ID (or your password), once. It needs permission to change
    one system setting: the one that prevents your Mac from sleeping.
 
 USE

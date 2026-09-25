@@ -21,21 +21,26 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
 
 Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel, pesa circa 600 KB, è gratis.
 
-## Download
+## Installazione
 
-Scarica l'ultimo **.dmg di Cocaine** dalla pagina [Releases](../../releases/latest), oppure con Homebrew:
+**Con Homebrew (il modo più semplice):**
 
 ```
 brew install --cask mattiakart/tap/cocaine
 ```
 
-## Installazione
+Poi apri Cocaine. Ti chiede **una volta** l'**impronta digitale** (o la password) e basta: niente "Apri comunque", nessun altro
+passaggio. `brew upgrade` non chiede mai nulla, e `brew uninstall --cask cocaine` toglie tutto senza chiedere.
+
+**Oppure scarica il .dmg** dalla pagina [Releases](../../releases/latest):
 
 1. Apri il `.dmg` e trascina **Cocaine** in **Applicazioni**.
 2. Aprila. macOS la blocca, perché l'app non è firmata da uno sviluppatore registrato presso Apple:
    vai in **Impostazioni di Sistema → Privacy e sicurezza** e clicca **"Apri comunque"**. Serve solo la prima volta.
-3. Al primo avvio Cocaine chiede la **password di amministratore**, una volta sola. Le serve il permesso di
-   cambiare un'unica impostazione di sistema: `pmset disablesleep`, quella che impedisce lo stop.
+3. Cocaine chiede **una volta** l'impronta digitale (o la password).
+
+In entrambi i casi quell'autorizzazione installa una regola sudo che permette solo `pmset -a disablesleep 1`,
+`pmset -a disablesleep 0` e la cancellazione della regola stessa. Nient'altro.
 
 ## Da sapere
 
@@ -45,14 +50,14 @@ brew install --cask mattiakart/tap/cocaine
 
 ## Disinstallazione
 
-Spegni Cocaine, esci dall'app, spostala nel Cestino, poi nel Terminale:
+Con Homebrew: `brew uninstall --cask cocaine`. Spegne Cocaine e toglie l'app e la regola sudo, senza chiedere nulla.
+(`--zap` cancella anche le impostazioni.)
+
+Senza Homebrew: esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
 
 ```
 sudo rm /etc/sudoers.d/cocaine
 ```
-
-Se l'hai installata con Homebrew: `brew uninstall --cask --zap cocaine` fa tutto da solo. Senza `--zap`
-restano la regola sudo e le impostazioni, così `brew upgrade` non ti chiede la password a ogni aggiornamento.
 
 ## Come funziona
 

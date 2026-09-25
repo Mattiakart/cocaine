@@ -23,18 +23,24 @@ A tiny, free, open-source menu bar app for macOS.</p>
 
 ## Install
 
-Download the latest **Cocaine .dmg** from [Releases](../../releases/latest), or use Homebrew:
+**With Homebrew (easiest):**
 
 ```
 brew install --cask mattiakart/tap/cocaine
 ```
 
+Then open Cocaine. It asks for **Touch ID** (or your password) **once**, and that's all: no "Open Anyway", no other steps.
+`brew upgrade` never asks for anything, and `brew uninstall --cask cocaine` removes everything without asking.
+
+**Or download the .dmg** from [Releases](../../releases/latest):
+
 1. Drag **Cocaine** into **Applications**.
 2. Open it. The first time, macOS blocks it because it isn't notarized by Apple: it's a free app, built without a
    paid developer account. Go to **System Settings → Privacy & Security** and click **Open Anyway**. You only do this once.
-3. On first launch Cocaine asks for your **admin password**, once. It uses it to install a sudo rule that allows
-   exactly two commands, `pmset -a disablesleep 1` and `pmset -a disablesleep 0`, and nothing else.
-   [See the code](cocaine.zsh).
+3. Cocaine asks for **Touch ID** (or your password) once.
+
+Either way, that authorization installs a sudo rule that allows exactly `pmset -a disablesleep 1`,
+`pmset -a disablesleep 0`, and deleting the rule itself. Nothing else. [See the code](cocaine.zsh).
 
 ## Good to know
 
@@ -44,14 +50,14 @@ brew install --cask mattiakart/tap/cocaine
 
 ## Uninstall
 
-Turn Cocaine off, quit it, move it to the Trash, then run this in Terminal:
+With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app and its sudo rule, without asking.
+(`--zap` also deletes the settings.)
+
+Without Homebrew: quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 
 ```
 sudo rm /etc/sudoers.d/cocaine
 ```
-
-If you installed with Homebrew, `brew uninstall --cask --zap cocaine` does all of this for you. Without `--zap`,
-the sudo rule and the settings stay in place, so that `brew upgrade` doesn't ask for your password every time.
 
 ## How it works
 

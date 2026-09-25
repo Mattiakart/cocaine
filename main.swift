@@ -113,7 +113,9 @@ private enum Authorization {
     /// so a bad rule can never break sudo. `asRoot: false` + another `dest` is for the self-test only.
     static func installCommand(user: String, dest: String = rulePath, asRoot: Bool = true) -> String? {
         guard user.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else { return nil }
-        let rule = "\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0"
+        // pmset on/off, plus removing this very rule, so uninstalling needs no password.
+        let rule = "\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0, "
+            + "/bin/rm -f \(rulePath)"
         let owner = asRoot ? "-o root -g wheel " : ""
         return "t=$(/usr/bin/mktemp /tmp/cocaine.XXXXXX) || exit 1; /usr/bin/printf '%s\\n' '\(rule)' > \"$t\"; "
             + "/usr/sbin/visudo -cf \"$t\" >/dev/null || { /bin/rm -f \"$t\"; exit 1; }; "
@@ -602,6 +604,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dimmedFrom: Float?      // brightness before we lowered it; nil when not lowered
     private var previewFrom: Float?     // same, during "Preview"
     private var supervising = false
+    private let launchedAt = Date()
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
 
@@ -648,6 +651,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opening Cocaine again (e.g. from Spotlight) shows the panel.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // An `open` right after launch (Homebrew reopening the app after an upgrade) isn't a request for the panel.
+        guard Date().timeIntervalSince(launchedAt) > 5 else { return false }
         if !panel.isVisible { showPanel() }
         return false
     }
