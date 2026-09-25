@@ -11,6 +11,7 @@
 // flash the screens when you're away.
 
 import AppKit
+import AVFoundation
 import ImageIO
 import IOKit
 import IOKit.pwr_mgt
@@ -269,6 +270,25 @@ private struct Settings {
         get { d.object(forKey: "dimDelaySeconds") as? Double ?? 120 }
         nonmutating set { d.set(newValue, forKey: "dimDelaySeconds") }
     }
+    // AI alerts: what to announce and how.
+    static let sounds = ["Glass", "Ping", "Hero", "Submarine", "Funk", "Purr", "Blow"]
+    private func flag(_ key: String, _ fallback: Bool) -> Bool { d.object(forKey: key) as? Bool ?? fallback }
+    var alertDone: Bool { get { flag("alertDone", true) } nonmutating set { d.set(newValue, forKey: "alertDone") } }
+    var alertInput: Bool { get { flag("alertInput", true) } nonmutating set { d.set(newValue, forKey: "alertInput") } }
+    var alertFlash: Bool { get { flag("alertFlash", true) } nonmutating set { d.set(newValue, forKey: "alertFlash") } }
+    var alertSpeak: Bool { get { flag("alertSpeak", false) } nonmutating set { d.set(newValue, forKey: "alertSpeak") } }
+    var alertWhenPresent: Bool { get { flag("alertWhenPresent", false) } nonmutating set { d.set(newValue, forKey: "alertWhenPresent") } }
+    var alertRepeat: Bool { get { flag("alertRepeat", false) } nonmutating set { d.set(newValue, forKey: "alertRepeat") } }
+    /// A system sound's name; "" = silent.
+    var alertSound: String {
+        get { d.string(forKey: "alertSound") ?? "Glass" }
+        nonmutating set { d.set(newValue, forKey: "alertSound") }
+    }
+    var alertsPausedUntil: Date? {
+        get { (d.object(forKey: "alertsPausedUntil") as? Date).flatMap { $0 > Date() ? $0 : nil } }
+        nonmutating set { d.set(newValue, forKey: "alertsPausedUntil") }
+    }
+
     /// Brightness to put back, per display, if the app quit or crashed while screens were lowered.
     var savedBrightness: [CGDirectDisplayID: Float] {
         get {
@@ -487,7 +507,19 @@ private final class PanelModel: ObservableObject {
     @Published var previewing = false
     @Published var fillLevel: CGFloat = 0
     @Published var pouring = false
-    @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with Claude Code or Codex
+    @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
+    @Published var settingAI = false
+    @Published var alertsPausedUntil: Date?
+    @Published var lastAlert: String?      // "Claude Code · Cocaine · 17:34"
+    @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
+    @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
+    @Published var alertFlash: Bool { didSet { settings.alertFlash = alertFlash } }
+    @Published var alertSpeak: Bool { didSet { settings.alertSpeak = alertSpeak } }
+    @Published var alertWhenPresent: Bool { didSet { settings.alertWhenPresent = alertWhenPresent } }
+    @Published var alertRepeat: Bool { didSet { settings.alertRepeat = alertRepeat } }
+    @Published var alertSound: String {
+        didSet { settings.alertSound = alertSound; if !alertSound.isEmpty { NSSound(named: alertSound)?.play() } }   // hear it
+    }
     @Published var dimEnabled: Bool { didSet { settings.dimEnabled = dimEnabled } }
     @Published private(set) var levelPercent: Double
     @Published var delayMinutes: Int { didSet { if delayMinutes > 0 { settings.delay = Double(delayMinutes * 60) } } }
@@ -502,13 +534,23 @@ private final class PanelModel: ObservableObject {
     var toggleCocaine: () -> Void = {}
     var preview: () -> Void = {}
     var setLogin: (Bool) -> Void = { _ in }
-    var setAIAlerts: (Bool) -> Void = { _ in }
+    var setAI: (_ id: String, _ on: Bool) -> Void = { _, _ in }
+    var pauseAlerts: (Date?) -> Void = { _ in }       // nil = resume
+    var testAlert: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
         dimEnabled = settings.dimEnabled
         levelPercent = Double((settings.level * 100).rounded())
         delayMinutes = Int(settings.delay) / 60
+        alertDone = settings.alertDone
+        alertInput = settings.alertInput
+        alertFlash = settings.alertFlash
+        alertSpeak = settings.alertSpeak
+        alertWhenPresent = settings.alertWhenPresent
+        alertRepeat = settings.alertRepeat
+        alertSound = settings.alertSound
+        alertsPausedUntil = settings.alertsPausedUntil
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -522,8 +564,63 @@ private final class PanelModel: ObservableObject {
     }
 }
 
+/// Warnings: deep orange on a light panel, light orange on a dark one; both read at over 4.5:1 contrast.
+private let warningColor = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        ? NSColor(srgbRed: 1.0, green: 0.72, blue: 0.30, alpha: 1)
+        : NSColor(srgbRed: 0.63, green: 0.28, blue: 0.0, alpha: 1)
+})
+
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
+
+    private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
+    static func timeString(_ d: Date) -> String { time.string(from: d) }
+
+    /// What the AI alerts menu button says: paused, nothing connected, or the first AI connected (+ how many more).
+    private var aiSummary: String {
+        if let until = m.alertsPausedUntil { return "⏸ " + String(format: L("until %@"), Self.time.string(from: until)) }
+        let on = m.ai.connected
+        guard let first = on.first else { return L("Choose") }
+        return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
+    }
+
+    @ViewBuilder private var aiMenu: some View {
+        if let last = m.lastAlert { Text(String(format: L("Last: %@"), last)) }
+        Section(L("Connect")) {
+            ForEach(m.ai.tools) { t in
+                Toggle(t.installed ? t.name : "\(t.name) (\(L("not installed")))",
+                       isOn: Binding(get: { t.on }, set: { m.setAI(t.id, $0) }))
+                    .disabled(!t.installed || m.settingAI)
+            }
+        }
+        Section(L("Alert me when it")) {
+            Toggle(L("finishes"), isOn: $m.alertDone)
+            Toggle(L("needs me"), isOn: $m.alertInput)
+        }
+        Section(L("How")) {
+            Toggle(L("Flash the screen"), isOn: $m.alertFlash)
+            Picker(L("Sound"), selection: $m.alertSound) {
+                Text(L("No sound")).tag("")
+                ForEach(Settings.sounds, id: \.self) { Text($0).tag($0) }
+            }
+            Toggle(L("Read it aloud"), isOn: $m.alertSpeak)
+            Toggle(L("Even when I'm at the Mac"), isOn: $m.alertWhenPresent)
+            Toggle(L("Repeat every 5 min until I'm back"), isOn: $m.alertRepeat)
+        }
+        Divider()
+        if m.alertsPausedUntil != nil {
+            Button(L("Resume alerts")) { m.pauseAlerts(nil) }
+        } else {
+            Button(L("Pause for 1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
+            Button(L("Pause until tomorrow")) {
+                let cal = Calendar.current
+                m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+            }
+        }
+        Button(L("Send a test alert")) { m.testAlert() }
+        Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
+    }
 
     private var status: String {
         if m.needsAuth { return L("Admin password needed") }
@@ -539,9 +636,14 @@ private struct PanelView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text("Cocaine").font(.headline)
                         Text(appVersion).font(.caption2).foregroundStyle(.tertiary)   // e.g. "1.7"
+                        Button { Feedback.compose() } label: {
+                            Image(systemName: "envelope").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(L("Feedback or help") + " — " + Feedback.address)
                     }
                     Text(status).font(.caption).lineLimit(1)
-                        .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
                 }
                 Spacer(minLength: 6)
                 Toggle("Cocaine", isOn: Binding(get: { m.on }, set: { _ in m.toggleCocaine() }))
@@ -581,19 +683,21 @@ private struct PanelView: View {
             Divider()
 
             if m.ai.available {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
                         Text(L("AI alerts")).lineLimit(1)
                         Spacer(minLength: 6)
-                        Toggle(L("AI alerts"), isOn: Binding(get: { m.ai.on }, set: { m.setAIAlerts($0) }))
-                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                        Menu { aiMenu } label: { Text(aiSummary) }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help(L("Flashes the screen when an AI finishes or needs you"))
                     }
-                    if m.ai.on && m.ai.codexNeedsTrust {   // Codex runs new hooks only once the user trusts them
-                        Text(L("Codex: approve them once in Settings → Hooks"))
-                            .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    if m.ai.codexNeedsTrust {             // Codex runs new hooks only once the user trusts them
+                        Label(L("Codex: approve them once in Settings → Hooks"), systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.medium)).foregroundStyle(warningColor)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .help(L("Flashes the screen when Claude Code or Codex finishes or needs you"))
             }
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
@@ -632,6 +736,40 @@ private struct PanelView: View {
     }
 }
 
+// MARK: - Feedback and help
+
+private enum Feedback {
+    static let address = "mattia.lorenzo@twou.lu"
+
+    /// What helps with support: versions, the Mac's model, the UI language.
+    static var details: String {
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "Cocaine \(appVersion) · macOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion) · "
+            + "\(String(cString: model)) · \(Language.chosen ?? Language.system)"
+    }
+
+    /// The ✉︎ button: a new email to the author in the user's mail app, with those details at the bottom.
+    static func compose() {
+        var c = URLComponents()
+        c.scheme = "mailto"
+        c.path = address
+        c.queryItems = [URLQueryItem(name: "subject", value: "Cocaine \(appVersion) – " + L("Feedback")),
+                        URLQueryItem(name: "body", value: "\n\n\n— \(details)")]
+        if let url = c.url { NSWorkspace.shared.open(url) }
+    }
+
+    /// The README's section on alerts, in Italian for Italian users.
+    static var alertsGuide: URL {
+        (Language.chosen ?? Language.system) == "it"
+            ? URL(string: "https://github.com/Mattiakart/cocaine/blob/main/README.it.md#avvisi-quando-unai-finisce")!
+            : URL(string: "https://github.com/Mattiakart/cocaine#alerts-when-an-ai-finishes")!
+    }
+}
+
 // MARK: - Alerts ("an AI finished / needs you")
 
 /// Drives the overlay's animation (SwiftUI's @State needs full Xcode's macros, which the command-line tools lack).
@@ -653,6 +791,7 @@ private final class AlertAnimation: ObservableObject {
 private struct AlertView: View {
     let title: String
     let message: String
+    let detail: String?                  // the project (folder) the agent was working in
     @ObservedObject var anim: AlertAnimation
 
     var body: some View {
@@ -662,6 +801,9 @@ private struct AlertView: View {
                 Image(nsImage: Baggie.image(level: 1, size: 64))
                 Text(title).font(.system(size: 28, weight: .bold))
                 Text(message).font(.system(size: 20))
+                if let detail {
+                    Label(detail, systemImage: "folder").font(.system(size: 16)).foregroundStyle(.white.opacity(0.75))
+                }
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 36).padding(.vertical, 26)
@@ -679,7 +821,7 @@ private final class Alerter {
 
     var isShowing: Bool { !windows.isEmpty }
 
-    func show(title: String, message: String) {
+    func show(title: String, message: String, detail: String? = nil) {
         close(animated: false)
         for screen in NSScreen.screens {
             let w = NSWindow(contentRect: NSRect(origin: .zero, size: screen.frame.size), styleMask: .borderless,
@@ -691,7 +833,7 @@ private final class Alerter {
             w.ignoresMouseEvents = true
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
             let anim = AlertAnimation()
-            let host = NSHostingView(rootView: AlertView(title: title, message: message, anim: anim))
+            let host = NSHostingView(rootView: AlertView(title: title, message: message, detail: detail, anim: anim))
             host.sizingOptions = []                          // the window sets the size; SwiftUI must not move it
             host.appearance = NSAppearance(named: .darkAqua)    // light baggie on the dark card
             w.contentView = host
@@ -811,40 +953,140 @@ private enum JSONValue: Equatable {
     }
 }
 
-/// The "AI alerts" switch: hooks that make Claude Code and Codex open cocaine://alert when they finish or need you.
-/// They live in each tool's own config file; turning them off removes only them, every other hook and setting stays.
+/// "AI alerts": hooks that make AI agents open cocaine://alert when they finish or need you. They live in each tool's
+/// own config file; turning one off removes only Cocaine's hooks there, every other hook and setting stays as it was.
 private enum AIHooks {
+    /// How a tool's config lists the commands for an event.
+    enum Layout {
+        case grouped      // "Event": [{ "matcher"?, "hooks": [{ "type": "command", "command": … }] }]  (Claude Code, Codex, …)
+        case flat         // "event": [{ "command": … }]                                                 (Cursor, Windsurf)
+        case ownFile      // a file of Cocaine's own in the tool's hooks/plugins folder                 (Copilot, OpenCode)
+    }
+
+    struct Event {
+        let name: String
+        let kind: String                                  // the alert: "done" or "input"
+        var matcher: String? = nil
+    }
+
     struct Tool {
+        let id: String                                    // stable, for the CLI and the menu
         let name: String                                  // also the alert's title
-        let folder: String                                // the tool's config folder: skipped where it doesn't exist
+        let folder: String                                // the tool's config folder: it's installed if this exists
         let file: String
-        let events: [(name: String, kind: String)]        // hook event → alert kind (done or input)
+        var layout = Layout.grouped
+        var events: [Event] = []
+        var handler: (_ command: String, _ kind: String) -> [JSONValue.Member] = AIHooks.typed(timeout: "10")
+        var top: [JSONValue.Member] = []                  // top-level keys the file must have (Cursor's "version": 1)
+        var contents: ((Tool) -> String)? = nil           // .ownFile: the whole file
+        var skipIf: String? = nil                         // an env variable set by another tool that runs these hooks too
+        var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
     }
 
     static var home = NSHomeDirectory()                   // `--ai-alerts … --home <dir>` works on a copy
     static let marker = "cocaine://alert"
 
-    static var tools: [Tool] {
-        [Tool(name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
-              events: [("Stop", "done"), ("Notification", "input")]),
-         Tool(name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
-              events: [("Stop", "done"), ("PermissionRequest", "input")])]
+    /// `{"type": "command", "command": …, "timeout": …}`: Claude Code, Codex and Qwen Code (seconds).
+    private static func typed(timeout: String) -> (String, String) -> [JSONValue.Member] {
+        { command, _ in [.init(key: "type", value: .string("command")), .init(key: "command", value: .string(command)),
+                         .init(key: "timeout", value: .scalar(timeout))] }
     }
-    static var present: [Tool] { tools.filter { FileManager.default.fileExists(atPath: $0.folder) } }
 
-    /// Does nothing while Cocaine is closed, so a closed Cocaine stays closed. Keep it word for word: Codex asks
-    /// to trust a hook again whenever its command changes.
+    /// The supported tools, most used first. Formats from each tool's hooks reference (checked September 2026).
+    static var tools: [Tool] {
+        [Tool(id: "claude", name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
+              events: [.init(name: "Stop", kind: "done"),
+                       .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog")],
+              skipIf: "CURSOR_VERSION"),               // Cursor runs Claude Code's hooks as well; it has its own below
+         Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
+              events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "input")]),
+         Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
+              events: [.init(name: "stop", kind: "done")],   // Cursor has no hook for "waiting for you"
+              handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10"))] },
+              top: [.init(key: "version", value: .scalar("1"))]),
+         Tool(id: "copilot", name: "GitHub Copilot", folder: home + "/.copilot", file: home + "/.copilot/hooks/cocaine.json",
+              layout: .ownFile, contents: copilotFile),  // Copilot CLI and VS Code's Copilot agent both read it
+         Tool(id: "gemini", name: "Gemini CLI", folder: home + "/.gemini", file: home + "/.gemini/settings.json",
+              events: [.init(name: "AfterAgent", kind: "done"), .init(name: "Notification", kind: "input")],
+              handler: { command, kind in                // milliseconds; a name, so it can be disabled by name
+                  [.init(key: "name", value: .string("cocaine-\(kind)")), .init(key: "type", value: .string("command")),
+                   .init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10000"))] },
+              installed: { t in                          // Google Antigravity keeps its things in ~/.gemini/antigravity too
+                  let items = (try? FileManager.default.contentsOfDirectory(atPath: t.folder)) ?? []
+                  return items.contains { !["antigravity", ".DS_Store"].contains($0) } }),
+         Tool(id: "windsurf", name: "Windsurf", folder: home + "/.codeium/windsurf", file: home + "/.codeium/windsurf/hooks.json",
+              layout: .flat, events: [.init(name: "post_cascade_response", kind: "done")],
+              handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "show_output", value: .scalar("false"))] }),
+         Tool(id: "qwen", name: "Qwen Code", folder: home + "/.qwen", file: home + "/.qwen/settings.json",
+              events: [.init(name: "Stop", kind: "done"), .init(name: "Notification", kind: "input", matcher: "permission_prompt")]),
+         Tool(id: "opencode", name: "OpenCode", folder: home + "/.config/opencode", file: home + "/.config/opencode/plugins/cocaine.js",
+              layout: .ownFile, contents: openCodeFile)]
+    }
+    static var present: [Tool] { tools.filter(isInstalled) }
+    static func tool(_ id: String) -> Tool? { tools.first { $0.id == id } }
+    static func isInstalled(_ t: Tool) -> Bool {
+        FileManager.default.fileExists(atPath: t.folder) && (t.installed?(t) ?? true)
+    }
+
+    /// ~/.copilot/hooks/cocaine.json: GitHub Copilot's own hooks format.
+    private static func copilotFile(_ t: Tool) -> String {
+        func hook(_ kind: String, matcher: String? = nil) -> JSONValue {
+            .object([.init(key: "type", value: .string("command"))]
+                    + (matcher.map { [.init(key: "matcher", value: .string($0))] } ?? [])
+                    + [.init(key: "bash", value: .string(command(t, kind))), .init(key: "timeoutSec", value: .scalar("10"))])
+        }
+        return JSONValue.object([
+            .init(key: "version", value: .scalar("1")),
+            .init(key: "hooks", value: .object([
+                .init(key: "agentStop", value: .array([hook("done")])),
+                .init(key: "notification", value: .array([hook("input", matcher: "permission_prompt|elicitation_dialog")])),
+            ])),
+        ]).render() + "\n"
+    }
+
+    /// ~/.config/opencode/plugins/cocaine.js: an OpenCode plugin (run by Bun) that listens for its events.
+    private static func openCodeFile(_ t: Tool) -> String {
+        guard case .scalar(let done) = JSONValue.string(command(t, "done")),
+              case .scalar(let input) = JSONValue.string(command(t, "input")) else { return "" }
+        return """
+        // Added by Cocaine ("AI alerts" in its menu-bar panel), which also removes it: it flashes the screen when
+        // OpenCode finishes or needs you. https://github.com/Mattiakart/cocaine
+        const done = \(done)
+        const input = \(input)
+
+        export const Cocaine = async ({ $, client }) => ({
+          event: async ({ event }) => {
+            try {
+              if (event.type === "session.idle") {
+                const s = await client?.session?.get({ path: { id: event.properties?.sessionID } }).catch(() => null)
+                if (s?.data?.parentID) return            // a subagent finished, not the session
+                await $`sh -c ${done}`.quiet().nothrow()
+              } else if (event.type === "permission.asked" || event.type === "question.asked") {
+                await $`sh -c ${input}`.quiet().nothrow()
+              }
+            } catch {}
+          },
+        })
+
+        """
+    }
+
+    /// Does nothing while Cocaine is closed, so a closed Cocaine stays closed. `project` is the folder the agent runs
+    /// in, URL-encoded by the perl that comes with macOS. Change it only when needed: Codex asks to trust a hook again
+    /// whenever its command changes.
     static func command(_ tool: Tool, _ kind: String) -> String {
         let from = tool.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? tool.name
-        return "pgrep -qx Cocaine && open -g 'cocaine://alert?from=\(from)&event=\(kind)'; true"
+        let project = #"$(printf %s "$PWD" | /usr/bin/perl -pe 's|.*/||; s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge')"#
+        let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
+        return skip + "pgrep -qx Cocaine && open -g \"cocaine://alert?from=\(from)&event=\(kind)&project=\(project)\"; true"
     }
 
-    private static func group(_ tool: Tool, _ kind: String) -> JSONValue {
-        .object([.init(key: "hooks", value: .array([.object([
-            .init(key: "type", value: .string("command")),
-            .init(key: "command", value: .string(command(tool, kind))),
-            .init(key: "timeout", value: .scalar("10")),
-        ])]))])
+    /// What goes in an event's list: a group holding our handler (with the event's matcher), or the handler itself.
+    private static func entry(_ tool: Tool, _ event: Event) -> JSONValue {
+        let handler = JSONValue.object(tool.handler(command(tool, event.kind), event.kind))
+        guard tool.layout == .grouped else { return handler }
+        return .object((event.matcher.map { [.init(key: "matcher", value: .string($0))] } ?? [])
+                       + [.init(key: "hooks", value: .array([handler]))])
     }
 
     private static func isOurs(_ handler: JSONValue) -> Bool {
@@ -868,7 +1110,7 @@ private enum AIHooks {
     }
 
     static func installed(_ root: JSONValue) -> Bool {
-        root["hooks"]?.members?.contains { $0.value.items?.contains(where: hasOurs) ?? false } ?? false
+        root["hooks"]?.members?.contains { $0.value.items?.contains { isOurs($0) || hasOurs($0) } ?? false } ?? false
     }
 
     /// `root` with our hooks added or removed. Ones already there are updated where they are, so Codex's trust
@@ -876,22 +1118,27 @@ private enum AIHooks {
     static func edited(_ root: JSONValue, for tool: Tool, on: Bool) -> JSONValue? {
         let before = root["hooks"]
         guard let events = (before ?? .object([])).members else { return nil }
-        var wanted = on ? Dictionary(uniqueKeysWithValues: tool.events.map { ($0.name, group(tool, $0.kind)) }) : [:]
+        var wanted = on ? Dictionary(uniqueKeysWithValues: tool.events.map { ($0.name, entry(tool, $0)) }) : [:]
         var result: [JSONValue.Member] = []
         for var event in events {
-            guard let groups = event.value.items else { wanted[event.key] = nil; result.append(event); continue }
+            guard let entries = event.value.items else { wanted[event.key] = nil; result.append(event); continue }
             var out: [JSONValue] = []
-            for g in groups {
-                guard hasOurs(g) else { out.append(g); continue }
-                if g["hooks"]?.items?.allSatisfy(isOurs) == true, let w = wanted.removeValue(forKey: event.key) {
+            for e in entries {
+                if tool.layout == .flat {
+                    guard isOurs(e) else { out.append(e); continue }
+                    if let w = wanted.removeValue(forKey: event.key) { out.append(w) }   // same place; drop repeats
+                    continue
+                }
+                guard hasOurs(e) else { out.append(e); continue }
+                if e["hooks"]?.items?.allSatisfy(isOurs) == true, let w = wanted.removeValue(forKey: event.key) {
                     out.append(w)
                     continue
                 }
-                let kept = (g["hooks"]?.items ?? []).filter { !isOurs($0) }   // ours inside someone else's group
-                if !kept.isEmpty { var g = g; g["hooks"] = .array(kept); out.append(g) }
+                let kept = (e["hooks"]?.items ?? []).filter { !isOurs($0) }   // ours inside someone else's group
+                if !kept.isEmpty { var e = e; e["hooks"] = .array(kept); out.append(e) }
             }
             if let w = wanted.removeValue(forKey: event.key) { out.append(w) }
-            if out.isEmpty && !groups.isEmpty { continue }
+            if out.isEmpty && !entries.isEmpty { continue }
             event.value = .array(out)
             result.append(event)
         }
@@ -899,16 +1146,26 @@ private enum AIHooks {
         var root = root
         if !result.isEmpty { root["hooks"] = .object(result) }
         else if before?.members?.isEmpty == false { root["hooks"] = nil }
+        if on, var members = root.members {                   // e.g. Cursor's "version": 1, first like its docs
+            for m in tool.top.reversed() where root[m.key] == nil { members.insert(m, at: 0) }
+            root = .object(members)
+        }
         return root
     }
 
     /// Writes through symlinks (dotfile setups) and keeps the file's permissions.
-    private static func write(_ value: JSONValue, to path: String) -> Bool {
+    private static func write(_ text: String, to path: String) -> Bool {
         let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
-        do { try Data((value.render() + "\n").utf8).write(to: url, options: .atomic) } catch { return false }
+        do { try Data(text.utf8).write(to: url, options: .atomic) } catch { return false }
         if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: url.path) }
         return true
+    }
+
+    /// Whether Cocaine's hooks are in this tool's config.
+    static func isOn(_ t: Tool) -> Bool {
+        guard t.layout != .ownFile else { return (try? String(contentsOfFile: t.file, encoding: .utf8))?.contains(marker) ?? false }
+        return load(t.file).map(installed) ?? false
     }
 
     /// Adds or removes the hooks in every tool on this Mac (or just `only`); returns the files it couldn't update.
@@ -916,22 +1173,36 @@ private enum AIHooks {
     static func set(_ on: Bool, only: [Tool]? = nil) -> [String] {
         var failed: [String] = []
         for tool in only ?? present {
+            if tool.layout == .ownFile, let contents = tool.contents {
+                let current = try? String(contentsOfFile: tool.file, encoding: .utf8)
+                if on {
+                    let want = contents(tool)
+                    guard current != want else { continue }
+                    if let current, !current.contains(marker) { failed.append(tool.file); continue }   // not ours: hands off
+                    try? FileManager.default.createDirectory(atPath: (tool.file as NSString).deletingLastPathComponent,
+                                                             withIntermediateDirectories: true)
+                    if !write(want, to: tool.file) { failed.append(tool.file) }
+                } else if let current, current.contains(marker) {
+                    do { try FileManager.default.removeItem(atPath: tool.file) } catch { failed.append(tool.file) }
+                }
+                continue
+            }
             guard let root = load(tool.file), let new = edited(root, for: tool, on: on) else { failed.append(tool.file); continue }
-            if new != root && !write(new, to: tool.file) { failed.append(tool.file) }
+            if new != root && !write(new.render() + "\n", to: tool.file) { failed.append(tool.file) }
         }
         return failed
     }
 
     /// At launch: brings hooks written by an older Cocaine (or by hand) up to date, only where they already are.
     static func update() {
-        let tools = present.filter { load($0.file).map(installed) ?? false }
+        let tools = present.filter(isOn)
         if !tools.isEmpty { set(true, only: tools) }
     }
 
     /// Codex runs a new hook only after the user trusts it once (/hooks, or Settings → Hooks in the ChatGPT app);
     /// it then keeps `trusted_hash` under [hooks.state."<file>:<event>:<group>:<handler>"] in its config.toml.
     static func codexNeedsTrust() -> Bool {
-        guard let codex = tools.last, FileManager.default.fileExists(atPath: codex.folder),
+        guard let codex = tool("codex"), FileManager.default.fileExists(atPath: codex.folder),
               let events = load(codex.file)?["hooks"]?.members else { return false }
         let config = (try? String(contentsOfFile: codex.folder + "/config.toml", encoding: .utf8)) ?? ""
         for event in events {
@@ -955,12 +1226,27 @@ private enum AIHooks {
         return body[..<(body.range(of: "\n[")?.lowerBound ?? body.endIndex)].contains("trusted_hash")
     }
 
-    struct Status: Equatable { var available = false, on = false, codexNeedsTrust = false }
+    struct Entry: Equatable, Identifiable {
+        let id: String
+        let name: String
+        var installed = false
+        var on = false
+    }
+
+    struct Status: Equatable {
+        var tools: [Entry] = []
+        var codexNeedsTrust = false
+        var available: Bool { tools.contains(where: \.installed) }
+        var connected: [Entry] { tools.filter(\.on) }
+    }
 
     static func status() -> Status {
-        let tools = present
-        let on = tools.contains { load($0.file).map(installed) ?? false }
-        return Status(available: !tools.isEmpty, on: on, codexNeedsTrust: on && codexNeedsTrust())
+        var s = Status(tools: tools.map { t in
+            let installed = isInstalled(t)
+            return Entry(id: t.id, name: t.name, installed: installed, on: installed && isOn(t))
+        })
+        s.codexNeedsTrust = s.tools.contains { $0.id == "codex" && $0.on } && codexNeedsTrust()
+        return s
     }
 }
 
@@ -1045,7 +1331,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var brightUntil = Date.distantPast   // after an alert, don't dim again right away
     private var didFinishLaunching = false
     private var launchedForAlert = false         // started only to show an alert: don't turn Cocaine on
-    private var settingAI = false
+    private var repeatTimer: Timer?
+    private let speech = AVSpeechSynthesizer()
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
 
@@ -1058,7 +1345,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.toggleCocaine = { [weak self] in self?.toggleCocaine() }
         model.preview = { [weak self] in self?.preview() }
         model.setLogin = { [weak self] in self?.setLogin($0) }
-        model.setAIAlerts = { [weak self] in self?.setAIAlerts($0) }
+        model.setAI = { [weak self] in self?.setAI($0, $1) }
+        model.pauseAlerts = { [weak self] in self?.pauseAlerts(until: $0) }
+        model.testAlert = { [weak self] in
+            self?.hidePanel()
+            self?.alert(Notice(from: "Cocaine", message: L("This is a test"), project: nil), away: true)
+        }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
@@ -1094,30 +1386,75 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `cocaine://alert?from=Claude%20Code&event=done|input` (or `&message=…`) from an AI agent's hook or any script.
+    /// `cocaine://alert?from=Claude%20Code&event=done|input&project=<folder>` (or `&message=…`) from an AI agent's
+    /// hook or any script.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "cocaine" && url.host == "alert" {
             if !didFinishLaunching { launchedForAlert = true }
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-            let message = value("message") ?? (value("event") == "input" ? L("needs your input") : L("has finished"))
-            alert(from: value("from") ?? "Cocaine", message: message, away: value("test") == "away" ? true : nil)
+            func value(_ name: String) -> String? { items.first { $0.name == name }?.value.flatMap { $0.isEmpty ? nil : $0 } }
+            let input = value("event") == "input"
+            if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) { continue }   // not wanted
+            let message = value("message") ?? (input ? L("needs your input") : L("has finished"))
+            let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
+            alert(Notice(from: value("from") ?? "Cocaine", message: message, project: project),
+                  away: value("test") == "away" ? true : nil)
         }
     }
 
-    /// Away from the Mac (idle 20 s, or screens dimmed): wake the screens, restore brightness, flash them with the
-    /// message and play a sound. At the Mac: just refill the baggie in the menu bar.
-    private func alert(from: String, message: String, away forced: Bool? = nil) {
+    struct Notice { let from: String, message: String, project: String? }
+
+    /// Away from the Mac (idle 20 s, or screens dimmed), or always if the user wants: wake the screens, restore the
+    /// brightness, flash them with the message, play the sound, read it aloud. At the Mac: just refill the baggie.
+    private func alert(_ a: Notice, away forced: Bool? = nil, repeated: Bool = false) {
+        if let until = settings.alertsPausedUntil, forced == nil {
+            log.notice("alert from \(a.from, privacy: .public) muted until \(until, privacy: .public)")
+            return
+        }
         let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
-        log.notice("alert from \(from, privacy: .public) (away: \(away, privacy: .public))")
+        log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
+        if !repeated {
+            model.lastAlert = [a.from, a.project, PanelView.timeString(Date())].compactMap { $0 }.joined(separator: " · ")
+        }
         pulseIcon()
-        guard away else { return }
-        var activity: IOPMAssertionID = 0                // wakes a sleeping display
-        IOPMAssertionDeclareUserActivity("Cocaine alert" as CFString, kIOPMUserActiveLocal, &activity)
-        restore()
-        brightUntil = Date().addingTimeInterval(max(settings.delay, 60))
-        alerter.show(title: from, message: message)
-        NSSound(named: "Glass")?.play()
+        guard away || settings.alertWhenPresent else { return }
+        if settings.alertFlash {
+            var activity: IOPMAssertionID = 0            // wakes a sleeping display
+            IOPMAssertionDeclareUserActivity("Cocaine alert" as CFString, kIOPMUserActiveLocal, &activity)
+            restore()
+            brightUntil = Date().addingTimeInterval(max(settings.delay, 60))
+            alerter.show(title: a.from, message: a.message, detail: a.project)
+        }
+        if !settings.alertSound.isEmpty { NSSound(named: settings.alertSound)?.play() }
+        if settings.alertSpeak { speak([a.from, a.message, a.project].compactMap { $0 }.joined(separator: ", ")) }
+        if away && settings.alertRepeat && !repeated { repeatUntilBack(a) }
+    }
+
+    /// Every 5 minutes, up to 6 times, as long as nobody has touched the Mac since.
+    private func repeatUntilBack(_ a: Notice) {
+        repeatTimer?.invalidate()
+        var count = 0
+        let t = Timer(timeInterval: 300, repeats: true) { [weak self] t in
+            count += 1
+            guard let self, count <= 6, System.idleSeconds >= 290, self.settings.alertRepeat else { t.invalidate(); return }
+            self.alert(a, away: true, repeated: true)
+        }
+        RunLoop.main.add(t, forMode: .common)
+        repeatTimer = t
+    }
+
+    private func speak(_ text: String) {
+        let u = AVSpeechUtterance(string: text)
+        let lang = ["it": "it-IT", "zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "es": "es-ES", "fr": "fr-FR", "de": "de-DE",
+                    "ja": "ja-JP"][Language.chosen ?? Language.system] ?? "en-US"
+        u.voice = AVSpeechSynthesisVoice(language: lang)
+        speech.speak(u)
+    }
+
+    private func pauseAlerts(until: Date?) {
+        settings.alertsPausedUntil = until
+        model.alertsPausedUntil = settings.alertsPausedUntil
+        if until != nil { repeatTimer?.invalidate() }
     }
 
     /// The fill animation again, as a small "something happened" in the menu bar.
@@ -1220,23 +1557,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
-                if !self.settingAI && self.model.ai != ai { self.model.ai = ai }
+                if !self.model.settingAI && self.model.ai != ai { self.model.ai = ai }
+                let paused = self.settings.alertsPausedUntil   // a pause ends by itself
+                if self.model.alertsPausedUntil != paused { self.model.alertsPausedUntil = paused }
             }
         }
     }
 
-    /// Adds or removes the Claude Code / Codex hooks; the switch flips at once, like the Cocaine one.
-    private func setAIAlerts(_ enable: Bool) {
-        guard !settingAI else { return }
-        settingAI = true
-        model.ai.on = enable
+    /// Connects or disconnects one AI tool (adds or removes its hooks); its tick flips at once.
+    private func setAI(_ id: String, _ enable: Bool) {
+        guard !model.settingAI, let tool = AIHooks.tool(id) else { return }
+        model.settingAI = true
+        if let i = model.ai.tools.firstIndex(where: { $0.id == id }) { model.ai.tools[i].on = enable }
         DispatchQueue.global().async {
-            let failed = AIHooks.set(enable)
+            let failed = AIHooks.set(enable, only: [tool])
             let ai = AIHooks.status()
             DispatchQueue.main.async {
-                self.settingAI = false
+                self.model.settingAI = false
                 self.model.ai = ai
-                log.notice("AI alerts \(enable ? "on" : "off", privacy: .public), failed: \(failed.count, privacy: .public)")
+                log.notice("AI alerts for \(id, privacy: .public) \(enable ? "on" : "off", privacy: .public), failed: \(failed.count, privacy: .public)")
                 guard !failed.isEmpty else { return }
                 self.hidePanel()
                 NSApp.activate()
@@ -1496,18 +1835,20 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule"
     exit(Authorization.remove() ? 0 : 1)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
-    // `on`, `off` or `status` for the AI alerts hooks (the Homebrew uninstall runs `off`); `--home <dir>` for tests.
-    if let i = CommandLine.arguments.firstIndex(of: "--home"), i + 1 < CommandLine.arguments.count {
-        AIHooks.home = CommandLine.arguments[i + 1]
-    }
+    // `on|off|status [tool ids…] [--home <dir>]` for the AI alerts hooks: every tool on this Mac unless ids are given.
+    // The Homebrew uninstall runs `off`; --home works on a copy, for tests.
+    var args = Array(CommandLine.arguments.dropFirst(3))
+    if let i = args.firstIndex(of: "--home"), i + 1 < args.count { AIHooks.home = args[i + 1]; args.removeSubrange(i...i + 1) }
     switch CommandLine.arguments[2] {
     case "on", "off":
-        let failed = AIHooks.set(CommandLine.arguments[2] == "on")
+        let tools = args.isEmpty ? AIHooks.present : args.compactMap(AIHooks.tool)
+        let failed = AIHooks.set(CommandLine.arguments[2] == "on", only: tools)
         failed.forEach { print("could not update \($0)") }
         exit(failed.isEmpty ? 0 : 1)
     default:
         let s = AIHooks.status()
-        print("available: \(s.available)  on: \(s.on)  codex needs trust: \(s.codexNeedsTrust)")
+        for t in s.tools { print("\(t.id): \(t.installed ? (t.on ? "on" : "off") : "not installed")") }
+        print("codex needs trust: \(s.codexNeedsTrust)")
         exit(0)
     }
 }
@@ -1522,9 +1863,12 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     model.fillLevel = model.on ? 1 : 0
     model.needsAuth = CommandLine.arguments.contains("--needs-auth")
     model.holdMissing = CommandLine.arguments.contains("--hold-missing")
-    model.ai = AIHooks.Status(available: !CommandLine.arguments.contains("--no-ai"),
-                              on: CommandLine.arguments.contains("--ai-on"),
-                              codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
+    // --ai-on connects the first two tools, --codex-trust shows the Codex reminder, --no-ai hides the row.
+    model.ai = AIHooks.Status(tools: AIHooks.tools.enumerated().map { i, t in
+        AIHooks.Entry(id: t.id, name: t.name, installed: !CommandLine.arguments.contains("--no-ai") && i < 3,
+                      on: CommandLine.arguments.contains("--ai-on") && i < 2)
+    }, codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
+    if CommandLine.arguments.contains("--paused") { model.alertsPausedUntil = Date().addingTimeInterval(3600) }
     let host = NSHostingView(rootView: PanelView(m: model))
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)

@@ -48,26 +48,52 @@ Either way, that authorization installs a sudo rule that allows exactly `pmset -
 
 ## Alerts when an AI finishes
 
-Leave the Mac working with Cocaine on, and it can call you back when an AI agent finishes or needs you. When you're
-away, it wakes the screens, restores the brightness, flashes them and shows who's calling. When you're at the Mac,
+Leave the Mac working, and Cocaine calls you back when an AI agent finishes or needs you. When you're away, it wakes
+the screens, restores the brightness, flashes them and shows who's calling and in which project. When you're at the Mac,
 the baggie in the menu bar just refills.
 
-**Claude Code and Codex:** turn on **AI alerts** in the panel. Cocaine adds its hooks to `~/.claude/settings.json` and
-`~/.codex/hooks.json` (only for the ones you have) and leaves everything else in those files as it was. Turning the
-switch off removes them, and so does `brew uninstall`. Claude Code calls when it finishes and when it needs a permission
-or an answer; Codex when it finishes and when it asks for approval. The switch only shows on Macs with Claude Code or Codex.
+Pick your AIs in the panel under **AI alerts**. The same menu sets when to call (it finishes, it needs you) and how:
+screen flash, sound, reading the alert aloud, also while you're at the Mac, repeating every 5 minutes until you're back.
+There's also a pause (an hour, or until tomorrow) and a test alert.
 
-Codex runs a new hook only after you trust it once: it asks when it starts in Terminal, or use Settings → Hooks in the
-ChatGPT app. Until then the panel reminds you.
+| AI | Finishes | Needs you | Cocaine's hook goes in |
+|---|---|---|---|
+| Claude Code | ✓ | ✓ permission or question | `~/.claude/settings.json` |
+| Codex (CLI and ChatGPT app) | ✓ | ✓ approval | `~/.codex/hooks.json` |
+| Cursor | ✓ | – | `~/.cursor/hooks.json` |
+| GitHub Copilot (CLI and VS Code) | ✓ | ✓ in the CLI | `~/.copilot/hooks/cocaine.json` |
+| Gemini CLI | ✓ | ✓ tool permission | `~/.gemini/settings.json` |
+| Windsurf | ✓ after each reply | – | `~/.codeium/windsurf/hooks.json` |
+| Qwen Code | ✓ | ✓ permission | `~/.qwen/settings.json` |
+| OpenCode | ✓ | ✓ permission or question | `~/.config/opencode/plugins/cocaine.js` |
+
+Only Cocaine's own hooks are added; everything else in those files stays as it was. Unticking an AI removes them, and
+so does `brew uninstall`. Codex runs a new hook only after you trust it once (it asks when it starts in Terminal, or use
+Settings → Hooks in the ChatGPT app); the panel reminds you until you do. Cursor also runs Claude Code's hooks, so
+Cocaine's Claude Code hook stays quiet inside Cursor and you never get two alerts.
 
 **Anything else** can ring it too:
 
 ```
-open -g "cocaine://alert?from=My%20script&event=done"     # event=done or event=input, or message=anything
+open -g "cocaine://alert?from=My%20script&event=done"     # event=done or input; project=name; or message=anything
 ```
 
-Cocaine's hooks run `pgrep -qx Cocaine && open -g '…'; true`, so a closed Cocaine stays closed: alerts only go out while
-the app is running.
+- **Other AI agents** with hooks or plugins that can run that command: Aider (`notifications-command` in
+  `~/.aider.conf.yml`), Cline (`~/Documents/Cline/Hooks/TaskComplete`), Factory Droid (`~/.factory/hooks.json`), Kiro,
+  Amp, Goose, JetBrains Junie (not on its `PermissionRequest` hook: one that exits without a decision approves the action).
+- **Builds and terminals:** Xcode (Settings → Behaviors → Run script), any long command (`make; open -g …`), kitty's
+  `notify_on_cmd_finish`, iTerm2 Triggers, tmux `alert-silence`.
+- **CI and git:** `gh run watch --exit-status; open -g …`, git hooks such as `post-merge`.
+- **Automation apps:** Shortcuts ("Open URLs"), Keyboard Maestro, Hammerspoon, BetterTouchTool, launchd `WatchPaths`,
+  Mail rules.
+
+Cocaine's hooks start with `pgrep -qx Cocaine`, so a closed Cocaine stays closed: alerts only go out while the app is
+running.
+
+## Feedback and help
+
+The ✉︎ next to the version in the panel opens an email to the author, with your Cocaine and macOS versions already filled
+in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattiakart/cocaine/issues).
 
 ## Good to know
 
@@ -80,7 +106,7 @@ the app is running.
 With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app, its sudo rule and the AI alerts
 hooks, without asking. (`--zap` also deletes the settings.)
 
-Without Homebrew: turn off AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
+Without Homebrew: untick your AIs under AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 
 ```
 sudo rm /etc/sudoers.d/cocaine
