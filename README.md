@@ -52,7 +52,7 @@ Leave the Mac working, and Cocaine calls you back when an AI agent finishes or n
 the screens, restores the brightness, flashes them and shows who's calling and in which project. When you're at the Mac,
 the baggie in the menu bar just refills.
 
-Pick your AIs in the panel under **AI alerts**. The same menu sets when to call (it finishes, it needs you) and how:
+Open **AI alerts** in the panel and tick your AIs. The same section sets when to call (it finishes, it needs you) and how:
 screen flash, sound, reading the alert aloud, also while you're at the Mac, repeating every 5 minutes until you're back.
 There's also a pause (an hour, or until tomorrow) and a test alert.
 

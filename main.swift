@@ -509,8 +509,11 @@ private final class PanelModel: ObservableObject {
     @Published var pouring = false
     @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
     @Published var settingAI = false
+    @Published var aiExpanded = UserDefaults.standard.bool(forKey: "aiExpanded") {
+        didSet { if persistLanguage { UserDefaults.standard.set(aiExpanded, forKey: "aiExpanded") } }
+    }
     @Published var alertsPausedUntil: Date?
-    @Published var lastAlert: String?      // "Claude Code · Cocaine · 17:34"
+    @Published var lastAlert: (from: String, project: String?, at: Date)?   // the section's footer: "17:34 · Claude Code"
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
     @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
     @Published var alertFlash: Bool { didSet { settings.alertFlash = alertFlash } }
@@ -564,6 +567,71 @@ private final class PanelModel: ObservableObject {
     }
 }
 
+/// Lays its children out like words in a paragraph: left to right, onto a new line when the width runs out.
+private struct Flow: Layout {
+    var spacing: CGFloat = 5
+    var lineSpacing: CGFloat = 5
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(subviews, width: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (s, p) in zip(subviews, arrange(subviews, width: bounds.width).points) {
+            s.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (points: [CGPoint], size: CGSize) {
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > width { x = 0; y += line + lineSpacing; line = 0 }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            line = max(line, size.height)
+            widest = max(widest, x - spacing)
+        }
+        return (points, CGSize(width: widest, height: y + line))
+    }
+}
+
+private struct ChipLabel: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 9, weight: .bold))
+            Text(title).lineLimit(1)
+        }
+    }
+}
+
+/// Cocaine's small capsule toggle: tinted with the accent color when on, a faint outline when off.
+private struct ChipStyle: ButtonStyle {
+    var on: Bool
+
+    func makeBody(configuration: Configuration) -> some View { ChipBody(configuration: configuration, on: on) }
+
+    private struct ChipBody: View {
+        let configuration: ButtonStyleConfiguration
+        let on: Bool
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 7).padding(.vertical, 3.5)
+                .foregroundStyle(on ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                .background(Capsule().fill(on ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05)))
+                .overlay(Capsule().strokeBorder(on ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 0.5))
+                .contentShape(Capsule())
+                .opacity(configuration.isPressed ? 0.6 : enabled ? 1 : 0.45)
+        }
+    }
+}
+
 /// Warnings: deep orange on a light panel, light orange on a dark one; both read at over 4.5:1 contrast.
 private let warningColor = Color(nsColor: NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -577,7 +645,9 @@ private struct PanelView: View {
     private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
     static func timeString(_ d: Date) -> String { time.string(from: d) }
 
-    /// What the AI alerts menu button says: paused, nothing connected, or the first AI connected (+ how many more).
+    // MARK: AI alerts section
+
+    /// The closed section's summary: paused, nothing connected, or the first AI connected (+ how many more).
     private var aiSummary: String {
         if let until = m.alertsPausedUntil { return "⏸ " + String(format: L("until %@"), Self.time.string(from: until)) }
         let on = m.ai.connected
@@ -585,41 +655,93 @@ private struct PanelView: View {
         return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
     }
 
-    @ViewBuilder private var aiMenu: some View {
-        if let last = m.lastAlert { Text(String(format: L("Last: %@"), last)) }
-        Section(L("Connect")) {
-            ForEach(m.ai.tools) { t in
-                Toggle(t.installed ? t.name : "\(t.name) (\(L("not installed")))",
-                       isOn: Binding(get: { t.on }, set: { m.setAI(t.id, $0) }))
-                    .disabled(!t.installed || m.settingAI)
-            }
+    /// One line of chips with a short caption in front, wrapping onto more lines only when it must.
+    private func chipRow<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                .frame(width: 40, alignment: .leading).padding(.top, 4)
+            Flow(spacing: 4, lineSpacing: 5) { content() }
         }
-        Section(L("Alert me when it")) {
-            Toggle(L("finishes"), isOn: $m.alertDone)
-            Toggle(L("needs me"), isOn: $m.alertInput)
-        }
-        Section(L("How")) {
-            Toggle(L("Flash the screen"), isOn: $m.alertFlash)
+    }
+
+    private func chip(_ title: String, _ icon: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { ChipLabel(title: title, icon: icon) }
+            .buttonStyle(ChipStyle(on: on))
+            .help(help)
+            .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var soundChip: some View {
+        Menu {
             Picker(L("Sound"), selection: $m.alertSound) {
                 Text(L("No sound")).tag("")
                 ForEach(Settings.sounds, id: \.self) { Text($0).tag($0) }
             }
-            Toggle(L("Read it aloud"), isOn: $m.alertSpeak)
-            Toggle(L("Even when I'm at the Mac"), isOn: $m.alertWhenPresent)
-            Toggle(L("Repeat every 5 min until I'm back"), isOn: $m.alertRepeat)
+            .pickerStyle(.inline).labelsHidden()
+        } label: {
+            ChipLabel(title: m.alertSound.isEmpty ? L("Sound") : m.alertSound,
+                      icon: m.alertSound.isEmpty ? "speaker.slash.fill" : "speaker.wave.2.fill")
         }
-        Divider()
-        if m.alertsPausedUntil != nil {
-            Button(L("Resume alerts")) { m.pauseAlerts(nil) }
+        .menuStyle(.button).menuIndicator(.hidden).buttonStyle(ChipStyle(on: !m.alertSound.isEmpty)).fixedSize()
+        .help(L("Sound"))
+    }
+
+    @ViewBuilder private var pauseChip: some View {
+        if let until = m.alertsPausedUntil {
+            chip(String(format: L("until %@"), Self.time.string(from: until)), "pause.fill", on: true, help: L("Resume alerts")) {
+                m.pauseAlerts(nil)
+            }
         } else {
-            Button(L("Pause for 1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
-            Button(L("Pause until tomorrow")) {
-                let cal = Calendar.current
-                m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+            Menu {
+                Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
+                Button(L("Until tomorrow")) {
+                    let cal = Calendar.current
+                    m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+                }
+            } label: {
+                ChipLabel(title: L("Pause"), icon: "pause")
+            }
+            .menuStyle(.button).menuIndicator(.hidden).buttonStyle(ChipStyle(on: false)).fixedSize()
+            .help(L("Pause"))
+        }
+    }
+
+    /// Which AIs, when, how; pause, test and the last alert. Only the AIs installed on this Mac are shown.
+    private var aiSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            chipRow(L("AI")) {
+                ForEach(m.ai.tools.filter(\.installed)) { t in
+                    chip(t.name, t.on ? "checkmark" : "plus", on: t.on, help: t.name) { m.setAI(t.id, !t.on) }
+                        .disabled(m.settingAI)
+                }
+            }
+            chipRow(L("When")) {
+                chip(L("Finishes"), "flag.checkered", on: m.alertDone, help: L("Finishes")) { m.alertDone.toggle() }
+                chip(L("Needs you"), "hand.raised.fill", on: m.alertInput, help: L("Needs you")) { m.alertInput.toggle() }
+            }
+            chipRow(L("How")) {
+                chip(L("Flash"), "bolt.fill", on: m.alertFlash, help: L("Flash the screen")) { m.alertFlash.toggle() }
+                soundChip
+                chip(L("Voice"), "waveform", on: m.alertSpeak, help: L("Read it aloud")) { m.alertSpeak.toggle() }
+                chip(L("Also at the Mac"), "laptopcomputer", on: m.alertWhenPresent, help: L("Even when I'm at the Mac")) {
+                    m.alertWhenPresent.toggle()
+                }
+                chip(L("Repeat"), "repeat", on: m.alertRepeat, help: L("Repeat every 5 min until I'm back")) { m.alertRepeat.toggle() }
+            }
+            HStack(spacing: 6) {
+                pauseChip
+                if let last = m.lastAlert {               // who called last, and when; the project in the tooltip
+                    Text("\(Self.time.string(from: last.at)) · \(last.from)").font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(String(format: L("Last: %@"), [last.from, last.project, Self.time.string(from: last.at)]
+                            .compactMap { $0 }.joined(separator: " · ")))
+                }
+                Spacer(minLength: 4)
+                Button(L("Test")) { m.testAlert() }.controlSize(.small).help(L("Send a test alert"))
+                Button { NSWorkspace.shared.open(Feedback.alertsGuide) } label: { Image(systemName: "questionmark.circle") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Other apps and scripts…"))
             }
         }
-        Button(L("Send a test alert")) { m.testAlert() }
-        Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
     }
 
     private var status: String {
@@ -683,21 +805,27 @@ private struct PanelView: View {
             Divider()
 
             if m.ai.available {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(L("AI alerts")).lineLimit(1)
-                        Spacer(minLength: 6)
-                        Menu { aiMenu } label: { Text(aiSummary) }
-                            .menuStyle(.borderlessButton)
-                            .fixedSize()
-                            .help(L("Flashes the screen when an AI finishes or needs you"))
+                VStack(alignment: .leading, spacing: 8) {
+                    Button { m.aiExpanded.toggle() } label: {  // the whole row opens and closes the section
+                        HStack(spacing: 6) {
+                            Text(L("AI alerts")).lineLimit(1)
+                            Spacer(minLength: 6)
+                            if !m.aiExpanded { Text(aiSummary).foregroundStyle(.secondary).lineLimit(1) }
+                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary).rotationEffect(.degrees(m.aiExpanded ? 90 : 0))
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .help(L("Flashes the screen when an AI finishes or needs you"))
                     if m.ai.codexNeedsTrust {             // Codex runs new hooks only once the user trusts them
                         Label(L("Codex: approve them once in Settings → Hooks"), systemImage: "exclamationmark.triangle.fill")
                             .font(.caption.weight(.medium)).foregroundStyle(warningColor)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    if m.aiExpanded { aiSection }
                 }
+                if m.aiExpanded { Divider() }
             }
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
@@ -1414,7 +1542,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
         if !repeated {
-            model.lastAlert = [a.from, a.project, PanelView.timeString(Date())].compactMap { $0 }.joined(separator: " · ")
+            model.lastAlert = (a.from, a.project, Date())
         }
         pulseIcon()
         guard away || settings.alertWhenPresent else { return }
@@ -1869,9 +1997,12 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
                       on: CommandLine.arguments.contains("--ai-on") && i < 2)
     }, codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
     if CommandLine.arguments.contains("--paused") { model.alertsPausedUntil = Date().addingTimeInterval(3600) }
-    let host = NSHostingView(rootView: PanelView(m: model))
+    model.aiExpanded = CommandLine.arguments.contains("--ai-open")
+    if CommandLine.arguments.contains("--last") { model.lastAlert = ("Claude Code", "Cocaine", Date()) }
+    let host = NSHostingView(rootView: PanelView(m: model).background(Color(nsColor: .windowBackgroundColor)))
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+    if CommandLine.arguments.contains("--dark") { window.appearance = NSAppearance(named: .darkAqua) }
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
