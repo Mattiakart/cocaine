@@ -1,0 +1,20 @@
+/* Cocaine — zh-Hant */
+
+"Your Mac stays awake" = "Mac 保持喚醒";
+"Your Mac sleeps as usual" = "Mac 照常睡眠";
+"Keeping the screen on…" = "正在保持螢幕常亮…";
+"Admin password needed" = "需要管理者密碼";
+"Dim the screen when idle" = "閒置時降低亮度";
+"Goes back to normal as soon as you touch anything" = "觸碰鍵盤或觸控式軌跡板即恢復";
+"Preview" = "預覽";
+"Shows the minimum brightness for 3 seconds" = "顯示最低亮度 3 秒";
+"After" = "閒置";
+"min" = "分鐘後";
+"Open at login" = "登入時開啟";
+"Quit" = "結束";
+"Turns Cocaine off and quits" = "關閉 Cocaine 並結束";
+"Cocaine is on" = "Cocaine 已開啟";
+"Cocaine is off" = "Cocaine 已關閉";
+"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine 需要管理者密碼（僅需一次），才能防止 Mac 進入睡眠。";
+"Can't change Open at Login" = "無法更改「登入時開啟」";
+"You can add Cocaine manually in System Settings → General → Login Items." = "你可以在「系統設定」→「一般」→「登入項目」中手動加入 Cocaine。";

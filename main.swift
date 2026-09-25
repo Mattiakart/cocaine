@@ -19,6 +19,9 @@ private let log = Logger(subsystem: "local.cocaine.toggle", category: "app")
 private let scriptPath = Bundle.main.path(forResource: "cocaine", ofType: nil) ?? "/nonexistent/cocaine"
 private let anyInput = CGEventType(rawValue: ~0)!   // kCGAnyInputEventType
 
+/// UI text in the Mac's language (Localization/*.lproj); English when that language isn't available.
+private func L(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+
 @discardableResult
 private func run(_ path: String, _ args: [String]) -> Int32 {
     let p = Process()
@@ -77,7 +80,7 @@ private enum Authorization {
 
     static func appleScript(for command: String, admin: Bool) -> String {
         let quoted = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let prompt = "Cocaine ha bisogno della password di amministratore, una sola volta, per poter impedire lo stop del Mac."
+        let prompt = L("Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping.")
         return "do shell script \"\(quoted)\"" + (admin ? " with prompt \"\(prompt)\" with administrator privileges" : "")
     }
 
@@ -389,9 +392,9 @@ private struct PanelView: View {
     @ObservedObject var m: PanelModel
 
     private var status: String {
-        if m.needsAuth { return "Serve la password admin: tocca l'interruttore" }
-        if m.on && m.holdMissing { return "Ripristino lo schermo acceso…" }
-        return m.on ? "Il Mac resta sveglio" : "Il Mac va in stop come sempre"
+        if m.needsAuth { return L("Admin password needed") }
+        if m.on && m.holdMissing { return L("Keeping the screen on…") }
+        return m.on ? L("Your Mac stays awake") : L("Your Mac sleeps as usual")
     }
 
     var body: some View {
@@ -412,26 +415,26 @@ private struct PanelView: View {
                 Divider()
 
                 HStack {
-                    Text("Abbassa la luminosità se inattivo").lineLimit(1)
+                    Text(L("Dim the screen when idle")).lineLimit(1)
                     Spacer(minLength: 6)
-                    Toggle("Abbassa la luminosità", isOn: $m.dimEnabled).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                    Toggle(L("Dim the screen when idle"), isOn: $m.dimEnabled).toggleStyle(.switch).labelsHidden().controlSize(.small)
                 }
-                .help("Torna com'era appena tocchi qualcosa")
+                .help(L("Goes back to normal as soon as you touch anything"))
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "sun.min").foregroundStyle(.secondary)
                         Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
                         Text("\(Int(m.levelPercent))%").monospacedDigit().frame(width: 32, alignment: .trailing)
-                        Button("Prova") { m.preview() }.controlSize(.small).disabled(m.previewing)
-                            .help("Mostra la luminosità minima per 3 secondi")
+                        Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
+                            .help(L("Shows the minimum brightness for 3 seconds"))
                     }
                     HStack(spacing: 6) {
-                        Text("Dopo").fixedSize()
-                        Picker("Dopo", selection: $m.delayMinutes) {
+                        Text(L("After")).fixedSize()
+                        Picker(L("After"), selection: $m.delayMinutes) {
                             ForEach(Settings.delayChoices, id: \.self) { Text("\($0)").tag($0) }
                         }
                         .pickerStyle(.segmented).labelsHidden().controlSize(.small)
-                        Text("min").fixedSize()
+                        Text(L("min")).fixedSize()
                     }
                 }
                 .disabled(!m.dimEnabled)
@@ -441,11 +444,12 @@ private struct PanelView: View {
             Divider()
 
             HStack {
-                Text("Apri al login")
-                Toggle("Apri al login", isOn: Binding(get: { m.loginEnabled }, set: { m.setLogin($0) }))
+                Text(L("Open at login"))
+                Toggle(L("Open at login"), isOn: Binding(get: { m.loginEnabled }, set: { m.setLogin($0) }))
                     .toggleStyle(.switch).labelsHidden().controlSize(.small)
                 Spacer()
-                Button("Esci") { m.quit() }.controlSize(.small)
+                Button(L("Quit")) { m.quit() }.controlSize(.small)
+                    .help(L("Turns Cocaine off and quits"))
             }
         }
         .padding(14)
@@ -528,7 +532,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastOn: Bool?
     private var lastIdle = 0.0
     private var dimmedFrom: Float?      // brightness before we lowered it; nil when not lowered
-    private var previewFrom: Float?     // same, during "Prova"
+    private var previewFrom: Float?     // same, during "Preview"
     private var supervising = false
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
@@ -565,10 +569,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
     }
 
+    /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
         fadeTimer?.invalidate()
         if let saved = dimmedFrom ?? previewFrom { backlight.set(saved) }
         settings.savedBrightness = nil
+        if System.cocaineOn { engine("off") }
     }
 
     /// Opening Cocaine again (e.g. from Spotlight) shows the panel.
@@ -663,7 +669,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Fills the baggie gradually when Cocaine turns on, empties it when it turns off.
     private func refreshIcon(on: Bool) {
         guard let b = statusItem.button else { return }
-        b.toolTip = on ? "Cocaine è attivo" : "Cocaine è spento"
+        b.toolTip = on ? L("Cocaine is on") : L("Cocaine is off")
         b.setAccessibilityLabel(b.toolTip)
         let target: CGFloat = on ? 1 : 0
         iconAnim?.invalidate()
@@ -808,8 +814,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             hidePanel()
             NSApp.activate()
             let a = NSAlert()
-            a.messageText = "Non riesco a cambiare l'apertura al login"
-            a.informativeText = "\(error.localizedDescription)\n\nPuoi aggiungere Cocaine a mano in Impostazioni di Sistema → Generali → Elementi login."
+            a.messageText = L("Can't change Open at Login")
+            a.informativeText = "\(error.localizedDescription)\n\n" + L("You can add Cocaine manually in System Settings → General → Login Items.")
             a.runModal()
         }
         model.loginEnabled = svc.status == .enabled
@@ -823,6 +829,25 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftes
     // writing the rule to the given file instead of /etc/sudoers.d.
     let cmd = Authorization.installCommand(user: NSUserName(), dest: CommandLine.arguments[2], asRoot: false)!
     exit(run("/usr/bin/osascript", ["-e", Authorization.appleScript(for: cmd, admin: false)]))
+}
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
+    // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
+    _ = NSApplication.shared
+    let model = PanelModel()
+    model.on = true
+    model.fillLevel = 1
+    model.needsAuth = CommandLine.arguments.contains("--needs-auth")
+    model.holdMissing = CommandLine.arguments.contains("--hold-missing")
+    let host = NSHostingView(rootView: PanelView(m: model))
+    let size = host.fittingSize
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+    host.cacheDisplay(in: host.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    print(Bundle.main.preferredLocalizations.first ?? "?")
+    exit(0)
 }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-demo-gif" {
     Assets.renderDemoGIF(to: URL(fileURLWithPath: CommandLine.arguments[2]))

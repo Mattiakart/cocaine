@@ -1,0 +1,20 @@
+/* Cocaine — it */
+
+"Your Mac stays awake" = "Il Mac resta sveglio";
+"Your Mac sleeps as usual" = "Il Mac va in stop come sempre";
+"Keeping the screen on…" = "Riaccendo lo schermo…";
+"Admin password needed" = "Serve la password admin";
+"Dim the screen when idle" = "Abbassa la luminosità se inattivo";
+"Goes back to normal as soon as you touch anything" = "Torna com'era appena tocchi qualcosa";
+"Preview" = "Prova";
+"Shows the minimum brightness for 3 seconds" = "Mostra la luminosità minima per 3 secondi";
+"After" = "Dopo";
+"min" = "min";
+"Open at login" = "Apri al login";
+"Quit" = "Esci";
+"Turns Cocaine off and quits" = "Disattiva Cocaine ed esce";
+"Cocaine is on" = "Cocaine è attivo";
+"Cocaine is off" = "Cocaine è spento";
+"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine ha bisogno della password di amministratore, una sola volta, per poter impedire lo stop del Mac.";
+"Can't change Open at Login" = "Non riesco a cambiare l'apertura al login";
+"You can add Cocaine manually in System Settings → General → Login Items." = "Puoi aggiungere Cocaine a mano in Impostazioni di Sistema → Generali → Elementi login.";

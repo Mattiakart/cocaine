@@ -1,0 +1,20 @@
+/* Cocaine — ja */
+
+"Your Mac stays awake" = "Mac はスリープしません";
+"Your Mac sleeps as usual" = "Mac は通常どおりスリープします";
+"Keeping the screen on…" = "画面を点灯したままにしています…";
+"Admin password needed" = "管理者パスワードが必要です";
+"Dim the screen when idle" = "非アクティブ時に画面を暗くする";
+"Goes back to normal as soon as you touch anything" = "何かに触れるとすぐに元に戻ります";
+"Preview" = "テスト";
+"Shows the minimum brightness for 3 seconds" = "最低輝度を3秒間表示します";
+"After" = "待ち時間";
+"min" = "分";
+"Open at login" = "ログイン時に開く";
+"Quit" = "終了";
+"Turns Cocaine off and quits" = "Cocaine をオフにして終了します";
+"Cocaine is on" = "Cocaine はオンです";
+"Cocaine is off" = "Cocaine はオフです";
+"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Mac のスリープを防ぐため、Cocaine は管理者パスワードを一度だけ必要とします。";
+"Can't change Open at Login" = "「ログイン時に開く」を変更できません";
+"You can add Cocaine manually in System Settings → General → Login Items." = "「システム設定」→「一般」→「ログイン項目」で Cocaine を手動で追加できます。";

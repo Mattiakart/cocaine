@@ -15,13 +15,14 @@ A tiny, free, open-source menu bar app for macOS.</p>
   The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
 - Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
-> The interface is currently in Italian. Translations are welcome.
+- **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
+  It follows your Mac's language, and uses English otherwise. More translations are welcome.
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Cocaine's menu bar panel"></p>
 
 ## Install
 
-Download **Cocaine-1.0.dmg** from [Releases](../../releases/latest), or use Homebrew:
+Download the latest **Cocaine .dmg** from [Releases](../../releases/latest), or use Homebrew:
 
 ```
 brew install --cask mattiakart/tap/cocaine
@@ -38,7 +39,7 @@ brew install --cask mattiakart/tap/cocaine
 
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.
 - On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
-- Opening the app turns Cocaine on. **Quit** only removes the icon.
+- Opening the app turns Cocaine on, and quitting it turns Cocaine off. That covers **Quit**, ⌘Q, logging out and shutting down.
 
 ## Uninstall
 
@@ -48,7 +49,8 @@ Turn Cocaine off, quit it, move it to the Trash, then run this in Terminal:
 sudo rm /etc/sudoers.d/cocaine
 ```
 
-If you installed with Homebrew, `brew uninstall --cask cocaine` turns the override off and removes the rule for you.
+If you installed with Homebrew, `brew uninstall --cask --zap cocaine` does all of this for you. Without `--zap`,
+the sudo rule and the settings stay in place, so that `brew upgrade` doesn't ask for your password every time.
 
 ## How it works
 

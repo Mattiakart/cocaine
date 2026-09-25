@@ -1,0 +1,20 @@
+/* Cocaine — en */
+
+"Your Mac stays awake" = "Your Mac stays awake";
+"Your Mac sleeps as usual" = "Your Mac sleeps as usual";
+"Keeping the screen on…" = "Keeping the screen on…";
+"Admin password needed" = "Admin password needed";
+"Dim the screen when idle" = "Dim the screen when idle";
+"Goes back to normal as soon as you touch anything" = "Goes back to normal as soon as you touch anything";
+"Preview" = "Preview";
+"Shows the minimum brightness for 3 seconds" = "Shows the minimum brightness for 3 seconds";
+"After" = "After";
+"min" = "min";
+"Open at login" = "Open at login";
+"Quit" = "Quit";
+"Turns Cocaine off and quits" = "Turns Cocaine off and quits";
+"Cocaine is on" = "Cocaine is on";
+"Cocaine is off" = "Cocaine is off";
+"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping.";
+"Can't change Open at Login" = "Can't change Open at Login";
+"You can add Cocaine manually in System Settings → General → Login Items." = "You can add Cocaine manually in System Settings → General → Login Items.";

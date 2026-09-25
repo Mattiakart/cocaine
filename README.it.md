@@ -12,6 +12,8 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
 - **Bustina piena = attivo.** Il Mac non va in stop, nemmeno col coperchio chiuso. Funziona anche su Apple Silicon,
   senza componenti aggiuntivi da installare.
 - **Bustina vuota = spento.** Il Mac si comporta normalmente.
+- **Parla la tua lingua:** italiano, inglese, cinese (semplificato e tradizionale), spagnolo, francese, tedesco e giapponese.
+  Segue la lingua del Mac, altrimenti usa l'inglese.
 - **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di
   inattività. Lo schermo non si spegne mai del tutto, e torna com'era appena tocchi tastiera o trackpad.
 
@@ -21,7 +23,7 @@ Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel, 
 
 ## Download
 
-Scarica **Cocaine-1.0.dmg** dalla pagina [Releases](../../releases/latest), oppure con Homebrew:
+Scarica l'ultimo **.dmg di Cocaine** dalla pagina [Releases](../../releases/latest), oppure con Homebrew:
 
 ```
 brew install --cask mattiakart/tap/cocaine
@@ -39,7 +41,7 @@ brew install --cask mattiakart/tap/cocaine
 
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.
 - A batteria e col coperchio chiuso il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
-- Quando apri l'app, Cocaine si attiva. "Esci" chiude solo l'icona.
+- Quando apri l'app, Cocaine si attiva, e quando la chiudi si disattiva. Vale per **Esci**, ⌘Q, la disconnessione e lo spegnimento.
 
 ## Disinstallazione
 
@@ -48,6 +50,9 @@ Spegni Cocaine, esci dall'app, spostala nel Cestino, poi nel Terminale:
 ```
 sudo rm /etc/sudoers.d/cocaine
 ```
+
+Se l'hai installata con Homebrew: `brew uninstall --cask --zap cocaine` fa tutto da solo. Senza `--zap`
+restano la regola sudo e le impostazioni, così `brew upgrade` non ti chiede la password a ogni aggiornamento.
 
 ## Come funziona
 

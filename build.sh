@@ -22,6 +22,7 @@ lipo -create "$BUILD/arm64/Cocaine" "$BUILD/x86_64/Cocaine" -output "$APP/Conten
 iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 install -m 0755 cocaine.zsh "$APP/Contents/Resources/cocaine"
 cp Info.plist "$APP/Contents/Info.plist"
+cp -R Localization/*.lproj "$APP/Contents/Resources/"   # UI text; macOS picks the Mac's language, else English
 codesign --force --sign - "$APP"          # ad-hoc: free, but other Macs need "Open Anyway" the first time
 
 case "${1:-}" in
@@ -33,6 +34,7 @@ case "${1:-}" in
     cp -R "$APP" "$STAGE/"
     ln -s /Applications "$STAGE/Applicazioni"
     cp Leggimi.txt "$STAGE/Leggimi.txt"
+    cp ReadMe.txt "$STAGE/Read Me.txt"
     rm -f "dist/Cocaine-$VERSION.dmg"
     hdiutil create -quiet -volname "Cocaine $VERSION" -srcfolder "$STAGE" -format UDZO "dist/Cocaine-$VERSION.dmg"
     echo "made dist/Cocaine-$VERSION.dmg" ;;

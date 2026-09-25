@@ -1,6 +1,7 @@
-COCAINE 1.0
+COCAINE 1.1
 Tiene sveglio il Mac, anche col coperchio chiuso. Si accende e si spegne dalla bustina nella barra dei menu.
 Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel.
+Lingue: italiano, inglese, cinese, spagnolo, francese, tedesco, giapponese. Segue la lingua del Mac, altrimenti usa l'inglese.
 
 INSTALLAZIONE
 1. Trascina Cocaine nella cartella Applicazioni.
@@ -22,9 +23,9 @@ ATTENZIONE
 - Mentre Cocaine è attivo il Mac non si blocca da solo, anche col coperchio chiuso.
   Bloccalo con Control-Command-Q prima di allontanarti.
 - A coperchio chiuso e a batteria il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
-- "Esci" chiude solo l'icona. Prima di uscire, spegni Cocaine se vuoi che il Mac torni a comportarsi normalmente.
+- Quando chiudi l'app (Esci, Cmd-Q, disconnessione o spegnimento) Cocaine si disattiva.
 
 DISINSTALLAZIONE
-1. Spegni Cocaine ed esci dall'app.
+1. Esci da Cocaine (così si disattiva).
 2. Sposta Cocaine nel Cestino.
 3. Nel Terminale: sudo rm /etc/sudoers.d/cocaine
