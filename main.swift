@@ -617,8 +617,13 @@ private struct PanelView: View {
     /// The closed section's summary: paused, nothing connected, or the first AI connected (+ how many more).
     private var aiSummary: String {
         if let until = m.alertsPausedUntil { return "⏸ " + String(format: L("until %@"), Self.time.string(from: until)) }
+        return m.ai.connected.isEmpty ? L("Choose") : connectedSummary
+    }
+
+    /// "Claude Code", or "Claude Code +2": never cut off, however many are connected.
+    private var connectedSummary: String {
         let on = m.ai.connected
-        guard let first = on.first else { return L("Choose") }
+        guard let first = on.first else { return L("None connected") }
         return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
     }
 
@@ -714,9 +719,7 @@ private struct PanelView: View {
     /// Which AIs, when, how, pause, recent alerts: five lines, one of them open.
     private var aiSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            group("ai", "sparkles", L("Connected AIs"),
-                  m.ai.connected.isEmpty ? L("None connected") : m.ai.connected.map(\.name).joined(separator: ", "),
-                  warning: m.ai.codexNeedsTrust) {
+            group("ai", "sparkles", L("Connected AIs"), connectedSummary, warning: m.ai.codexNeedsTrust) {
                 ForEach(m.ai.tools.filter(\.installed)) { t in
                     let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
                     option(t.name, untrusted ? L("Approve once in Settings → Hooks") : toolDetail(t.id), warning: untrusted) {
