@@ -52,11 +52,11 @@ Leave the Mac working, and Cocaine calls you back when an AI agent finishes or n
 the screens, restores the brightness, flashes them and shows who's calling and in which project. When you're at the Mac,
 the baggie in the menu bar just refills.
 
-Open **AI alerts** in the panel. Its five groups each show a one-line summary and open one at a time:
-**Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at
-the Mac), **How** (flash, sound, voice, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
-you're away, and a test), **Pause** (30 minutes, an hour, or until tomorrow) and **Recent alerts** (the last five,
-with the project).
+Open **AI alerts** in the panel. It works like Control Center: a round button per AI connects or disconnects it, the
+**When** and **How** tiles open their options (it finishes, it needs you, also while you're at the Mac; flash, sound,
+voice, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while you're away), **Pause** silences
+alerts for 30 minutes, an hour or until tomorrow, and **Test** shows one. The latest alerts sit below, apart from the
+settings, with the project each came from.
 
 | AI | Finishes | Needs you | Cocaine's hook goes in |
 |---|---|---|---|

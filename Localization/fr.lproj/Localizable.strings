@@ -73,14 +73,12 @@
 "On screen" = "À l'écran";
 "How long the alert stays" = "Combien de temps l'alerte reste";
 "While you're away, for up to 30 minutes" = "Pendant votre absence, 30 minutes au plus";
-"Try it" = "Essayer";
 "Shows an alert with these settings" = "Affiche une alerte avec ces réglages";
 "Active" = "Actives";
-"Paused until %@" = "En pause jusqu'à %@";
-"No alerts until then" = "Aucune alerte d'ici là";
 "Resume" = "Reprendre";
 "Silences every alert for a while" = "Coupe toutes les alertes un moment";
 "Recent alerts" = "Alertes récentes";
-"None yet" = "Aucune pour l'instant";
 "Alerts you receive will show up here" = "Les alertes reçues s'afficheront ici";
 "Clear" = "Effacer";
+"See how it looks" = "Voir le rendu";
+"Back" = "Retour";

@@ -73,14 +73,12 @@
 "On screen" = "表示時間";
 "How long the alert stays" = "通知が表示される長さ";
 "While you're away, for up to 30 minutes" = "離席中、最大 30 分";
-"Try it" = "試す";
 "Shows an alert with these settings" = "この設定で通知を表示します";
 "Active" = "有効";
-"Paused until %@" = "%@まで一時停止中";
-"No alerts until then" = "それまで通知しません";
 "Resume" = "再開";
 "Silences every alert for a while" = "しばらくすべての通知を止めます";
 "Recent alerts" = "最近の通知";
-"None yet" = "まだありません";
 "Alerts you receive will show up here" = "受け取った通知がここに表示されます";
 "Clear" = "消去";
+"See how it looks" = "表示を確認";
+"Back" = "戻る";

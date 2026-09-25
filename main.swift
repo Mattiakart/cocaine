@@ -258,6 +258,7 @@ private struct AlertRecord: Codable, Identifiable, Equatable {
     let message: String
     let project: String?
     let at: Date
+    var input: Bool? = nil                               // it needed you (nil in 1.7.5's records)
     var id: Date { at }
 }
 
@@ -599,6 +600,60 @@ private final class PanelModel: ObservableObject {
     }
 }
 
+/// Liquid Glass on macOS 26 and later; a frosted material with a hairline edge before.
+private extension View {
+    @ViewBuilder func glass<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+        }
+    }
+}
+
+/// Lets neighbouring glass tiles blend and move together, as in Control Center (macOS 26 and later).
+private struct GlassGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 8) { content }
+        } else {
+            content
+        }
+    }
+}
+
+/// A button that shows just its label (dimmed while pressed): for tiles and round buttons that draw themselves.
+private struct BareButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// Control Center's round toggle: filled with the accent color when on, a faint disc when off.
+private struct RoundIcon: View {
+    let icon: String
+    let on: Bool
+    var size: CGFloat = 28
+    var badge = false
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: size * 0.4, weight: .semibold))
+            .foregroundStyle(on ? Color.white : Color.primary)
+            .frame(width: size, height: size)
+            .background(Circle().fill(on ? Color.accentColor : Color.primary.opacity(0.1)))
+            .overlay(alignment: .topTrailing) {
+                if badge {                               // e.g. Codex still waiting for approval
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(warningColor)
+                        .offset(x: 4, y: -3)
+                }
+            }
+    }
+}
+
 /// Warnings: deep orange on a light panel, light orange on a dark one; both read at over 4.5:1 contrast.
 private let warningColor = Color(nsColor: NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -627,33 +682,50 @@ private struct PanelView: View {
         return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
     }
 
-    /// One group of the AI alerts card: a line with its summary that opens (one group at a time) onto its options.
-    private func group<Content: View>(_ id: String, _ icon: String, _ title: String, _ summary: String, warning: Bool = false,
-                                      @ViewBuilder _ content: () -> Content) -> some View {
-        let open = m.aiGroup == id
-        return VStack(alignment: .leading, spacing: 9) {
-            Button { m.aiGroup = open ? "" : id } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: icon).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Color.accentColor)
-                        .frame(width: 16)
-                    Text(title).font(.system(size: 12.5, weight: .medium)).lineLimit(1).layoutPriority(1)
-                    Spacer(minLength: 6)
-                    if warning {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(warningColor)
-                    }
-                    if !open { Text(summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
-                }
-                .contentShape(Rectangle())
+    // MARK: Control Center–style building blocks
+
+    /// A Control Center module: its content on a rounded Liquid Glass tile.
+    private func module<Content: View>(interactive: Bool = false, @ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glass(RoundedRectangle(cornerRadius: 16, style: .continuous), interactive: interactive)
+    }
+
+    /// A small module's face: a round icon (filled when on), a title and one line of state.
+    private func tileFace(_ icon: String, on: Bool, _ title: String, _ subtitle: String) -> some View {
+        HStack(spacing: 8) {
+            RoundIcon(icon: icon, on: on)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(subtitle).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity)                            // tiles side by side share one height
+        .contentShape(Rectangle())
+    }
+
+    /// A tile that opens its detail, like a Control Center module does.
+    private func detailTile(_ id: String, _ icon: String, on: Bool, _ title: String, _ subtitle: String) -> some View {
+        Button { m.aiGroup = id } label: { module(interactive: true) { tileFace(icon, on: on, title, subtitle) } }
+            .buttonStyle(BareButton())
             .accessibilityLabel(title)
-            .accessibilityValue(summary)
-            if open {
-                VStack(alignment: .leading, spacing: 9) { content() }
-                    .padding(.leading, 23)                      // under the title, past the icon
-            }
+            .accessibilityValue(subtitle)
+    }
+
+    /// Each AI's round button: a glyph that hints at it (no logos) and a short name.
+    private static func toolLook(_ id: String) -> (icon: String, short: String) {
+        switch id {
+        case "claude": return ("asterisk", "Claude")
+        case "codex": return ("chevron.left.forwardslash.chevron.right", "Codex")
+        case "cursor": return ("cursorarrow", "Cursor")
+        case "copilot": return ("airplane", "Copilot")
+        case "gemini": return ("sparkle", "Gemini")
+        case "windsurf": return ("wind", "Windsurf")
+        case "qwen": return ("cloud", "Qwen")
+        default: return ("curlybraces", "OpenCode")
         }
     }
 
@@ -716,10 +788,104 @@ private struct PanelView: View {
     private func durationName(_ s: Double) -> String { s == 0 ? L("Until you're back") : String(format: L("%d s"), Int(s)) }
     private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
 
-    /// Which AIs, when, how, pause, recent alerts: five lines, one of them open.
-    private var aiSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            group("ai", "sparkles", L("Connected AIs"), connectedSummary, warning: m.ai.codexNeedsTrust) {
+    /// The AI alerts modules: which AIs (round buttons), When and How (open their detail), Pause and Test.
+    private var aiOverview: some View {
+        VStack(spacing: 8) {
+            module {
+                VStack(alignment: .leading, spacing: 9) {
+                    Button { m.aiGroup = "ai" } label: {
+                        HStack(spacing: 4) {
+                            Text(L("Connected AIs")).font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("Connected AIs"))
+                    .accessibilityValue(connectedSummary)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), alignment: .leading, spacing: 8) {
+                        ForEach(m.ai.tools.filter(\.installed)) { t in
+                            let look = Self.toolLook(t.id)
+                            Button { m.setAI(t.id, !t.on) } label: {
+                                VStack(spacing: 4) {
+                                    RoundIcon(icon: look.icon, on: t.on, size: 34, badge: t.id == "codex" && m.ai.codexNeedsTrust)
+                                    Text(look.short).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(BareButton())
+                            .disabled(m.settingAI)
+                            .help("\(t.name) — \(toolDetail(t.id))")
+                            .accessibilityLabel(t.name)
+                            .accessibilityAddTraits(t.on ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                detailTile("when", "bell.fill", on: m.alertDone || m.alertInput, L("When"), whenSummary)
+                detailTile("how", "light.max", on: m.alertFlash || !m.alertSound.isEmpty || m.alertSpeak, L("How"), howSummary)
+            }
+            .fixedSize(horizontal: false, vertical: true)          // both tiles as tall as the taller one
+            HStack(spacing: 8) {
+                if let until = m.alertsPausedUntil {
+                    Button { m.pauseAlerts(nil) } label: {
+                        module(interactive: true) {
+                            tileFace("pause.fill", on: true, L("Pause"), String(format: L("until %@"), Self.time.string(from: until)))
+                        }
+                    }
+                    .buttonStyle(BareButton())
+                    .help(L("Resume"))
+                } else {
+                    Menu {
+                        Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }
+                        Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
+                        Button(L("Until tomorrow")) {
+                            let cal = Calendar.current
+                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+                        }
+                    } label: {
+                        module(interactive: true) { tileFace("pause", on: false, L("Pause"), L("Active")) }
+                    }
+                    .menuStyle(.button).buttonStyle(BareButton()).menuIndicator(.hidden)
+                    .help(L("Silences every alert for a while"))
+                }
+                Button { m.testAlert() } label: {
+                    module(interactive: true) { tileFace("play.fill", on: false, L("Test"), L("See how it looks")) }
+                }
+                .buttonStyle(BareButton())
+                .help(L("Shows an alert with these settings"))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// A module opened in place of the others, as in Control Center: a back chevron, then its options.
+    private func detail<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        module {
+            VStack(alignment: .leading, spacing: 10) {
+                Button { m.aiGroup = "" } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                        Text(title).font(.system(size: 13, weight: .semibold))
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("Back"))
+                .help(L("Back"))
+                content()
+            }
+        }
+    }
+
+    @ViewBuilder private var aiDetail: some View {
+        switch m.aiGroup {
+        case "ai":
+            detail(L("Connected AIs")) {
                 ForEach(m.ai.tools.filter(\.installed)) { t in
                     let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
                     option(t.name, untrusted ? L("Approve once in Settings → Hooks") : toolDetail(t.id), warning: untrusted) {
@@ -736,16 +902,16 @@ private struct PanelView: View {
                         .buttonStyle(.link).font(.system(size: 10.5))
                 }
             }
-            Divider().padding(.vertical, 8)
-            group("when", "bell.badge", L("When"), whenSummary) {
+        case "when":
+            detail(L("When")) {
                 option(L("Finishes"), L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
                 option(L("Needs you"), L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
                 option(L("Also at the Mac"), L("Otherwise only when you've been away for 20 seconds")) {
                     toggle(L("Also at the Mac"), $m.alertWhenPresent)
                 }
             }
-            Divider().padding(.vertical, 8)
-            group("how", "rays", L("How"), howSummary) {
+        default:
+            detail(L("How")) {
                 option(L("Flash"), L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
                 option(L("Sound"), L("Plays when the alert arrives")) {
                     choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
@@ -757,53 +923,44 @@ private struct PanelView: View {
                 option(L("Repeat"), L("While you're away, for up to 30 minutes")) {
                     choice(L("Repeat"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
                 }
-                option(L("Try it"), L("Shows an alert with these settings")) {
-                    Button(L("Test")) { m.testAlert() }.controlSize(.small)
+            }
+        }
+    }
+
+    /// Not a setting, so it sits apart: the latest alerts as notifications.
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(L("Recent alerts")).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if !m.history.isEmpty {
+                    Button(L("Clear")) { m.clearHistory() }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
-            Divider().padding(.vertical, 8)
-            group("pause", "pause.circle", L("Pause"),
-                  m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Active")) {
-                if let until = m.alertsPausedUntil {
-                    option(String(format: L("Paused until %@"), Self.time.string(from: until)), L("No alerts until then")) {
-                        Button(L("Resume")) { m.pauseAlerts(nil) }.controlSize(.small)
-                    }
-                } else {
-                    Text(L("Silences every alert for a while")).font(.system(size: 10.5)).foregroundStyle(.secondary)
-                    HStack(spacing: 5) {
-                        Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }
-                        Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
-                        Button(L("Until tomorrow")) {
-                            let cal = Calendar.current
-                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+            .padding(.horizontal, 4)
+            if m.history.isEmpty {
+                Text(L("Alerts you receive will show up here")).font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .padding(.horizontal, 4)
+            } else {
+                ForEach(m.history.prefix(3)) { r in
+                    HStack(spacing: 9) {
+                        Image(systemName: r.input == true ? "hand.raised.fill" : "checkmark")
+                            .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(r.input == true ? Color.orange : Color.green))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(r.from).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+                            Text([r.message, r.project].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
+                        Spacer(minLength: 4)
+                        Text(Self.time.string(from: r.at)).font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    .controlSize(.small)
-                }
-            }
-            Divider().padding(.vertical, 8)
-            group("recent", "clock.arrow.circlepath", L("Recent alerts"),
-                  m.history.first.map { "\(Self.time.string(from: $0.at)) · \($0.from)" } ?? L("None yet")) {
-                if m.history.isEmpty {
-                    Text(L("Alerts you receive will show up here")).font(.system(size: 10.5)).foregroundStyle(.secondary)
-                } else {
-                    ForEach(m.history.prefix(5)) { r in
-                        HStack(alignment: .firstTextBaseline, spacing: 7) {
-                            Text(Self.time.string(from: r.at)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(r.from).font(.system(size: 12)).lineLimit(1)
-                                Text([r.message, r.project].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                            }
-                        }
-                    }
-                    Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(.system(size: 10.5))
+                    .padding(.horizontal, 9).padding(.vertical, 7)
+                    .glass(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
     }
 
     private var status: String {
@@ -813,81 +970,90 @@ private struct PanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text("Cocaine").font(.headline)
-                        Text(appVersion).font(.caption2).foregroundStyle(.tertiary)   // e.g. "1.7"
-                        Button { Feedback.compose() } label: {
-                            Image(systemName: "envelope").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            module {                                   // Cocaine itself
+                HStack(spacing: 10) {
+                    Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text("Cocaine").font(.headline)
+                            Text(appVersion).font(.caption2).foregroundStyle(.tertiary)   // e.g. "1.7"
+                            Button { Feedback.compose() } label: {
+                                Image(systemName: "envelope").font(.caption).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help(L("Feedback or help") + " — " + Feedback.address)
                         }
-                        .buttonStyle(.borderless)
-                        .help(L("Feedback or help") + " — " + Feedback.address)
+                        Text(status).font(.caption).lineLimit(1)
+                            .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
                     }
-                    Text(status).font(.caption).lineLimit(1)
-                        .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+                    Spacer(minLength: 6)
+                    Toggle("Cocaine", isOn: Binding(get: { m.on }, set: { _ in m.toggleCocaine() }))
+                        .toggleStyle(.switch).labelsHidden()
                 }
-                Spacer(minLength: 6)
-                Toggle("Cocaine", isOn: Binding(get: { m.on }, set: { _ in m.toggleCocaine() }))
-                    .toggleStyle(.switch).labelsHidden()
             }
 
             if m.on {                                  // brightness options exist only while Cocaine is on
-                Divider()
-
-                HStack {
-                    Text(L("Dim the screen when idle")).lineLimit(1)
-                    Spacer(minLength: 6)
-                    Toggle(L("Dim the screen when idle"), isOn: $m.dimEnabled).toggleStyle(.switch).labelsHidden().controlSize(.small)
-                }
-                .help(L("Goes back to normal as soon as you touch anything"))
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sun.min").foregroundStyle(.secondary)
-                        Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
-                        Text("\(Int(m.levelPercent))%").monospacedDigit().frame(width: 32, alignment: .trailing)
-                        Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
-                            .help(L("Shows the minimum brightness for 3 seconds"))
-                    }
-                    HStack(spacing: 6) {
-                        Text(L("After")).fixedSize()
-                        Picker(L("After"), selection: $m.delayMinutes) {
-                            ForEach(Settings.delayChoices, id: \.self) { Text("\($0)").tag($0) }
+                module {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text(L("Dim the screen when idle")).lineLimit(1)
+                            Spacer(minLength: 6)
+                            Toggle(L("Dim the screen when idle"), isOn: $m.dimEnabled).toggleStyle(.switch).labelsHidden().controlSize(.small)
                         }
-                        .pickerStyle(.segmented).labelsHidden().controlSize(.small)
-                        Text(L("min")).fixedSize()
+                        .help(L("Goes back to normal as soon as you touch anything"))
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sun.min").foregroundStyle(.secondary)
+                                Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
+                                Text("\(Int(m.levelPercent))%").monospacedDigit().frame(width: 32, alignment: .trailing)
+                                Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
+                                    .help(L("Shows the minimum brightness for 3 seconds"))
+                            }
+                            HStack(spacing: 6) {
+                                Text(L("After")).fixedSize()
+                                Picker(L("After"), selection: $m.delayMinutes) {
+                                    ForEach(Settings.delayChoices, id: \.self) { Text("\($0)").tag($0) }
+                                }
+                                .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                                Text(L("min")).fixedSize()
+                            }
+                        }
+                        .disabled(!m.dimEnabled)
+                        .opacity(m.dimEnabled ? 1 : 0.45)
                     }
                 }
-                .disabled(!m.dimEnabled)
-                .opacity(m.dimEnabled ? 1 : 0.45)
             }
-
-            Divider()
 
             if m.ai.available {
                 VStack(alignment: .leading, spacing: 8) {
-                    Button { m.aiExpanded.toggle() } label: {  // the whole row opens and closes the section
+                    Button { m.aiExpanded.toggle() } label: {  // the section's heading opens and closes it
                         HStack(spacing: 6) {
-                            Text(L("AI alerts")).lineLimit(1)
+                            Text(L("AI alerts")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                             Spacer(minLength: 6)
-                            if !m.aiExpanded { Text(aiSummary).foregroundStyle(.secondary).lineLimit(1) }
-                            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                            if !m.aiExpanded { Text(aiSummary).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1) }
+                            Image(systemName: "chevron.right").font(.system(size: 9.5, weight: .bold))
                                 .foregroundStyle(.secondary).rotationEffect(.degrees(m.aiExpanded ? 90 : 0))
                         }
+                        .padding(.horizontal, 4)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help(L("Flashes the screen when an AI finishes or needs you"))
-                    if m.ai.codexNeedsTrust && !m.aiExpanded {   // open, the Codex row itself says so
+                    if m.ai.codexNeedsTrust && !m.aiExpanded {   // open, Codex's button and row say so
                         Label(L("Codex: approve them once in Settings → Hooks"), systemImage: "exclamationmark.triangle.fill")
                             .font(.caption.weight(.medium)).foregroundStyle(warningColor)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 4)
                     }
-                    if m.aiExpanded { aiSection }
+                    if m.aiExpanded {
+                        GlassGroup {
+                            if ["ai", "when", "how"].contains(m.aiGroup) { aiDetail } else { aiOverview }
+                        }
+                        recentSection.padding(.top, 8)       // history, not a setting: set apart
+                    }
                 }
-                if m.aiExpanded { Divider() }
+                .padding(.top, 4)
             }
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
@@ -918,8 +1084,10 @@ private struct PanelView: View {
                 }
                 .layoutPriority(2)                     // never truncated
             }
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
         }
-        .padding(14)
+        .padding(12)
         .frame(width: 312, alignment: .topLeading)     // never centered, so nothing can slide out sideways
         .fixedSize(horizontal: false, vertical: true)
         .focusEffectDisabled()
@@ -1592,12 +1760,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) { continue }   // not wanted
             let message = value("message") ?? (input ? L("needs your input") : L("has finished"))
             let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
-            alert(Notice(from: value("from") ?? "Cocaine", message: message, project: project),
+            alert(Notice(from: value("from") ?? "Cocaine", message: message, project: project, input: input),
                   away: value("test") == "away" ? true : nil)
         }
     }
 
-    struct Notice { let from: String, message: String, project: String? }
+    struct Notice { let from: String, message: String, project: String?; var input = false }
 
     /// Away from the Mac (idle 20 s, or screens dimmed), or always if the user wants: wake the screens, restore the
     /// brightness, flash them with the message, play the sound, read it aloud. At the Mac: just refill the baggie.
@@ -1609,7 +1777,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
         if !repeated && !test {                          // "Recent alerts"
-            settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date())]
+            settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date(), input: a.input)]
                 + settings.alertHistory
             model.history = settings.alertHistory
         }
@@ -2072,7 +2240,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     if CommandLine.arguments.contains("--last") {                  // a sample "Recent alerts" list
         model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
                          ("Cursor", "has finished", "Gestionale", 4000)]
-            .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
+            .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3), input: $0.1 == "needs your input") }
     }
     if let i = CommandLine.arguments.firstIndex(of: "--group"), i + 1 < CommandLine.arguments.count {
         model.aiGroup = CommandLine.arguments[i + 1]
