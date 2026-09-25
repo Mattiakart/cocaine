@@ -252,6 +252,15 @@ private struct DimPlan {
 
 // MARK: - Settings
 
+/// One alert, for the "Recent alerts" list.
+private struct AlertRecord: Codable, Identifiable, Equatable {
+    let from: String
+    let message: String
+    let project: String?
+    let at: Date
+    var id: Date { at }
+}
+
 private struct Settings {
     private let d = UserDefaults.standard
     static let delayChoices = [1, 2, 5, 10, 15, 30]   // minutes
@@ -278,7 +287,22 @@ private struct Settings {
     var alertFlash: Bool { get { flag("alertFlash", true) } nonmutating set { d.set(newValue, forKey: "alertFlash") } }
     var alertSpeak: Bool { get { flag("alertSpeak", false) } nonmutating set { d.set(newValue, forKey: "alertSpeak") } }
     var alertWhenPresent: Bool { get { flag("alertWhenPresent", false) } nonmutating set { d.set(newValue, forKey: "alertWhenPresent") } }
-    var alertRepeat: Bool { get { flag("alertRepeat", false) } nonmutating set { d.set(newValue, forKey: "alertRepeat") } }
+    static let repeatChoices = [0, 2, 5, 10]          // minutes; 0 = never
+    static let durationChoices: [Double] = [5, 15, 0]  // seconds on screen; 0 = until you're back
+    /// Minutes between reminders while you're away (0 = none). 1.7.3 had an on/off "every 5 minutes".
+    var alertRepeatMinutes: Int {
+        get { d.object(forKey: "alertRepeatMinutes") as? Int ?? (flag("alertRepeat", false) ? 5 : 0) }
+        nonmutating set { d.set(newValue, forKey: "alertRepeatMinutes") }
+    }
+    var alertDuration: Double {
+        get { d.object(forKey: "alertDuration") as? Double ?? 5 }
+        nonmutating set { d.set(newValue, forKey: "alertDuration") }
+    }
+    /// The latest alerts, newest first (at most 10).
+    var alertHistory: [AlertRecord] {
+        get { (d.data(forKey: "alertHistory")).flatMap { try? JSONDecoder().decode([AlertRecord].self, from: $0) } ?? [] }
+        nonmutating set { d.set(try? JSONEncoder().encode(Array(newValue.prefix(10))), forKey: "alertHistory") }
+    }
     /// A system sound's name; "" = silent.
     var alertSound: String {
         get { d.string(forKey: "alertSound") ?? "Glass" }
@@ -512,14 +536,19 @@ private final class PanelModel: ObservableObject {
     @Published var aiExpanded = UserDefaults.standard.bool(forKey: "aiExpanded") {
         didSet { if persistLanguage { UserDefaults.standard.set(aiExpanded, forKey: "aiExpanded") } }
     }
+    /// The open group of the AI alerts card ("" = none); only one at a time, so the panel stays short.
+    @Published var aiGroup = UserDefaults.standard.string(forKey: "aiGroup") ?? "" {
+        didSet { if persistLanguage { UserDefaults.standard.set(aiGroup, forKey: "aiGroup") } }
+    }
     @Published var alertsPausedUntil: Date?
-    @Published var lastAlert: (from: String, project: String?, at: Date)?   // the section's footer: "17:34 · Claude Code"
+    @Published var history: [AlertRecord] = []       // newest first; kept by the app delegate
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
     @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
     @Published var alertFlash: Bool { didSet { settings.alertFlash = alertFlash } }
     @Published var alertSpeak: Bool { didSet { settings.alertSpeak = alertSpeak } }
     @Published var alertWhenPresent: Bool { didSet { settings.alertWhenPresent = alertWhenPresent } }
-    @Published var alertRepeat: Bool { didSet { settings.alertRepeat = alertRepeat } }
+    @Published var alertRepeatMinutes: Int { didSet { settings.alertRepeatMinutes = alertRepeatMinutes } }
+    @Published var alertDuration: Double { didSet { settings.alertDuration = alertDuration } }
     @Published var alertSound: String {
         didSet { settings.alertSound = alertSound; if !alertSound.isEmpty { NSSound(named: alertSound)?.play() } }   // hear it
     }
@@ -540,6 +569,7 @@ private final class PanelModel: ObservableObject {
     var setAI: (_ id: String, _ on: Bool) -> Void = { _, _ in }
     var pauseAlerts: (Date?) -> Void = { _ in }       // nil = resume
     var testAlert: () -> Void = {}
+    var clearHistory: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -551,9 +581,11 @@ private final class PanelModel: ObservableObject {
         alertFlash = settings.alertFlash
         alertSpeak = settings.alertSpeak
         alertWhenPresent = settings.alertWhenPresent
-        alertRepeat = settings.alertRepeat
+        alertRepeatMinutes = settings.alertRepeatMinutes
+        alertDuration = settings.alertDuration
         alertSound = settings.alertSound
         alertsPausedUntil = settings.alertsPausedUntil
+        history = settings.alertHistory
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -564,71 +596,6 @@ private final class PanelModel: ObservableObject {
         if Self.magnets.contains(v) { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
         levelPercent = v
         settings.level = Float(v) / 100
-    }
-}
-
-/// Lays its children out like words in a paragraph: left to right, onto a new line when the width runs out.
-private struct Flow: Layout {
-    var spacing: CGFloat = 5
-    var lineSpacing: CGFloat = 5
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(subviews, width: proposal.width ?? .infinity).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for (s, p) in zip(subviews, arrange(subviews, width: bounds.width).points) {
-            s.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: .unspecified)
-        }
-    }
-
-    private func arrange(_ subviews: Subviews, width: CGFloat) -> (points: [CGPoint], size: CGSize) {
-        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > 0 && x + size.width > width { x = 0; y += line + lineSpacing; line = 0 }
-            points.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
-            line = max(line, size.height)
-            widest = max(widest, x - spacing)
-        }
-        return (points, CGSize(width: widest, height: y + line))
-    }
-}
-
-private struct ChipLabel: View {
-    let title: String
-    let icon: String
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon).font(.system(size: 9, weight: .bold))
-            Text(title).lineLimit(1)
-        }
-    }
-}
-
-/// Cocaine's small capsule toggle: tinted with the accent color when on, a faint outline when off.
-private struct ChipStyle: ButtonStyle {
-    var on: Bool
-
-    func makeBody(configuration: Configuration) -> some View { ChipBody(configuration: configuration, on: on) }
-
-    private struct ChipBody: View {
-        let configuration: ButtonStyleConfiguration
-        let on: Bool
-        @Environment(\.isEnabled) private var enabled
-
-        var body: some View {
-            configuration.label
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 7).padding(.vertical, 3.5)
-                .foregroundStyle(on ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                .background(Capsule().fill(on ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05)))
-                .overlay(Capsule().strokeBorder(on ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 0.5))
-                .contentShape(Capsule())
-                .opacity(configuration.isPressed ? 0.6 : enabled ? 1 : 0.45)
-        }
     }
 }
 
@@ -655,93 +622,185 @@ private struct PanelView: View {
         return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
     }
 
-    /// One line of chips with a short caption in front, wrapping onto more lines only when it must.
-    private func chipRow<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-                .frame(width: 40, alignment: .leading).padding(.top, 4)
-            Flow(spacing: 4, lineSpacing: 5) { content() }
+    /// One group of the AI alerts card: a line with its summary that opens (one group at a time) onto its options.
+    private func group<Content: View>(_ id: String, _ icon: String, _ title: String, _ summary: String, warning: Bool = false,
+                                      @ViewBuilder _ content: () -> Content) -> some View {
+        let open = m.aiGroup == id
+        return VStack(alignment: .leading, spacing: 9) {
+            Button { m.aiGroup = open ? "" : id } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: icon).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Color.accentColor)
+                        .frame(width: 16)
+                    Text(title).font(.system(size: 12.5, weight: .medium)).lineLimit(1).layoutPriority(1)
+                    Spacer(minLength: 6)
+                    if warning {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(warningColor)
+                    }
+                    if !open { Text(summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(summary)
+            if open {
+                VStack(alignment: .leading, spacing: 9) { content() }
+                    .padding(.leading, 23)                      // under the title, past the icon
+            }
         }
     }
 
-    private func chip(_ title: String, _ icon: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { ChipLabel(title: title, icon: icon) }
-            .buttonStyle(ChipStyle(on: on))
-            .help(help)
-            .accessibilityAddTraits(on ? .isSelected : [])
+    /// A row of options: what it is, one line on what it does, and its control on the right.
+    private func option<Control: View>(_ title: String, _ detail: String, warning: Bool = false,
+                                       @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12)).lineLimit(1)
+                Text(detail).font(.system(size: 10.5)).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 4)
+            control().fixedSize()                               // controls keep their size; the text wraps instead
+        }
     }
 
-    private var soundChip: some View {
+    /// A value you pick from a short list, shown as just the current value with a chevron (as wide as that value).
+    private func choice<T: Hashable>(_ title: String, _ selection: Binding<T>, _ values: [T],
+                                     _ name: @escaping (T) -> String) -> some View {
         Menu {
-            Picker(L("Sound"), selection: $m.alertSound) {
-                Text(L("No sound")).tag("")
-                ForEach(Settings.sounds, id: \.self) { Text($0).tag($0) }
-            }
-            .pickerStyle(.inline).labelsHidden()
+            Picker(title, selection: selection) { ForEach(values, id: \.self) { Text(name($0)).tag($0) } }
+                .pickerStyle(.inline).labelsHidden()
         } label: {
-            ChipLabel(title: m.alertSound.isEmpty ? L("Sound") : m.alertSound,
-                      icon: m.alertSound.isEmpty ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            Text(name(selection.wrappedValue))
         }
-        .menuStyle(.button).menuIndicator(.hidden).buttonStyle(ChipStyle(on: !m.alertSound.isEmpty)).fixedSize()
-        .help(L("Sound"))
+        .menuStyle(.borderlessButton)
+        .font(.system(size: 12))
+        .accessibilityLabel(title)
     }
 
-    @ViewBuilder private var pauseChip: some View {
-        if let until = m.alertsPausedUntil {
-            chip(String(format: L("until %@"), Self.time.string(from: until)), "pause.fill", on: true, help: L("Resume alerts")) {
-                m.pauseAlerts(nil)
-            }
-        } else {
-            Menu {
-                Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
-                Button(L("Until tomorrow")) {
-                    let cal = Calendar.current
-                    m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
-                }
-            } label: {
-                ChipLabel(title: L("Pause"), icon: "pause")
-            }
-            .menuStyle(.button).menuIndicator(.hidden).buttonStyle(ChipStyle(on: false)).fixedSize()
-            .help(L("Pause"))
+    private func toggle(_ title: String, _ on: Binding<Bool>) -> some View {
+        Toggle(title, isOn: on).toggleStyle(.switch).labelsHidden().controlSize(.mini)
+    }
+
+    /// What each AI reports, from what its hooks can see.
+    private func toolDetail(_ id: String) -> String {
+        switch id {
+        case "claude", "opencode": return L("Finishes, or asks permission or a question")
+        case "codex": return L("Finishes, or asks for approval")
+        case "cursor": return L("Finishes (approvals aren't reported)")
+        case "copilot": return L("Finishes, or asks permission (CLI and VS Code)")
+        case "windsurf": return L("After each reply")
+        default: return L("Finishes, or asks permission")
         }
     }
 
-    /// Which AIs, when, how; pause, test and the last alert. Only the AIs installed on this Mac are shown.
+    private var whenSummary: String {
+        let on = [m.alertDone ? L("Finishes") : nil, m.alertInput ? L("Needs you") : nil].compactMap { $0 }
+        return on.isEmpty ? L("Never") : on.joined(separator: ", ")
+    }
+
+    private var howSummary: String {
+        let on = [m.alertFlash ? L("Flash") : nil, m.alertSound.isEmpty ? nil : m.alertSound, m.alertSpeak ? L("Voice") : nil]
+        let text = on.compactMap { $0 }.joined(separator: ", ")
+        return text.isEmpty ? L("Silent") : text
+    }
+
+    private func durationName(_ s: Double) -> String { s == 0 ? L("Until you're back") : String(format: L("%d s"), Int(s)) }
+    private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
+
+    /// Which AIs, when, how, pause, recent alerts: five lines, one of them open.
     private var aiSection: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            chipRow(L("AI")) {
+        VStack(alignment: .leading, spacing: 0) {
+            group("ai", "sparkles", L("Connected AIs"),
+                  m.ai.connected.isEmpty ? L("None connected") : m.ai.connected.map(\.name).joined(separator: ", "),
+                  warning: m.ai.codexNeedsTrust) {
                 ForEach(m.ai.tools.filter(\.installed)) { t in
-                    chip(t.name, t.on ? "checkmark" : "plus", on: t.on, help: t.name) { m.setAI(t.id, !t.on) }
-                        .disabled(m.settingAI)
+                    let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
+                    option(t.name, untrusted ? L("Approve once in Settings → Hooks") : toolDetail(t.id), warning: untrusted) {
+                        toggle(t.name, Binding(get: { t.on }, set: { m.setAI(t.id, $0) })).disabled(m.settingAI)
+                    }
+                }
+                let others = m.ai.tools.filter { !$0.installed }.map(\.name)
+                VStack(alignment: .leading, spacing: 2) {
+                    if !others.isEmpty {
+                        Text(String(format: L("Also supported: %@"), others.joined(separator: ", ")))
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
+                        .buttonStyle(.link).font(.system(size: 10.5))
                 }
             }
-            chipRow(L("When")) {
-                chip(L("Finishes"), "flag.checkered", on: m.alertDone, help: L("Finishes")) { m.alertDone.toggle() }
-                chip(L("Needs you"), "hand.raised.fill", on: m.alertInput, help: L("Needs you")) { m.alertInput.toggle() }
-            }
-            chipRow(L("How")) {
-                chip(L("Flash"), "bolt.fill", on: m.alertFlash, help: L("Flash the screen")) { m.alertFlash.toggle() }
-                soundChip
-                chip(L("Voice"), "waveform", on: m.alertSpeak, help: L("Read it aloud")) { m.alertSpeak.toggle() }
-                chip(L("Also at the Mac"), "laptopcomputer", on: m.alertWhenPresent, help: L("Even when I'm at the Mac")) {
-                    m.alertWhenPresent.toggle()
+            Divider().padding(.vertical, 8)
+            group("when", "bell.badge", L("When"), whenSummary) {
+                option(L("Finishes"), L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
+                option(L("Needs you"), L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
+                option(L("Also at the Mac"), L("Otherwise only when you've been away for 20 seconds")) {
+                    toggle(L("Also at the Mac"), $m.alertWhenPresent)
                 }
-                chip(L("Repeat"), "repeat", on: m.alertRepeat, help: L("Repeat every 5 min until I'm back")) { m.alertRepeat.toggle() }
             }
-            HStack(spacing: 6) {
-                pauseChip
-                if let last = m.lastAlert {               // who called last, and when; the project in the tooltip
-                    Text("\(Self.time.string(from: last.at)) · \(last.from)").font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.tail)
-                        .help(String(format: L("Last: %@"), [last.from, last.project, Self.time.string(from: last.at)]
-                            .compactMap { $0 }.joined(separator: " · ")))
+            Divider().padding(.vertical, 8)
+            group("how", "rays", L("How"), howSummary) {
+                option(L("Flash"), L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
+                option(L("Sound"), L("Plays when the alert arrives")) {
+                    choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
                 }
-                Spacer(minLength: 4)
-                Button(L("Test")) { m.testAlert() }.controlSize(.small).help(L("Send a test alert"))
-                Button { NSWorkspace.shared.open(Feedback.alertsGuide) } label: { Image(systemName: "questionmark.circle") }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary).help(L("Other apps and scripts…"))
+                option(L("Voice"), L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
+                option(L("On screen"), L("How long the alert stays")) {
+                    choice(L("On screen"), $m.alertDuration, Settings.durationChoices, durationName)
+                }
+                option(L("Repeat"), L("While you're away, for up to 30 minutes")) {
+                    choice(L("Repeat"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
+                }
+                option(L("Try it"), L("Shows an alert with these settings")) {
+                    Button(L("Test")) { m.testAlert() }.controlSize(.small)
+                }
+            }
+            Divider().padding(.vertical, 8)
+            group("pause", "pause.circle", L("Pause"),
+                  m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Active")) {
+                if let until = m.alertsPausedUntil {
+                    option(String(format: L("Paused until %@"), Self.time.string(from: until)), L("No alerts until then")) {
+                        Button(L("Resume")) { m.pauseAlerts(nil) }.controlSize(.small)
+                    }
+                } else {
+                    Text(L("Silences every alert for a while")).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    HStack(spacing: 5) {
+                        Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }
+                        Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
+                        Button(L("Until tomorrow")) {
+                            let cal = Calendar.current
+                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            Divider().padding(.vertical, 8)
+            group("recent", "clock.arrow.circlepath", L("Recent alerts"),
+                  m.history.first.map { "\(Self.time.string(from: $0.at)) · \($0.from)" } ?? L("None yet")) {
+                if m.history.isEmpty {
+                    Text(L("Alerts you receive will show up here")).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                } else {
+                    ForEach(m.history.prefix(5)) { r in
+                        HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            Text(Self.time.string(from: r.at)).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(r.from).font(.system(size: 12)).lineLimit(1)
+                                Text([r.message, r.project].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                    }
+                    Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(.system(size: 10.5))
+                }
             }
         }
+        .padding(.horizontal, 10).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
     }
 
     private var status: String {
@@ -818,7 +877,7 @@ private struct PanelView: View {
                     }
                     .buttonStyle(.plain)
                     .help(L("Flashes the screen when an AI finishes or needs you"))
-                    if m.ai.codexNeedsTrust {             // Codex runs new hooks only once the user trusts them
+                    if m.ai.codexNeedsTrust && !m.aiExpanded {   // open, the Codex row itself says so
                         Label(L("Codex: approve them once in Settings → Hooks"), systemImage: "exclamationmark.triangle.fill")
                             .font(.caption.weight(.medium)).foregroundStyle(warningColor)
                             .fixedSize(horizontal: false, vertical: true)
@@ -949,7 +1008,7 @@ private final class Alerter {
 
     var isShowing: Bool { !windows.isEmpty }
 
-    func show(title: String, message: String, detail: String? = nil) {
+    func show(title: String, message: String, detail: String? = nil, seconds: Double = 5) {
         close(animated: false)
         for screen in NSScreen.screens {
             let w = NSWindow(contentRect: NSRect(origin: .zero, size: screen.frame.size), styleMask: .borderless,
@@ -972,8 +1031,9 @@ private final class Alerter {
             DispatchQueue.main.async { anim.start() }
         }
         shownAt = Date()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
-            if let at = self?.shownAt, Date().timeIntervalSince(at) >= 4.4 { self?.close(animated: true) }
+        guard seconds > 0 else { return }                // 0 = until the user is back (the tick closes it then)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            if let at = self?.shownAt, Date().timeIntervalSince(at) >= seconds - 0.1 { self?.close(animated: true) }
         }
     }
 
@@ -1477,7 +1537,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.pauseAlerts = { [weak self] in self?.pauseAlerts(until: $0) }
         model.testAlert = { [weak self] in
             self?.hidePanel()
-            self?.alert(Notice(from: "Cocaine", message: L("This is a test"), project: nil), away: true)
+            self?.alert(Notice(from: "Cocaine", message: L("This is a test"), project: nil), away: true, test: true)
+        }
+        model.clearHistory = { [weak self] in
+            self?.settings.alertHistory = []
+            self?.model.history = []
         }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
@@ -1534,15 +1598,17 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Away from the Mac (idle 20 s, or screens dimmed), or always if the user wants: wake the screens, restore the
     /// brightness, flash them with the message, play the sound, read it aloud. At the Mac: just refill the baggie.
-    private func alert(_ a: Notice, away forced: Bool? = nil, repeated: Bool = false) {
+    private func alert(_ a: Notice, away forced: Bool? = nil, repeated: Bool = false, test: Bool = false) {
         if let until = settings.alertsPausedUntil, forced == nil {
             log.notice("alert from \(a.from, privacy: .public) muted until \(until, privacy: .public)")
             return
         }
         let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
-        if !repeated {
-            model.lastAlert = (a.from, a.project, Date())
+        if !repeated && !test {                          // "Recent alerts"
+            settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date())]
+                + settings.alertHistory
+            model.history = settings.alertHistory
         }
         pulseIcon()
         guard away || settings.alertWhenPresent else { return }
@@ -1551,20 +1617,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             IOPMAssertionDeclareUserActivity("Cocaine alert" as CFString, kIOPMUserActiveLocal, &activity)
             restore()
             brightUntil = Date().addingTimeInterval(max(settings.delay, 60))
-            alerter.show(title: a.from, message: a.message, detail: a.project)
+            alerter.show(title: a.from, message: a.message, detail: a.project, seconds: settings.alertDuration)
         }
         if !settings.alertSound.isEmpty { NSSound(named: settings.alertSound)?.play() }
         if settings.alertSpeak { speak([a.from, a.message, a.project].compactMap { $0 }.joined(separator: ", ")) }
-        if away && settings.alertRepeat && !repeated { repeatUntilBack(a) }
+        if away && settings.alertRepeatMinutes > 0 && !repeated && !test { repeatUntilBack(a) }
     }
 
-    /// Every 5 minutes, up to 6 times, as long as nobody has touched the Mac since.
+    /// Every few minutes (the user's choice), for up to 30 minutes, as long as nobody has touched the Mac since.
     private func repeatUntilBack(_ a: Notice) {
         repeatTimer?.invalidate()
+        let minutes = settings.alertRepeatMinutes
         var count = 0
-        let t = Timer(timeInterval: 300, repeats: true) { [weak self] t in
+        let t = Timer(timeInterval: Double(minutes * 60), repeats: true) { [weak self] t in
             count += 1
-            guard let self, count <= 6, System.idleSeconds >= 290, self.settings.alertRepeat else { t.invalidate(); return }
+            guard let self, count * minutes <= 30, System.idleSeconds >= Double(minutes * 60 - 10),
+                  self.settings.alertRepeatMinutes == minutes else { t.invalidate(); return }
             self.alert(a, away: true, repeated: true)
         }
         RunLoop.main.add(t, forMode: .common)
@@ -1998,7 +2066,14 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     }, codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
     if CommandLine.arguments.contains("--paused") { model.alertsPausedUntil = Date().addingTimeInterval(3600) }
     model.aiExpanded = CommandLine.arguments.contains("--ai-open")
-    if CommandLine.arguments.contains("--last") { model.lastAlert = ("Claude Code", "Cocaine", Date()) }
+    if CommandLine.arguments.contains("--last") {                  // a sample "Recent alerts" list
+        model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
+                         ("Cursor", "has finished", "Gestionale", 4000)]
+            .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
+    }
+    if let i = CommandLine.arguments.firstIndex(of: "--group"), i + 1 < CommandLine.arguments.count {
+        model.aiGroup = CommandLine.arguments[i + 1]
+    }
     let host = NSHostingView(rootView: PanelView(m: model).background(Color(nsColor: .windowBackgroundColor)))
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
