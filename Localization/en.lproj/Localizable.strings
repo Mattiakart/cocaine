@@ -24,3 +24,7 @@
 "Cocaine is removing its permission." = "Cocaine is removing its permission.";
 "has finished" = "has finished";
 "needs your input" = "needs your input";
+"AI alerts" = "AI alerts";
+"Flashes the screen when Claude Code or Codex finishes or needs you" = "Flashes the screen when Claude Code or Codex finishes or needs you";
+"Codex: approve them once in Settings → Hooks" = "Codex: approve them once in Settings → Hooks";
+"Can't change AI alerts" = "Can't change AI alerts";

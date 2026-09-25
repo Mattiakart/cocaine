@@ -52,28 +52,22 @@ Leave the Mac working with Cocaine on, and it can call you back when an AI agent
 away, it wakes the screens, restores the brightness, flashes them and shows who's calling. When you're at the Mac,
 the baggie in the menu bar just refills.
 
-Anything can ring it:
+**Claude Code and Codex:** turn on **AI alerts** in the panel. Cocaine adds its hooks to `~/.claude/settings.json` and
+`~/.codex/hooks.json` (only for the ones you have) and leaves everything else in those files as it was. Turning the
+switch off removes them, and so does `brew uninstall`. Claude Code calls when it finishes and when it needs a permission
+or an answer; Codex when it finishes and when it asks for approval. The switch only shows on Macs with Claude Code or Codex.
+
+Codex runs a new hook only after you trust it once: it asks when it starts in Terminal, or use Settings → Hooks in the
+ChatGPT app. Until then the panel reminds you.
+
+**Anything else** can ring it too:
 
 ```
-open -g "cocaine://alert?from=Claude%20Code&event=done"     # event=done or event=input, or message=anything
+open -g "cocaine://alert?from=My%20script&event=done"     # event=done or event=input, or message=anything
 ```
 
-**Claude Code:** add these hooks to `~/.claude/settings.json`.
-
-```json
-"hooks": {
-  "Stop":         [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=done'; true" }] }],
-  "Notification": [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=input'; true" }] }]
-}
-```
-
-**Codex CLI:** add this to `~/.codex/config.toml`.
-
-```toml
-notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Codex&event=done'; true"]
-```
-
-`pgrep -qx Cocaine` keeps a closed Cocaine closed: the alert only goes out while the app is running.
+Cocaine's hooks run `pgrep -qx Cocaine && open -g '…'; true`, so a closed Cocaine stays closed: alerts only go out while
+the app is running.
 
 ## Good to know
 
@@ -83,10 +77,10 @@ notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=C
 
 ## Uninstall
 
-With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app and its sudo rule, without asking.
-(`--zap` also deletes the settings.)
+With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app, its sudo rule and the AI alerts
+hooks, without asking. (`--zap` also deletes the settings.)
 
-Without Homebrew: quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
+Without Homebrew: turn off AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 
 ```
 sudo rm /etc/sudoers.d/cocaine

@@ -24,3 +24,7 @@
 "Cocaine is removing its permission." = "Cocaine は権限を削除しています。";
 "has finished" = "完了しました";
 "needs your input" = "入力が必要です";
+"AI alerts" = "AI 通知";
+"Flashes the screen when Claude Code or Codex finishes or needs you" = "Claude Code や Codex が完了したときや入力が必要なときに画面を点滅させます";
+"Codex: approve them once in Settings → Hooks" = "Codex：設定 → Hooks で一度承認してください";
+"Can't change AI alerts" = "AI 通知を変更できません";

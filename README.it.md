@@ -51,28 +51,22 @@ Lasci il Mac a lavorare con Cocaine attivo, e lui ti richiama quando un'AI finis
 riaccende gli schermi, riporta la luminosità, li fa lampeggiare e mostra chi ti cerca. Se sei al Mac, la bustina nella barra
 si ricarica e basta.
 
-Qualsiasi programma può suonare il "campanello":
+**Claude Code e Codex:** attiva **Avvisi AI** nel pannello. Cocaine aggiunge i suoi hook a `~/.claude/settings.json` e
+`~/.codex/hooks.json` (solo per quelli che hai) e lascia com'è tutto il resto di quei file. Spegnendo l'interruttore li
+toglie, e lo fa anche `brew uninstall`. Claude Code ti chiama quando finisce e quando chiede un permesso o una risposta,
+Codex quando finisce e quando chiede un'approvazione. L'interruttore compare solo sui Mac con Claude Code o Codex.
+
+Codex esegue un hook nuovo solo dopo che l'hai approvato una volta: te lo chiede all'avvio nel Terminale, oppure
+nell'app ChatGPT vai in Impostazioni → Hooks. Finché non lo fai, il pannello te lo ricorda.
+
+**Qualsiasi altro programma** può suonare il "campanello":
 
 ```
-open -g "cocaine://alert?from=Claude%20Code&event=done"     # event=done o event=input, oppure message=testo
+open -g "cocaine://alert?from=Il%20mio%20script&event=done"     # event=done o event=input, oppure message=testo
 ```
 
-**Claude Code:** aggiungi questi hook a `~/.claude/settings.json`.
-
-```json
-"hooks": {
-  "Stop":         [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=done'; true" }] }],
-  "Notification": [{ "hooks": [{ "type": "command", "command": "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Claude%20Code&event=input'; true" }] }]
-}
-```
-
-**Codex CLI:** in `~/.codex/config.toml`
-
-```toml
-notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=Codex&event=done'; true"]
-```
-
-`pgrep -qx Cocaine` fa sì che l'avviso parta solo se Cocaine è aperto, e non lo riapre se l'hai chiuso.
+Gli hook di Cocaine eseguono `pgrep -qx Cocaine && open -g '…'; true`: l'avviso parte solo se Cocaine è aperto, e non lo
+riapre se l'hai chiuso.
 
 ## Da sapere
 
@@ -82,10 +76,10 @@ notify = ["/bin/sh", "-c", "pgrep -qx Cocaine && open -g 'cocaine://alert?from=C
 
 ## Disinstallazione
 
-Con Homebrew: `brew uninstall --cask cocaine`. Spegne Cocaine e toglie l'app e la regola sudo, senza chiedere nulla.
-(`--zap` cancella anche le impostazioni.)
+Con Homebrew: `brew uninstall --cask cocaine`. Spegne Cocaine e toglie l'app, la regola sudo e gli hook degli Avvisi AI,
+senza chiedere nulla. (`--zap` cancella anche le impostazioni.)
 
-Senza Homebrew: esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
+Senza Homebrew: spegni Avvisi AI, esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
 
 ```
 sudo rm /etc/sudoers.d/cocaine

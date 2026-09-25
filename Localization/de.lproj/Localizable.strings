@@ -24,3 +24,7 @@
 "Cocaine is removing its permission." = "Cocaine entfernt seine Berechtigung.";
 "has finished" = "ist fertig";
 "needs your input" = "braucht deine Eingabe";
+"AI alerts" = "KI-Hinweise";
+"Flashes the screen when Claude Code or Codex finishes or needs you" = "Lässt den Bildschirm blinken, wenn Claude Code oder Codex fertig ist oder dich braucht";
+"Codex: approve them once in Settings → Hooks" = "Codex: in Einstellungen → Hooks bestätigen";
+"Can't change AI alerts" = "KI-Hinweise können nicht geändert werden";

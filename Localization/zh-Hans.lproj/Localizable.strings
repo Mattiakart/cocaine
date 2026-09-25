@@ -24,3 +24,7 @@
 "Cocaine is removing its permission." = "Cocaine 正在移除其权限。";
 "has finished" = "已完成";
 "needs your input" = "需要你的输入";
+"AI alerts" = "AI 提醒";
+"Flashes the screen when Claude Code or Codex finishes or needs you" = "Claude Code 或 Codex 完成或需要你时让屏幕闪烁";
+"Codex: approve them once in Settings → Hooks" = "Codex：请在“设置 → Hooks”中批准一次";
+"Can't change AI alerts" = "无法更改 AI 提醒";

@@ -7,6 +7,8 @@
 // on it restarts that display hold if it is missing (e.g. after a restart) and, after the chosen
 // idle time, lowers the built-in display to the chosen minimum brightness (never below 1%, so the
 // screen never goes off), restoring the previous brightness on the next keyboard/trackpad input.
+// `cocaine://alert` URLs (from AI agents' hooks, which the "AI alerts" switch adds to Claude Code and Codex) wake and
+// flash the screens when you're away.
 
 import AppKit
 import ImageIO
@@ -485,6 +487,7 @@ private final class PanelModel: ObservableObject {
     @Published var previewing = false
     @Published var fillLevel: CGFloat = 0
     @Published var pouring = false
+    @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with Claude Code or Codex
     @Published var dimEnabled: Bool { didSet { settings.dimEnabled = dimEnabled } }
     @Published private(set) var levelPercent: Double
     @Published var delayMinutes: Int { didSet { if delayMinutes > 0 { settings.delay = Double(delayMinutes * 60) } } }
@@ -499,6 +502,7 @@ private final class PanelModel: ObservableObject {
     var toggleCocaine: () -> Void = {}
     var preview: () -> Void = {}
     var setLogin: (Bool) -> Void = { _ in }
+    var setAIAlerts: (Bool) -> Void = { _ in }
     var quit: () -> Void = {}
 
     init() {
@@ -575,6 +579,22 @@ private struct PanelView: View {
             }
 
             Divider()
+
+            if m.ai.available {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(L("AI alerts")).lineLimit(1)
+                        Spacer(minLength: 6)
+                        Toggle(L("AI alerts"), isOn: Binding(get: { m.ai.on }, set: { m.setAIAlerts($0) }))
+                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                    }
+                    if m.ai.on && m.ai.codexNeedsTrust {   // Codex runs new hooks only once the user trusts them
+                        Text(L("Codex: approve them once in Settings → Hooks"))
+                            .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .help(L("Flashes the screen when Claude Code or Codex finishes or needs you"))
+            }
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
                 HStack(spacing: 6) {
@@ -699,6 +719,251 @@ private final class Alerter {
     }
 }
 
+// MARK: - AI alerts (hooks in Claude Code and Codex)
+
+/// Just enough JSON to edit another app's config file without reordering its keys or rewriting its values: strings
+/// and numbers keep their exact text; only the indentation is redone (2 spaces, as both apps write it).
+private enum JSONValue: Equatable {
+    case object([Member])
+    case array([JSONValue])
+    case scalar(String)              // a string with its quotes, a number, true, false or null, exactly as written
+
+    struct Member: Equatable {
+        var key: String              // the raw text between the quotes
+        var value: JSONValue
+    }
+
+    static func string(_ s: String) -> JSONValue {
+        let data = try! JSONSerialization.data(withJSONObject: s, options: [.fragmentsAllowed, .withoutEscapingSlashes])
+        return .scalar(String(decoding: data, as: UTF8.self))
+    }
+
+    /// nil unless `text` is valid JSON (Foundation checks it first, so the scanner below can trust the syntax).
+    static func parse(_ text: String) -> JSONValue? {
+        let b = Array(text.utf8)
+        guard (try? JSONSerialization.jsonObject(with: Data(b), options: [.fragmentsAllowed])) != nil else { return nil }
+        var i = 0
+        func space() { while i < b.count, b[i] == 0x20 || b[i] == 0x09 || b[i] == 0x0A || b[i] == 0x0D { i += 1 } }
+        func token() -> String {
+            let start = i
+            if b[i] == UInt8(ascii: "\"") {
+                i += 1
+                while b[i] != UInt8(ascii: "\"") { i += b[i] == UInt8(ascii: "\\") ? 2 : 1 }
+                i += 1
+            } else {
+                while i < b.count, !",]} \t\r\n".utf8.contains(b[i]) { i += 1 }
+            }
+            return String(decoding: b[start..<i], as: UTF8.self)
+        }
+        func value() -> JSONValue {
+            space()
+            let open = b[i]
+            guard open == UInt8(ascii: "{") || open == UInt8(ascii: "[") else { return .scalar(token()) }
+            let close = open == UInt8(ascii: "{") ? UInt8(ascii: "}") : UInt8(ascii: "]")
+            var members: [Member] = [], items: [JSONValue] = []
+            i += 1
+            space()
+            while b[i] != close {
+                if open == UInt8(ascii: "{") {
+                    let key = token()
+                    space()
+                    i += 1                                       // ':'
+                    members.append(Member(key: String(key.dropFirst().dropLast()), value: value()))
+                } else {
+                    items.append(value())
+                }
+                space()
+                if b[i] == UInt8(ascii: ",") { i += 1; space() }
+            }
+            i += 1
+            return open == UInt8(ascii: "{") ? .object(members) : .array(items)
+        }
+        return value()
+    }
+
+    func render(_ indent: String = "") -> String {
+        let inner = indent + "  "
+        switch self {
+        case .scalar(let s):
+            return s
+        case .array(let items):
+            return items.isEmpty ? "[]" : "[\n" + items.map { inner + $0.render(inner) }.joined(separator: ",\n") + "\n\(indent)]"
+        case .object(let members):
+            return members.isEmpty ? "{}"
+                : "{\n" + members.map { "\(inner)\"\($0.key)\": " + $0.value.render(inner) }.joined(separator: ",\n") + "\n\(indent)}"
+        }
+    }
+
+    var items: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
+    var members: [Member]? { if case .object(let m) = self { return m }; return nil }
+
+    subscript(key: String) -> JSONValue? {
+        get { members?.first { $0.key == key }?.value }
+        set {
+            guard var m = members else { return }
+            if let i = m.firstIndex(where: { $0.key == key }) {
+                if let newValue { m[i].value = newValue } else { m.remove(at: i) }
+            } else if let newValue {
+                m.append(Member(key: key, value: newValue))
+            }
+            self = .object(m)
+        }
+    }
+}
+
+/// The "AI alerts" switch: hooks that make Claude Code and Codex open cocaine://alert when they finish or need you.
+/// They live in each tool's own config file; turning them off removes only them, every other hook and setting stays.
+private enum AIHooks {
+    struct Tool {
+        let name: String                                  // also the alert's title
+        let folder: String                                // the tool's config folder: skipped where it doesn't exist
+        let file: String
+        let events: [(name: String, kind: String)]        // hook event → alert kind (done or input)
+    }
+
+    static var home = NSHomeDirectory()                   // `--ai-alerts … --home <dir>` works on a copy
+    static let marker = "cocaine://alert"
+
+    static var tools: [Tool] {
+        [Tool(name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
+              events: [("Stop", "done"), ("Notification", "input")]),
+         Tool(name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
+              events: [("Stop", "done"), ("PermissionRequest", "input")])]
+    }
+    static var present: [Tool] { tools.filter { FileManager.default.fileExists(atPath: $0.folder) } }
+
+    /// Does nothing while Cocaine is closed, so a closed Cocaine stays closed. Keep it word for word: Codex asks
+    /// to trust a hook again whenever its command changes.
+    static func command(_ tool: Tool, _ kind: String) -> String {
+        let from = tool.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? tool.name
+        return "pgrep -qx Cocaine && open -g 'cocaine://alert?from=\(from)&event=\(kind)'; true"
+    }
+
+    private static func group(_ tool: Tool, _ kind: String) -> JSONValue {
+        .object([.init(key: "hooks", value: .array([.object([
+            .init(key: "type", value: .string("command")),
+            .init(key: "command", value: .string(command(tool, kind))),
+            .init(key: "timeout", value: .scalar("10")),
+        ])]))])
+    }
+
+    private static func isOurs(_ handler: JSONValue) -> Bool {
+        guard case .scalar(let s)? = handler["command"] else { return false }
+        return s.contains(marker) || s.contains("cocaine:\\/\\/alert")
+    }
+    private static func hasOurs(_ group: JSONValue) -> Bool { group["hooks"]?.items?.contains(where: isOurs) ?? false }
+
+    /// The file's JSON: {} if it doesn't exist or is empty; nil if it isn't a JSON object this code can round-trip.
+    static func load(_ path: String) -> JSONValue? {
+        guard FileManager.default.fileExists(atPath: path) else { return .object([]) }
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        var text = String(decoding: data, as: UTF8.self)
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .object([]) }
+        guard let v = JSONValue.parse(text), v.members != nil,
+              let a = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? NSDictionary,
+              let b = try? JSONSerialization.jsonObject(with: Data(v.render().utf8)) as? NSDictionary, a == b
+        else { return nil }
+        return v
+    }
+
+    static func installed(_ root: JSONValue) -> Bool {
+        root["hooks"]?.members?.contains { $0.value.items?.contains(where: hasOurs) ?? false } ?? false
+    }
+
+    /// `root` with our hooks added or removed. Ones already there are updated where they are, so Codex's trust
+    /// (keyed by position) survives; groups, events and "hooks" left empty by a removal go too. nil = hands off.
+    static func edited(_ root: JSONValue, for tool: Tool, on: Bool) -> JSONValue? {
+        let before = root["hooks"]
+        guard let events = (before ?? .object([])).members else { return nil }
+        var wanted = on ? Dictionary(uniqueKeysWithValues: tool.events.map { ($0.name, group(tool, $0.kind)) }) : [:]
+        var result: [JSONValue.Member] = []
+        for var event in events {
+            guard let groups = event.value.items else { wanted[event.key] = nil; result.append(event); continue }
+            var out: [JSONValue] = []
+            for g in groups {
+                guard hasOurs(g) else { out.append(g); continue }
+                if g["hooks"]?.items?.allSatisfy(isOurs) == true, let w = wanted.removeValue(forKey: event.key) {
+                    out.append(w)
+                    continue
+                }
+                let kept = (g["hooks"]?.items ?? []).filter { !isOurs($0) }   // ours inside someone else's group
+                if !kept.isEmpty { var g = g; g["hooks"] = .array(kept); out.append(g) }
+            }
+            if let w = wanted.removeValue(forKey: event.key) { out.append(w) }
+            if out.isEmpty && !groups.isEmpty { continue }
+            event.value = .array(out)
+            result.append(event)
+        }
+        for e in tool.events { if let w = wanted.removeValue(forKey: e.name) { result.append(.init(key: e.name, value: .array([w]))) } }
+        var root = root
+        if !result.isEmpty { root["hooks"] = .object(result) }
+        else if before?.members?.isEmpty == false { root["hooks"] = nil }
+        return root
+    }
+
+    /// Writes through symlinks (dotfile setups) and keeps the file's permissions.
+    private static func write(_ value: JSONValue, to path: String) -> Bool {
+        let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
+        do { try Data((value.render() + "\n").utf8).write(to: url, options: .atomic) } catch { return false }
+        if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: url.path) }
+        return true
+    }
+
+    /// Adds or removes the hooks in every tool on this Mac (or just `only`); returns the files it couldn't update.
+    @discardableResult
+    static func set(_ on: Bool, only: [Tool]? = nil) -> [String] {
+        var failed: [String] = []
+        for tool in only ?? present {
+            guard let root = load(tool.file), let new = edited(root, for: tool, on: on) else { failed.append(tool.file); continue }
+            if new != root && !write(new, to: tool.file) { failed.append(tool.file) }
+        }
+        return failed
+    }
+
+    /// At launch: brings hooks written by an older Cocaine (or by hand) up to date, only where they already are.
+    static func update() {
+        let tools = present.filter { load($0.file).map(installed) ?? false }
+        if !tools.isEmpty { set(true, only: tools) }
+    }
+
+    /// Codex runs a new hook only after the user trusts it once (/hooks, or Settings → Hooks in the ChatGPT app);
+    /// it then keeps `trusted_hash` under [hooks.state."<file>:<event>:<group>:<handler>"] in its config.toml.
+    static func codexNeedsTrust() -> Bool {
+        guard let codex = tools.last, FileManager.default.fileExists(atPath: codex.folder),
+              let events = load(codex.file)?["hooks"]?.members else { return false }
+        let config = (try? String(contentsOfFile: codex.folder + "/config.toml", encoding: .utf8)) ?? ""
+        for event in events {
+            let snake = event.key.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1_$2", options: .regularExpression).lowercased()
+            for (g, group) in (event.value.items ?? []).enumerated() {
+                for (h, handler) in (group["hooks"]?.items ?? []).enumerated() where isOurs(handler) {
+                    if !trusted("\(codex.file):\(snake):\(g):\(h)", in: config) { return true }
+                }
+            }
+        }
+        return false
+    }
+
+    private static func trusted(_ key: String, in config: String) -> Bool {
+        guard let r = config.range(of: "\"\(key)\"") else { return false }
+        let rest = config[r.upperBound...]
+        let lineEnd = rest.firstIndex(of: "\n") ?? rest.endIndex
+        let lineStart = config[..<r.lowerBound].lastIndex(of: "\n").map { config.index(after: $0) } ?? config.startIndex
+        guard config[lineStart...].hasPrefix("[") else { return rest[..<lineEnd].contains("trusted_hash") }  // inline table
+        let body = rest[lineEnd...]                                                  // [hooks.state."…"] table
+        return body[..<(body.range(of: "\n[")?.lowerBound ?? body.endIndex)].contains("trusted_hash")
+    }
+
+    struct Status: Equatable { var available = false, on = false, codexNeedsTrust = false }
+
+    static func status() -> Status {
+        let tools = present
+        let on = tools.contains { load($0.file).map(installed) ?? false }
+        return Status(available: !tools.isEmpty, on: on, codexNeedsTrust: on && codexNeedsTrust())
+    }
+}
+
 // MARK: - App
 
 /// Tells the app when the SwiftUI content's size changes (e.g. the brightness section appears).
@@ -780,6 +1045,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var brightUntil = Date.distantPast   // after an alert, don't dim again right away
     private var didFinishLaunching = false
     private var launchedForAlert = false         // started only to show an alert: don't turn Cocaine on
+    private var settingAI = false
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
 
@@ -792,6 +1058,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.toggleCocaine = { [weak self] in self?.toggleCocaine() }
         model.preview = { [weak self] in self?.preview() }
         model.setLogin = { [weak self] in self?.setLogin($0) }
+        model.setAIAlerts = { [weak self] in self?.setAIAlerts($0) }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
@@ -817,8 +1084,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         didFinishLaunching = true
         if launchedForAlert {                        // `open cocaine://…` started us: show it, then go away again
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
-        } else if !System.cocaineOn {
-            toggleCocaine()                          // opening the app turns Cocaine on
+            return
+        }
+        if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
+        DispatchQueue.global().async {
+            AIHooks.update()
+            let ai = AIHooks.status()
+            DispatchQueue.main.async { self.model.ai = ai }   // ready before the panel first opens
         }
     }
 
@@ -944,9 +1216,34 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let on = System.cocaineOn
         DispatchQueue.global().async {
             let missing = on && !System.displayHeld
+            let ai = AIHooks.status()
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
+                if !self.settingAI && self.model.ai != ai { self.model.ai = ai }
+            }
+        }
+    }
+
+    /// Adds or removes the Claude Code / Codex hooks; the switch flips at once, like the Cocaine one.
+    private func setAIAlerts(_ enable: Bool) {
+        guard !settingAI else { return }
+        settingAI = true
+        model.ai.on = enable
+        DispatchQueue.global().async {
+            let failed = AIHooks.set(enable)
+            let ai = AIHooks.status()
+            DispatchQueue.main.async {
+                self.settingAI = false
+                self.model.ai = ai
+                log.notice("AI alerts \(enable ? "on" : "off", privacy: .public), failed: \(failed.count, privacy: .public)")
+                guard !failed.isEmpty else { return }
+                self.hidePanel()
+                NSApp.activate()
+                let a = NSAlert()
+                a.messageText = L("Can't change AI alerts")
+                a.informativeText = failed.map { $0.replacingOccurrences(of: NSHomeDirectory(), with: "~") }.joined(separator: "\n")
+                a.runModal()
             }
         }
     }
@@ -1198,6 +1495,22 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule"
     _ = NSApplication.shared
     exit(Authorization.remove() ? 0 : 1)
 }
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
+    // `on`, `off` or `status` for the AI alerts hooks (the Homebrew uninstall runs `off`); `--home <dir>` for tests.
+    if let i = CommandLine.arguments.firstIndex(of: "--home"), i + 1 < CommandLine.arguments.count {
+        AIHooks.home = CommandLine.arguments[i + 1]
+    }
+    switch CommandLine.arguments[2] {
+    case "on", "off":
+        let failed = AIHooks.set(CommandLine.arguments[2] == "on")
+        failed.forEach { print("could not update \($0)") }
+        exit(failed.isEmpty ? 0 : 1)
+    default:
+        let s = AIHooks.status()
+        print("available: \(s.available)  on: \(s.on)  codex needs trust: \(s.codexNeedsTrust)")
+        exit(0)
+    }
+}
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
@@ -1209,6 +1522,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     model.fillLevel = model.on ? 1 : 0
     model.needsAuth = CommandLine.arguments.contains("--needs-auth")
     model.holdMissing = CommandLine.arguments.contains("--hold-missing")
+    model.ai = AIHooks.Status(available: !CommandLine.arguments.contains("--no-ai"),
+                              on: CommandLine.arguments.contains("--ai-on"),
+                              codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
     let host = NSHostingView(rootView: PanelView(m: model))
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
