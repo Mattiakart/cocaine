@@ -286,6 +286,10 @@ private struct Settings {
     var alertInput: Bool { get { flag("alertInput", true) } nonmutating set { d.set(newValue, forKey: "alertInput") } }
     var alertFlash: Bool { get { flag("alertFlash", true) } nonmutating set { d.set(newValue, forKey: "alertFlash") } }
     var alertSpeak: Bool { get { flag("alertSpeak", false) } nonmutating set { d.set(newValue, forKey: "alertSpeak") } }
+    /// The voice that reads alerts (an AVSpeechSynthesisVoice identifier); "" = the language's default.
+    var alertVoice: String { get { d.string(forKey: "alertVoice") ?? "" } nonmutating set { d.set(newValue, forKey: "alertVoice") } }
+    /// One alert per session: hold "finished" until the session's agents are done and it has been quiet a while.
+    var alertPerSession: Bool { get { flag("alertPerSession", false) } nonmutating set { d.set(newValue, forKey: "alertPerSession") } }
     var alertWhenPresent: Bool { get { flag("alertWhenPresent", false) } nonmutating set { d.set(newValue, forKey: "alertWhenPresent") } }
     static let repeatChoices = [0, 2, 5, 10]          // minutes; 0 = never
     static let durationChoices: [Double] = [5, 15, 0]  // seconds on screen; 0 = until you're back
@@ -546,6 +550,8 @@ private final class PanelModel: ObservableObject {
     @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
     @Published var alertFlash: Bool { didSet { settings.alertFlash = alertFlash } }
     @Published var alertSpeak: Bool { didSet { settings.alertSpeak = alertSpeak } }
+    @Published var alertVoice: String { didSet { settings.alertVoice = alertVoice; previewVoice() } }   // hear it
+    @Published var alertPerSession: Bool { didSet { settings.alertPerSession = alertPerSession } }
     @Published var alertWhenPresent: Bool { didSet { settings.alertWhenPresent = alertWhenPresent } }
     @Published var alertRepeatMinutes: Int { didSet { settings.alertRepeatMinutes = alertRepeatMinutes } }
     @Published var alertDuration: Double { didSet { settings.alertDuration = alertDuration } }
@@ -570,6 +576,7 @@ private final class PanelModel: ObservableObject {
     var pauseAlerts: (Date?) -> Void = { _ in }       // nil = resume
     var testAlert: () -> Void = {}
     var clearHistory: () -> Void = {}
+    var previewVoice: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -580,6 +587,8 @@ private final class PanelModel: ObservableObject {
         alertInput = settings.alertInput
         alertFlash = settings.alertFlash
         alertSpeak = settings.alertSpeak
+        alertVoice = settings.alertVoice
+        alertPerSession = settings.alertPerSession
         alertWhenPresent = settings.alertWhenPresent
         alertRepeatMinutes = settings.alertRepeatMinutes
         alertDuration = settings.alertDuration
@@ -824,6 +833,10 @@ private struct PanelView: View {
                 option(L("Also at the Mac"), L("Otherwise only when you've been away for 20 seconds")) {
                     toggle(L("Also at the Mac"), $m.alertWhenPresent)
                 }
+                option(L("One alert per session"),
+                       L("Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds")) {
+                    toggle(L("One alert per session"), $m.alertPerSession)
+                }
             }
             Divider().padding(.vertical, 8)
             group("how", "rays", L("How"), howSummary) {
@@ -832,6 +845,11 @@ private struct PanelView: View {
                     choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
                 }
                 option(L("Voice"), L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
+                if m.alertSpeak {                               // which voice, only when there's one to choose
+                    option(L("Voice type"), L("The Mac's voices for your language; you hear it as you pick")) {
+                        choice(L("Voice type"), $m.alertVoice, [""] + Voices.available.map(\.identifier), Voices.name)
+                    }
+                }
                 option(L("On screen"), L("How long the alert stays")) {
                     choice(L("On screen"), $m.alertDuration, Settings.durationChoices, durationName)
                 }
@@ -1017,6 +1035,39 @@ private struct PanelView: View {
         .frame(width: 312, alignment: .topLeading)     // never centered, so nothing can slide out sideways
         .fixedSize(horizontal: false, vertical: true)
         .focusEffectDisabled()
+    }
+}
+
+// MARK: - Voices
+
+/// The Mac's voices for reading alerts aloud, in the panel's language.
+private enum Voices {
+    /// The speech language for the UI language, e.g. "it-IT".
+    static var language: String {
+        ["it": "it-IT", "zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "es": "es-ES", "fr": "fr-FR", "de": "de-DE",
+         "ja": "ja-JP"][Language.chosen ?? Language.system] ?? "en-US"
+    }
+
+    /// Voices that speak that language (any region), best quality first, then by name.
+    static var available: [AVSpeechSynthesisVoice] {
+        let prefix = String(language.prefix(2))
+        return AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(prefix) }.sorted {
+            $0.quality != $1.quality ? $0.quality.rawValue > $1.quality.rawValue : $0.name < $1.name
+        }
+    }
+
+    /// The chosen voice if it's still installed, else the language's default.
+    static func voice(_ id: String) -> AVSpeechSynthesisVoice? {
+        (id.isEmpty ? nil : AVSpeechSynthesisVoice(identifier: id)) ?? AVSpeechSynthesisVoice(language: language)
+    }
+
+    static func name(_ id: String) -> String {
+        guard !id.isEmpty, let v = AVSpeechSynthesisVoice(identifier: id) else { return L("Automatic") }
+        switch v.quality {
+        case .premium: return "\(v.name) · Premium"
+        case .enhanced: return "\(v.name) · \(L("Enhanced"))"
+        default: return v.name
+        }
     }
 }
 
@@ -1281,12 +1332,15 @@ private enum AIHooks {
     static var tools: [Tool] {
         [Tool(id: "claude", name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
               events: [.init(name: "Stop", kind: "done"),
-                       .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog")],
+                       .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog"),
+                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop")],
               skipIf: "CURSOR_VERSION"),               // Cursor runs Claude Code's hooks as well; it has its own below
          Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
-              events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "input")]),
+              events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "input"),
+                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop")]),
          Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
-              events: [.init(name: "stop", kind: "done")],   // Cursor has no hook for "waiting for you"
+              events: [.init(name: "stop", kind: "done"),   // Cursor has no hook for "waiting for you"
+                       .init(name: "subagentStart", kind: "agentstart"), .init(name: "subagentStop", kind: "agentstop")],
               handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10"))] },
               top: [.init(key: "version", value: .scalar("1"))]),
          Tool(id: "copilot", name: "GitHub Copilot", folder: home + "/.copilot", file: home + "/.copilot/hooks/cocaine.json",
@@ -1345,9 +1399,9 @@ private enum AIHooks {
               if (event.type === "session.idle") {
                 const s = await client?.session?.get({ path: { id: event.properties?.sessionID } }).catch(() => null)
                 if (s?.data?.parentID) return            // a subagent finished, not the session
-                await $`sh -c ${done}`.quiet().nothrow()
+                await $`sh -c ${done} < /dev/null`.quiet().nothrow()
               } else if (event.type === "permission.asked" || event.type === "question.asked") {
-                await $`sh -c ${input}`.quiet().nothrow()
+                await $`sh -c ${input} < /dev/null`.quiet().nothrow()
               }
             } catch {}
           },
@@ -1362,8 +1416,11 @@ private enum AIHooks {
     static func command(_ tool: Tool, _ kind: String) -> String {
         let from = tool.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? tool.name
         let project = #"$(printf %s "$PWD" | /usr/bin/perl -pe 's|.*/||; s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge')"#
+        // The session, from the JSON the tool sends on stdin, so a session's agents make one alert. Gives up after 2 s
+        // if a tool never closes stdin.
+        let session = #"$(/usr/bin/perl -e 'alarm 2; local $/; my $in = <STDIN> // ""; print $1 if $in =~ /"(?:session_id|sessionId|conversation_id|conversationId|trajectory_id)"\s*:\s*"([A-Za-z0-9._:-]+)"/' 2>/dev/null)"#
         let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
-        return skip + "pgrep -qx Cocaine && open -g \"cocaine://alert?from=\(from)&event=\(kind)&project=\(project)\"; true"
+        return skip + "pgrep -qx Cocaine && open -g \"cocaine://alert?from=\(from)&event=\(kind)&session=\(session)&project=\(project)\"; true"
     }
 
     /// What goes in an event's list: a group holding our handler (with the event's matcher), or the handler itself.
@@ -1636,6 +1693,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hidePanel()
             self?.alert(Notice(from: "Cocaine", message: L("This is a test"), project: nil), away: true, test: true)
         }
+        model.previewVoice = { [weak self] in self?.speak("Claude Code, " + L("has finished")) }
         model.clearHistory = { [weak self] in
             self?.settings.alertHistory = []
             self?.model.history = []
@@ -1675,20 +1733,69 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `cocaine://alert?from=Claude%20Code&event=done|input&project=<folder>` (or `&message=…`) from an AI agent's
-    /// hook or any script.
+    /// `cocaine://alert?from=Claude%20Code&event=done|input|agentstart|agentstop&session=<id>&project=<folder>`
+    /// (or `&message=…`) from an AI agent's hook or any script.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "cocaine" && url.host == "alert" {
             if !didFinishLaunching { launchedForAlert = true }
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             func value(_ name: String) -> String? { items.first { $0.name == name }?.value.flatMap { $0.isEmpty ? nil : $0 } }
-            let input = value("event") == "input"
+            let from = value("from") ?? "Cocaine"
+            let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
+            let session = value("session") ?? "\(from)|\(project ?? "")"   // tools that don't say: one per AI and folder
+            let event = value("event") ?? "done"
+            if event == "agentstart" || event == "agentstop" {       // silent: only counts a session's working agents
+                trackAgent(session, started: event == "agentstart")
+                continue
+            }
+            let input = event == "input"
             if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) { continue }   // not wanted
             let message = value("message") ?? (input ? L("needs your input") : L("has finished"))
-            let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
-            alert(Notice(from: value("from") ?? "Cocaine", message: message, project: project),
-                  away: value("test") == "away" ? true : nil)
+            let notice = Notice(from: from, message: message, project: project)
+            if value("message") == nil && !input && settings.alertPerSession && value("test") == nil {
+                holdUntilQuiet(session, notice)                    // one alert when the whole session is done
+                continue
+            }
+            if input { sessions[session]?.pending?.cancel() }      // it needs you now; "done" will come again later
+            alert(notice, away: value("test") == "away" ? true : nil)
         }
+    }
+
+    /// Per session: agents still at work, when it last did anything, and a "finished" waiting for quiet.
+    private struct SessionState { var agents = 0; var touched = Date(); var pending: DispatchWorkItem? }
+    private var sessions: [String: SessionState] = [:]
+    private static let quietSeconds = 30.0
+
+    private func trackAgent(_ key: String, started: Bool) {
+        var s = sessions[key] ?? SessionState()
+        s.agents = max(0, s.agents + (started ? 1 : -1))
+        s.touched = Date()
+        if started { s.pending?.cancel(); s.pending = nil }   // busy again: whatever "finished" was waiting is stale
+        sessions[key] = s
+        log.notice("session \(key, privacy: .public): \(s.agents, privacy: .public) agent(s) at work")
+    }
+
+    /// "Finished" for a session is shown only once no agent of it is at work and it has stayed quiet for a while;
+    /// every new event in between starts the wait again. A count left over from a lost "agent stopped" expires.
+    private func holdUntilQuiet(_ key: String, _ n: Notice) {
+        sessions = sessions.filter { Date().timeIntervalSince($0.value.touched) < 6 * 3600 }   // forget old sessions
+        var s = sessions[key] ?? SessionState()
+        s.pending?.cancel()
+        s.touched = Date()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, var s = self.sessions[key] else { return }
+            if s.agents > 0 && Date().timeIntervalSince(s.touched) < 1800 {
+                log.notice("session \(key, privacy: .public) finished a step, \(s.agents, privacy: .public) agent(s) still at work")
+                s.pending = nil
+                self.sessions[key] = s
+                return
+            }
+            self.sessions[key] = nil
+            self.alert(n)
+        }
+        s.pending = work
+        sessions[key] = s
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.quietSeconds, execute: work)
     }
 
     struct Notice { let from: String, message: String, project: String? }
@@ -1738,9 +1845,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func speak(_ text: String) {
         let u = AVSpeechUtterance(string: text)
-        let lang = ["it": "it-IT", "zh-Hans": "zh-CN", "zh-Hant": "zh-TW", "es": "es-ES", "fr": "fr-FR", "de": "de-DE",
-                    "ja": "ja-JP"][Language.chosen ?? Language.system] ?? "en-US"
-        u.voice = AVSpeechSynthesisVoice(language: lang)
+        u.voice = Voices.voice(settings.alertVoice)
+        speech.stopSpeaking(at: .immediate)                 // a new alert (or preview) replaces the one being read
         speech.speak(u)
     }
 

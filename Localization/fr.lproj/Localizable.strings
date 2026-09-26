@@ -85,3 +85,9 @@
 "Clear" = "Effacer";
 "Turn Cocaine on" = "Activer Cocaine";
 "Turn Cocaine off" = "Désactiver Cocaine";
+"Voice type" = "Type de voix";
+"The Mac's voices for your language; you hear it as you pick" = "Les voix du Mac pour votre langue ; vous l'entendez en la choisissant";
+"Automatic" = "Automatique";
+"Enhanced" = "Améliorée";
+"One alert per session" = "Une alerte par session";
+"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "Pas pour chaque agent qui termine : seulement quand toute la session est finie et calme depuis 30 secondes";

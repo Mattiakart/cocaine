@@ -55,7 +55,7 @@ nella barra si ricarica e basta.
 
 Apri **Avvisi AI** nel pannello. I suoi quattro gruppi mostrano un riassunto in una riga e si aprono uno alla volta:
 **AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando
-sei al Mac), **Come** (lampeggio, suono, voce, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
+sei al Mac, oppure una volta sola per sessione invece che per ogni agent che finisce), **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
 mentre sei via, e una prova) e **Pausa** (30 minuti, un'ora o fino a domani). Sotto, separati dalle impostazioni,
 gli **Ultimi avvisi**: gli ultimi tre, con il progetto da cui arrivano.
 

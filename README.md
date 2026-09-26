@@ -56,7 +56,7 @@ the baggie in the menu bar just refills.
 
 Open **AI alerts** in the panel. Its four groups each show a one-line summary and open one at a time:
 **Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at
-the Mac), **How** (flash, sound, voice, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
+the Mac, or just once per session instead of for every agent that finishes), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
 you're away, and a test) and **Pause** (30 minutes, an hour, or until tomorrow). Below them, apart from the settings,
 **Recent alerts** lists the last three, with the project each came from.
 

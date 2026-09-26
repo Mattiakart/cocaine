@@ -85,3 +85,9 @@
 "Clear" = "消去";
 "Turn Cocaine on" = "Cocaine をオンにする";
 "Turn Cocaine off" = "Cocaine をオフにする";
+"Voice type" = "声の種類";
+"The Mac's voices for your language; you hear it as you pick" = "言語に合った Mac の声。選ぶと試聴できます";
+"Automatic" = "自動";
+"Enhanced" = "拡張";
+"One alert per session" = "セッションごとに 1 回通知";
+"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "エージェントごとではなく、セッション全体が完了して 30 秒経ったときだけ通知します";

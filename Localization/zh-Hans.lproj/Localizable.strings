@@ -85,3 +85,9 @@
 "Clear" = "清除";
 "Turn Cocaine on" = "打开 Cocaine";
 "Turn Cocaine off" = "关闭 Cocaine";
+"Voice type" = "声音类型";
+"The Mac's voices for your language; you hear it as you pick" = "适合你的语言的 Mac 声音，选择时即可试听";
+"Automatic" = "自动";
+"Enhanced" = "增强";
+"One alert per session" = "每个会话提醒一次";
+"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "不为每个完成的代理提醒：仅在整个会话完成并安静 30 秒后提醒";

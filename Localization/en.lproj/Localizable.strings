@@ -85,3 +85,9 @@
 "Clear" = "Clear";
 "Turn Cocaine on" = "Turn Cocaine on";
 "Turn Cocaine off" = "Turn Cocaine off";
+"Voice type" = "Voice type";
+"The Mac's voices for your language; you hear it as you pick" = "The Mac's voices for your language; you hear it as you pick";
+"Automatic" = "Automatic";
+"Enhanced" = "Enhanced";
+"One alert per session" = "One alert per session";
+"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds";
