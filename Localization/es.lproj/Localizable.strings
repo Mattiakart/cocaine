@@ -90,4 +90,4 @@
 "Automatic" = "Automática";
 "Enhanced" = "Mejorada";
 "One alert per session" = "Un aviso por sesión";
-"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "No por cada agente que termina: solo cuando toda la sesión ha terminado y lleva 30 segundos en calma";
+"Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "No por cada agente o tarea: solo cuando toda la sesión lleva un minuto sin actividad";

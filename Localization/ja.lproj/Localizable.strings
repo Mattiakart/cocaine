@@ -90,4 +90,4 @@
 "Automatic" = "自動";
 "Enhanced" = "拡張";
 "One alert per session" = "セッションごとに 1 回通知";
-"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "エージェントごとではなく、セッション全体が完了して 30 秒経ったときだけ通知します";
+"Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "エージェントやタスクごとではなく、セッション全体が 1 分間動いていないときだけ通知します";

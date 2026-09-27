@@ -90,4 +90,4 @@
 "Automatic" = "Automatic";
 "Enhanced" = "Enhanced";
 "One alert per session" = "One alert per session";
-"Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds" = "Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds";
+"Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute";

@@ -834,7 +834,7 @@ private struct PanelView: View {
                     toggle(L("Also at the Mac"), $m.alertWhenPresent)
                 }
                 option(L("One alert per session"),
-                       L("Not for every agent that finishes: only when the whole session is done and has been quiet for 30 seconds")) {
+                       L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
                     toggle(L("One alert per session"), $m.alertPerSession)
                 }
             }
@@ -1416,11 +1416,14 @@ private enum AIHooks {
     static func command(_ tool: Tool, _ kind: String) -> String {
         let from = tool.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? tool.name
         let project = #"$(printf %s "$PWD" | /usr/bin/perl -pe 's|.*/||; s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge')"#
-        // The session, from the JSON the tool sends on stdin, so a session's agents make one alert. Gives up after 2 s
-        // if a tool never closes stdin.
-        let session = #"$(/usr/bin/perl -e 'alarm 2; local $/; my $in = <STDIN> // ""; print $1 if $in =~ /"(?:session_id|sessionId|conversation_id|conversationId|trajectory_id)"\s*:\s*"([A-Za-z0-9._:-]+)"/' 2>/dev/null)"#
+        // From the JSON the tool sends on stdin (read with the perl and JSON::PP every Mac has): the session, so a
+        // session's agents make one alert, and how much of its work is still in flight (Claude Code's background_tasks
+        // and session_crons), so a session paused waiting for it isn't "done". Prints "<session> <count>", the count
+        // empty when the tool sends no such list; gives up after 2 s if a tool never closes stdin.
+        let info = #"$(/usr/bin/perl -MJSON::PP -e 'alarm 2; local $/; my $j = eval { decode_json(<STDIN> // "") } || {}; my $s = $j->{session_id} // $j->{sessionId} // $j->{conversation_id} // $j->{conversationId} // $j->{trajectory_id} // ""; $s =~ s/[^A-Za-z0-9._:-]//g; my $n; for my $k ("background_tasks", "session_crons") { $n += @{$j->{$k}} if ref $j->{$k} eq "ARRAY" } print "$s ", $n // ""' 2>/dev/null)"#
         let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
-        return skip + "pgrep -qx Cocaine && open -g \"cocaine://alert?from=\(from)&event=\(kind)&session=\(session)&project=\(project)\"; true"
+        return skip + "pgrep -qx Cocaine && { j=\(info); open -g \"cocaine://alert?from=\(from)&event=\(kind)"
+            + "&session=${j% *}&running=${j#* }&project=\(project)\"; }; true"
     }
 
     /// What goes in an event's list: a group holding our handler (with the event's matcher), or the handler itself.
@@ -1744,8 +1747,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
             let session = value("session") ?? "\(from)|\(project ?? "")"   // tools that don't say: one per AI and folder
             let event = value("event") ?? "done"
-            if event == "agentstart" || event == "agentstop" {       // silent: only counts a session's working agents
-                trackAgent(session, started: event == "agentstart")
+            if let running = value("running").flatMap(Int.init) {    // the tool's own list of work still in flight
+                var s = sessions[session] ?? SessionState()
+                s.inFlight = running
+                sessions[session] = s
+            }
+            if event != "done" && event != "input" {                 // silent signs of life: agents and tasks
+                activity(session, event)
                 continue
             }
             let input = event == "input"
@@ -1756,46 +1764,73 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 holdUntilQuiet(session, notice)                    // one alert when the whole session is done
                 continue
             }
-            if input { sessions[session]?.pending?.cancel() }      // it needs you now; "done" will come again later
+            if input, var s = sessions[session] {                 // it needs you now; "done" will come again later
+                s.timer?.cancel(); s.notice = nil; sessions[session] = s
+            }
             alert(notice, away: value("test") == "away" ? true : nil)
         }
     }
 
-    /// Per session: agents still at work, when it last did anything, and a "finished" waiting for quiet.
-    private struct SessionState { var agents = 0; var touched = Date(); var pending: DispatchWorkItem? }
+    /// Per session: agents and tasks still running, its last sign of life, and a "finished" on hold. `inFlight` is the
+    /// tool's own count of work still in flight (Claude Code sends it); when known, it replaces counting agents.
+    private struct SessionState {
+        var agents = 0, tasks = 0
+        var inFlight: Int?
+        var touched = Date()
+        var notice: Notice?
+        var timer: DispatchWorkItem?
+        var busy: Bool { inFlight.map { $0 > 0 } ?? (agents + tasks > 0) }
+        /// With the tool's own count a short wait is enough; by counting agents alone, wait out the ~30 s gaps an
+        /// active session has between steps.
+        var quietSeconds: Double { inFlight == nil ? 60 : 20 }
+    }
     private var sessions: [String: SessionState] = [:]
-    private static let quietSeconds = 30.0
 
-    private func trackAgent(_ key: String, started: Bool) {
+    /// Agents or tasks starting and ending: counted, and (like any sign of life) they push a held "finished" back.
+    private func activity(_ key: String, _ event: String) {
         var s = sessions[key] ?? SessionState()
-        s.agents = max(0, s.agents + (started ? 1 : -1))
+        switch event {
+        case "agentstart": s.agents += 1
+        case "agentstop": s.agents = max(0, s.agents - 1)
+        case "taskstart": s.tasks += 1
+        case "taskstop": s.tasks = max(0, s.tasks - 1)
+        default: break
+        }
         s.touched = Date()
-        if started { s.pending?.cancel(); s.pending = nil }   // busy again: whatever "finished" was waiting is stale
         sessions[key] = s
-        log.notice("session \(key, privacy: .public): \(s.agents, privacy: .public) agent(s) at work")
+        log.notice("session \(key, privacy: .public) \(event, privacy: .public): \(s.agents, privacy: .public) agent(s), \(s.tasks, privacy: .public) task(s)")
+        if s.notice != nil { rearm(key) }
     }
 
-    /// "Finished" for a session is shown only once no agent of it is at work and it has stayed quiet for a while;
-    /// every new event in between starts the wait again. A count left over from a lost "agent stopped" expires.
+    /// Holds a session's "finished": it's shown once nothing of that session is running and it has had no sign of
+    /// life for `quietSeconds`; every new event starts the wait again.
     private func holdUntilQuiet(_ key: String, _ n: Notice) {
         sessions = sessions.filter { Date().timeIntervalSince($0.value.touched) < 6 * 3600 }   // forget old sessions
         var s = sessions[key] ?? SessionState()
-        s.pending?.cancel()
+        s.notice = n
         s.touched = Date()
+        sessions[key] = s
+        rearm(key)
+    }
+
+    private func rearm(_ key: String) {
+        guard var s = sessions[key] else { return }
+        s.timer?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, var s = self.sessions[key] else { return }
-            if s.agents > 0 && Date().timeIntervalSince(s.touched) < 1800 {
-                log.notice("session \(key, privacy: .public) finished a step, \(s.agents, privacy: .public) agent(s) still at work")
-                s.pending = nil
-                self.sessions[key] = s
+            guard let self, let s = self.sessions[key], let n = s.notice else { return }
+            let quiet = Date().timeIntervalSince(s.touched)
+            let busy = s.busy && quiet < 1800                   // a count stuck by a lost "ended" gives up after 30 min
+            if quiet < s.quietSeconds - 0.5 || busy {
+                log.notice("session \(key, privacy: .public) still working (in flight: \(s.inFlight.map(String.init) ?? "?", privacy: .public), agents: \(s.agents, privacy: .public)): holding")
+                self.rearm(key)
                 return
             }
             self.sessions[key] = nil
             self.alert(n)
         }
-        s.pending = work
+        s.timer = work
         sessions[key] = s
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.quietSeconds, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + s.quietSeconds, execute: work)
     }
 
     struct Notice { let from: String, message: String, project: String? }
