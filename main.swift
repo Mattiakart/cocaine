@@ -571,8 +571,9 @@ private enum PhoneShortcut {
         let items: [(title: String, args: String)] = [
             (L("Status"), "status"), (L("Turn on"), "on"), (L("Turn off"), "off"), (L("Projects"), "projects"),
         ]
-        let group = uuid()
+        let group = uuid(), ask = uuid()
         var actions: [[String: Any]] = [
+            action("ask", ["UUID": ask, "WFAskActionPrompt": L("Your Mac password"), "WFInputType": "Text"]),   // asked at each run
             action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine",
                                       "WFMenuItems": items.map(\.title)]),
         ]
@@ -581,7 +582,7 @@ private enum PhoneShortcut {
             actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": item.title]))
             actions.append(action("runsshscript", [
                 "UUID": ssh, "WFSSHHost": host, "WFSSHPort": "22", "WFSSHUser": user, "WFSSHAuthenticationType": "Password",
-                "WFSSHPassword": "", "WFSSHScript": "\(command) remote \(item.args)",
+                "WFSSHPassword": token(ask, "Provided Input"), "WFSSHScript": "\(command) remote \(item.args)",
             ]))
             actions.append(action("showresult", ["Text": token(ssh, "Shell Script Result")]))
         }

@@ -110,8 +110,8 @@ Tailscale). Cocaine non apre nessuna porta di rete: passa tutto dall'SSH di macO
 
 **Dall'iPhone**, in *Automazioni → Lavoro da remoto → iPhone → Invia* nel pannello Cocaine crea un Comando Rapido pronto
 (un menu: Stato, Attiva, Spegni, Progetti, con già il nome del tuo Mac e il tuo utente), lo firma e apre la condivisione:
-lo mandi con AirDrop o con Messaggi. Sull'iPhone lo apri e, la prima volta, scegli come accedere nel suo passo SSH
-(password o chiave). Per firmarlo servono una connessione a internet e iCloud sul Mac. Oppure usa una qualsiasi app SSH o
+lo mandi con AirDrop o con Messaggi. Sull'iPhone lo apri: a ogni avvio ti chiede la password del tuo Mac (per usare una chiave invece
+della password, modifica il suo passo SSH). Per firmarlo servono una connessione a internet e iCloud sul Mac. Oppure usa una qualsiasi app SSH o
 l'azione **Esegui script tramite SSH**: *Copia* mette il comando sugli appunti; le parti sono:
 
 ```
