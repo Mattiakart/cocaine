@@ -155,3 +155,6 @@
 "Turn off" = "Ausschalten";
 "Turn on" = "Einschalten";
 "iPhone" = "iPhone";
+"Send the Shortcut to your iPhone" = "Kurzbefehl ans iPhone senden";
+"Copy the SSH command" = "SSH-Befehl kopieren";
+"Send a test to your phone" = "Test ans Telefon senden";

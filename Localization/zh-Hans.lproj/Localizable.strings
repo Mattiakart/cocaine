@@ -155,3 +155,6 @@
 "Turn off" = "关闭";
 "Turn on" = "开启";
 "iPhone" = "iPhone";
+"Send the Shortcut to your iPhone" = "把快捷指令发到 iPhone";
+"Copy the SSH command" = "复制 SSH 命令";
+"Send a test to your phone" = "向手机发送测试";

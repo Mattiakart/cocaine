@@ -1342,12 +1342,13 @@ private struct PanelView: View {
                 }
                 option(L("iPhone"), L("Sends you a ready Shortcut: AirDrop, Messages…")) {
                     Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
+                        .help(L("Send the Shortcut to your iPhone"))
                 }
                 option(L("Command"), L("Copies the SSH command to run from your phone")) {
-                    Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small)
+                    Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small).help(L("Copy the SSH command"))
                 }
                 option(L("Phone alerts"), m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
-                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty)
+                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
                 }
                 Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
                     .buttonStyle(.link).font(UI.detail)
