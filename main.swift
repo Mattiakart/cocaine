@@ -2188,6 +2188,18 @@ private final class MenuPanel: NSPanel {
 }
 
 
+/// A menu item that runs a closure.
+private final class ClosureItem: NSMenuItem {
+    private let handler: () -> Void
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+    required init(coder: NSCoder) { fatalError() }
+    @objc private func run() { handler() }
+}
+
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings()
     private let model = PanelModel()
@@ -2749,11 +2761,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                     a.runModal()
                     return
                 }
-                let picker = NSSharingServicePicker(items: [file])
-                picker.show(relativeTo: self.hostView.bounds, of: self.hostView, preferredEdge: .minY)
+                self.presentShare(file)
                 log.notice("shortcut ready to share: \(file.lastPathComponent, privacy: .public)")
             }
         }
+    }
+
+    /// A menu of the ways to share the file (AirDrop, Messages, Mail, Notes…) plus "Show in Finder". The panel closes and
+    /// the app becomes active first: the sharing windows (AirDrop's, Notes') can't open from a panel that isn't.
+    private var shareServices: [NSSharingService] = []
+    private func presentShare(_ file: URL) {
+        hidePanel()
+        NSApp.activate()
+        shareServices = NSSharingService.sharingServices(forItems: [file])
+        let menu = NSMenu()
+        for service in shareServices {
+            let item = ClosureItem(title: service.title) { service.perform(withItems: [file]) }
+            item.image = service.image
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        menu.addItem(ClosureItem(title: L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([file]) })
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     /// The command to run from a phone (a terminal or Shortcuts' "Run Script Over SSH").
@@ -3003,6 +3032,25 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--auth-preview
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule" {
     _ = NSApplication.shared
     exit(Authorization.remove() ? 0 : 1)
+}
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--share-test" {
+    // Activates the app and performs a sharing service ("airdrop" or "notes") on the signed shortcut, then reports the
+    // windows that appear (for tests).
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    guard let file = PhoneShortcut.signedFile() else { print("could not sign"); exit(1) }
+    app.activate()
+    let services = NSSharingService.sharingServices(forItems: [file])
+    print("services: " + services.map(\.title).joined(separator: ", "))
+    guard let service = services.first(where: { $0.title.lowercased().contains(CommandLine.arguments[2]) }) else { print("no such service"); exit(1) }
+    service.perform(withItems: [file])
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+        let windows = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? [])
+            
+        print("windows: \(windows.filter { ($0[kCGWindowBounds as String] as? [String: Any])?["Width"] as? Double ?? 0 > 100 }.map { "\($0[kCGWindowOwnerName as String] ?? "")/\($0[kCGWindowName as String] ?? "")" })")
+        exit(0)
+    }
+    app.run()
 }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcut" {
     // Builds and signs the iPhone Shortcut, copies it to the given path (for tests).
