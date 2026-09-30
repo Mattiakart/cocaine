@@ -12,9 +12,12 @@
 
 import AppKit
 import AVFoundation
+import Carbon.HIToolbox
+import Darwin
 import ImageIO
 import IOKit
 import IOKit.pwr_mgt
+import IOKit.ps
 import Security
 import ServiceManagement
 import SwiftUI
@@ -331,6 +334,242 @@ private struct Settings {
     }
 }
 
+// MARK: - Automation: timer, battery guard, smart triggers, agent states, hotkeys, phone alerts
+
+private extension Settings {
+    static let timerChoices = [0, 30, 60, 120, 240, 480]        // minutes Cocaine stays on when turned on by hand; 0 = until turned off
+    static let batteryChoices = [0, 10, 15, 20, 30]             // % at which to act on battery; 0 = off
+
+    var timerMinutes: Int { get { d.object(forKey: "timerMinutes") as? Int ?? 0 } nonmutating set { d.set(newValue, forKey: "timerMinutes") } }
+    /// When Cocaine turns itself off (also set by `cocaine remote on --for …`).
+    var onUntil: Date? {
+        get { let v = d.double(forKey: "onUntil"); return v > 0 ? Date(timeIntervalSince1970: v) : nil }
+        nonmutating set { if let n = newValue { d.set(n.timeIntervalSince1970, forKey: "onUntil") } else { d.removeObject(forKey: "onUntil") } }
+    }
+    var batteryThreshold: Int { get { d.object(forKey: "batteryThreshold") as? Int ?? 0 } nonmutating set { d.set(newValue, forKey: "batteryThreshold") } }
+    var batteryTurnsOff: Bool { get { flag("batteryTurnsOff", true) } nonmutating set { d.set(newValue, forKey: "batteryTurnsOff") } }
+    var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
+    var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
+    var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    /// A random value the app keeps for its own tools (`cocaine remote notify test`); URLs need it for `test=` flags.
+    var testToken: String {
+        if let t = d.string(forKey: "testToken") { return t }
+        let t = UUID().uuidString
+        d.set(t, forKey: "testToken")
+        return t
+    }
+    var alertError: Bool { get { flag("alertError", true) } nonmutating set { d.set(newValue, forKey: "alertError") } }
+    /// Phone alerts: a Shortcut to run (given the alert text) and/or an ntfy topic URL. Set with `cocaine remote notify`.
+    var phoneShortcut: String { d.string(forKey: "phoneShortcut") ?? "" }
+    var phoneNtfy: String { d.string(forKey: "phoneNtfy") ?? "" }
+}
+
+/// Battery Guard: fires once when the battery (on battery power) reaches the threshold, and re-arms when it recovers.
+private struct BatteryGuard {
+    var tripped = false
+
+    mutating func check(percent: Int, onAC: Bool, threshold: Int) -> Bool {
+        guard threshold > 0 else { tripped = false; return false }
+        if onAC || percent > threshold + 3 { tripped = false; return false }
+        if percent <= threshold && !tripped { tripped = true; return true }
+        return false
+    }
+}
+
+/// Smart Triggers: turns Cocaine on when something wants the Mac awake, and off again a while after it stops, but only
+/// if the trigger (not the user) turned it on; a user who turns it off while a trigger is active is not overruled.
+private struct AutoOn {
+    enum Step { case none, turnOn, turnOff }
+    var owned = false                  // Cocaine is on because a trigger turned it on
+    var suppressed = false             // the user said no while a trigger was active
+    var lastActive = Date.distantPast
+
+    mutating func step(active: Bool, isOn: Bool, now: Date, grace: TimeInterval = 180) -> Step {
+        if active {
+            lastActive = now
+            if !isOn && !suppressed { owned = true; return .turnOn }
+            return .none
+        }
+        suppressed = false
+        if owned {
+            if !isOn { owned = false; return .none }
+            if now.timeIntervalSince(lastActive) >= grace { owned = false; return .turnOff }
+        }
+        return .none
+    }
+
+    mutating func userToggled(to on: Bool, triggerActive: Bool) {
+        owned = false
+        if !on && triggerActive { suppressed = true }
+    }
+}
+
+/// What the hooks say each AI session is doing: working, waiting for you, done, or failed. Written to a file the
+/// `cocaine remote status` command reads.
+private struct AgentEntry: Codable, Identifiable, Equatable {
+    var id: String
+    var from: String
+    var project: String?
+    var state: String            // working | waiting | done | error
+    var since: Double
+    var isLive: Bool { state == "working" || state == "waiting" }
+}
+
+private final class AgentBoard {
+    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Cocaine", isDirectory: true)
+    static let file = directory.appendingPathComponent("state.json")
+    private(set) var entries: [AgentEntry] = []
+
+    /// Records a session's new state (its time restarts only when the state changes).
+    func set(_ id: String, from: String, project: String?, state: String, now: Date = Date()) {
+        if let i = entries.firstIndex(where: { $0.id == id }) {
+            if entries[i].state != state { entries[i].since = now.timeIntervalSince1970 }
+            entries[i].state = state; entries[i].from = from; entries[i].project = project
+        } else {
+            entries.append(AgentEntry(id: id, from: from, project: project, state: state, since: now.timeIntervalSince1970))
+        }
+        prune(now)
+    }
+
+    /// Finished and failed ones fade after 30 minutes; a "working" nobody has updated for 2 hours is stale.
+    func prune(_ now: Date = Date()) {
+        let t = now.timeIntervalSince1970
+        entries.removeAll { t - $0.since > 6 * 3600 || (!$0.isLive && t - $0.since > 1800) || ($0.state == "working" && t - $0.since > 7200) }
+        entries.sort { $0.since > $1.since }
+    }
+
+    /// Something is working or waiting for the user.
+    func anyLive(_ now: Date = Date()) -> Bool { entries.contains { $0.isLive && now.timeIntervalSince1970 - $0.since < 7200 } }
+
+    func write(cocaineOn: Bool, until: Date?) {
+        struct Snapshot: Codable { var updated: Double; var cocaine: String; var until: Double?; var agents: [AgentEntry] }
+        let snap = Snapshot(updated: Date().timeIntervalSince1970, cocaine: cocaineOn ? "ON" : "OFF",
+                            until: until?.timeIntervalSince1970, agents: entries)
+        try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        if let data = try? JSONEncoder().encode(snap) { try? data.write(to: Self.file, options: .atomic) }
+    }
+}
+
+private extension System {
+    /// Charge and power source of the internal battery; nil on a Mac without one.
+    static var battery: (percent: Int, onAC: Bool)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in list {
+            guard let d = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  (d[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType,
+                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            return (cur * 100 / max, (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue)
+        }
+        return nil
+    }
+
+    /// Names of every running process and app, lowercased (what a Smart Trigger matches against).
+    static func runningNames() -> Set<String> {
+        var names = Set<String>()
+        let count = proc_listallpids(nil, 0)
+        if count > 0 {
+            var pids = [pid_t](repeating: 0, count: Int(count) + 64)
+            let n = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+            var buf = [CChar](repeating: 0, count: 256)
+            for pid in pids.prefix(Int(n)) where pid > 0 {
+                if proc_name(pid, &buf, UInt32(buf.count)) > 0 { names.insert(String(cString: buf).lowercased()) }
+            }
+        }
+        for app in NSWorkspace.shared.runningApplications {
+            if let n = app.localizedName { names.insert(n.lowercased()) }
+            if let n = app.bundleURL?.deletingPathExtension().lastPathComponent { names.insert(n.lowercased()) }
+        }
+        return names
+    }
+
+    /// Regular apps the user can pick as a trigger, by name.
+    static func runningAppNames() -> [String] {
+        Array(Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)))
+            .filter { $0 != "Cocaine" }.sorted { $0.lowercased() < $1.lowercased() }
+    }
+
+    /// Whether anything is listening for SSH on this Mac (System Settings → General → Sharing → Remote Login).
+    static var sshOn: Bool {
+        let s = socket(AF_INET, SOCK_STREAM, 0)
+        guard s >= 0 else { return false }
+        defer { close(s) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(22).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(s, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 } }
+    }
+}
+
+// MARK: Global hotkeys (⌃⌥⌘ + letter): Carbon's RegisterEventHotKey needs no privacy permission
+
+private var hotkeyHandler: ((UInt32) -> Void)?
+
+private final class Hotkeys {
+    static let keys: [(id: UInt32, code: UInt32, label: String)] = [(1, 8, "C"), (2, 31, "O"), (3, 35, "P")]   // toggle, panel, pause
+    private var refs: [EventHotKeyRef?] = []
+    private var installed = false
+
+    func set(enabled: Bool, action: @escaping (UInt32) -> Void) {
+        refs.forEach { if let r = $0 { UnregisterEventHotKey(r) } }
+        refs = []
+        guard enabled else { return }
+        hotkeyHandler = action
+        if !installed {
+            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+                var hk = EventHotKeyID()
+                GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                                  MemoryLayout<EventHotKeyID>.size, nil, &hk)
+                DispatchQueue.main.async { hotkeyHandler?(hk.id) }
+                return noErr
+            }, 1, &spec, nil, nil)
+            installed = true
+        }
+        for k in Self.keys {
+            var ref: EventHotKeyRef?
+            RegisterEventHotKey(k.code, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: OSType(0x434F4341), id: k.id),
+                                GetApplicationEventTarget(), 0, &ref)
+            refs.append(ref)
+        }
+    }
+}
+
+// MARK: Phone alerts: a Shortcut and/or an ntfy topic
+
+private enum Phone {
+    static var configured: Bool { let s = Settings(); return !s.phoneShortcut.isEmpty || !s.phoneNtfy.isEmpty }
+
+    static var summary: String {
+        let s = Settings()
+        var parts: [String] = []
+        if !s.phoneShortcut.isEmpty { parts.append("\(L("Shortcut")) “\(s.phoneShortcut)”") }
+        if !s.phoneNtfy.isEmpty { parts.append("ntfy") }
+        return parts.isEmpty ? L("Not set up") : parts.joined(separator: " + ")
+    }
+
+    /// Sends the alert text to the phone. The Shortcut runs with the text as its input (build one that messages you);
+    /// ntfy posts it to the topic, so the text leaves the Mac: only used when the user set that topic.
+    static func send(_ text: String) {
+        let s = Settings()
+        DispatchQueue.global().async {
+            if !s.phoneShortcut.isEmpty {
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-\(UUID().uuidString).txt")
+                if (try? text.write(to: file, atomically: true, encoding: .utf8)) != nil {
+                    run("/usr/bin/shortcuts", ["run", s.phoneShortcut, "--input-path", file.path])
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+            if s.phoneNtfy.hasPrefix("https://") {
+                run("/usr/bin/curl", ["-sS", "-m", "10", "-H", "Title: Cocaine", "--data-raw", text, s.phoneNtfy])
+            }
+        }
+    }
+}
+
 // MARK: - Baggie glyph
 
 private enum Baggie {
@@ -546,6 +785,24 @@ private final class PanelModel: ObservableObject {
     }
     @Published var alertsPausedUntil: Date?
     @Published var history: [AlertRecord] = []       // newest first; kept by the app delegate
+    // Automation: the panel's second section
+    @Published var autoExpanded = UserDefaults.standard.bool(forKey: "autoExpanded") {
+        didSet { if persistLanguage { UserDefaults.standard.set(autoExpanded, forKey: "autoExpanded") } }
+    }
+    @Published var autoGroup = UserDefaults.standard.string(forKey: "autoGroup") ?? "" {
+        didSet { if persistLanguage { UserDefaults.standard.set(autoGroup, forKey: "autoGroup") } }
+    }
+    @Published var timerMinutes: Int { didSet { settings.timerMinutes = timerMinutes; timerChanged() } }
+    @Published var onUntil: Date?                    // when Cocaine will turn itself off
+    @Published var batteryThreshold: Int { didSet { settings.batteryThreshold = batteryThreshold } }
+    @Published var batteryTurnsOff: Bool { didSet { settings.batteryTurnsOff = batteryTurnsOff } }
+    @Published var triggerAgents: Bool { didSet { settings.triggerAgents = triggerAgents } }
+    @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
+    @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
+    @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
+    @Published var sshOn = false
+    @Published var phone = ""                        // "" = not set up; else what alerts go to
+    @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
     @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
     @Published var alertFlash: Bool { didSet { settings.alertFlash = alertFlash } }
@@ -577,6 +834,10 @@ private final class PanelModel: ObservableObject {
     var testAlert: () -> Void = {}
     var clearHistory: () -> Void = {}
     var previewVoice: () -> Void = {}
+    var timerChanged: () -> Void = {}
+    var hotkeysChanged: () -> Void = {}
+    var copyRemoteCommand: () -> Void = {}
+    var testPhone: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -595,6 +856,13 @@ private final class PanelModel: ObservableObject {
         alertSound = settings.alertSound
         alertsPausedUntil = settings.alertsPausedUntil
         history = settings.alertHistory
+        timerMinutes = settings.timerMinutes
+        onUntil = settings.onUntil
+        batteryThreshold = settings.batteryThreshold
+        batteryTurnsOff = settings.batteryTurnsOff
+        triggerAgents = settings.triggerAgents
+        triggerApps = settings.triggerApps
+        hotkeys = settings.hotkeys
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -719,10 +987,11 @@ private struct PanelView: View {
 
     /// One group of the AI alerts card: a line with its summary that opens (one group at a time) onto its options.
     private func group<Content: View>(_ id: String, _ icon: String, _ title: String, _ summary: String, warning: Bool = false,
+                                      key: ReferenceWritableKeyPath<PanelModel, String> = \.aiGroup,
                                       @ViewBuilder _ content: () -> Content) -> some View {
-        let open = m.aiGroup == id
+        let open = m[keyPath: key] == id
         return VStack(alignment: .leading, spacing: 9) {
-            Button { m.aiGroup = open ? "" : id } label: {
+            Button { m[keyPath: key] = open ? "" : id } label: {
                 HStack(spacing: 7) {
                     Image(systemName: icon).font(UI.icon).foregroundStyle(Color.accentColor)
                         .frame(width: 16)
@@ -914,6 +1183,143 @@ private struct PanelView: View {
         .padding(.horizontal, 10)                               // lined up with the card's contents
     }
 
+    // MARK: Automation section
+
+    private func timerName(_ minutes: Int) -> String {
+        minutes == 0 ? L("Until I turn it off") : minutes < 60 ? String(format: L("%d min"), minutes) : String(format: L("%d h"), minutes / 60)
+    }
+    private func batteryName(_ pct: Int) -> String { pct == 0 ? L("Off") : "\(pct)%" }
+
+    private var timerSummary: String {
+        if m.on, let until = m.onUntil, until > Date() { return String(format: L("until %@"), Self.time.string(from: until)) }
+        return timerName(m.timerMinutes)
+    }
+    private var triggersSummary: String {
+        var parts: [String] = []
+        if m.triggerAgents { parts.append(L("AI at work")) }
+        if let first = m.triggerApps.first { parts.append(m.triggerApps.count == 1 ? first : "\(first) +\(m.triggerApps.count - 1)") }
+        return parts.isEmpty ? L("Off") : parts.joined(separator: ", ")
+    }
+    private var autoSummary: String {
+        let on = [m.timerMinutes > 0 ? L("Timer") : nil, m.batteryThreshold > 0 ? L("Battery") : nil,
+                  m.triggerAgents || !m.triggerApps.isEmpty ? L("Triggers") : nil, m.hotkeys ? L("Keys") : nil].compactMap { $0 }
+        return on.isEmpty ? L("Off") : on.joined(separator: ", ")
+    }
+
+    private var automationSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            group("timer", "timer", L("Timer"), timerSummary, key: \.autoGroup) {
+                option(L("Stay on for"), L("Cocaine turns itself off when the time is up")) {
+                    choice(L("Stay on for"), $m.timerMinutes, Settings.timerChoices, timerName)
+                }
+            }
+            Divider().padding(.vertical, 8)
+            group("battery", "battery.50", L("Battery Guard"),
+                  m.batteryThreshold == 0 ? L("Off") : "≤ \(m.batteryThreshold)%", key: \.autoGroup) {
+                option(L("When the battery reaches"), m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
+                    choice(L("Battery"), $m.batteryThreshold, Settings.batteryChoices, batteryName)
+                }
+                option(L("Then"), L("What Cocaine does at that level")) {
+                    choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
+                }
+                .disabled(m.batteryThreshold == 0).opacity(m.batteryThreshold == 0 ? 0.45 : 1)
+            }
+            Divider().padding(.vertical, 8)
+            group("triggers", "bolt.badge.automatic", L("Smart Triggers"), triggersSummary, key: \.autoGroup) {
+                option(L("An AI is at work"), L("On while an AI works or waits for you; off 3 minutes after")) {
+                    toggle(L("An AI is at work"), $m.triggerAgents)
+                }
+                option(L("These programs are open"), L("On while any is running; off 3 minutes after")) {
+                    Menu {
+                        ForEach(m.triggerApps, id: \.self) { app in
+                            Button { m.triggerApps.removeAll { $0 == app } } label: { Label(app, systemImage: "checkmark") }
+                        }
+                        if !m.triggerApps.isEmpty { Divider() }
+                        Section(L("Open now")) {
+                            ForEach(System.runningAppNames().filter { n in !m.triggerApps.contains(n) }, id: \.self) { app in
+                                Button(app) { m.triggerApps.append(app) }
+                            }
+                        }
+                    } label: {
+                        Text(m.triggerApps.isEmpty ? L("Choose") : "\(m.triggerApps.count)")
+                    }
+                    .menuStyle(.borderlessButton).font(UI.value)
+                }
+            }
+            Divider().padding(.vertical, 8)
+            group("keys", "keyboard", L("Shortcuts"), m.hotkeys ? "⌃⌥⌘" : L("Off"), key: \.autoGroup) {
+                option(L("Global shortcuts"), L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach([("C", L("Turn Cocaine on or off")), ("O", L("Open the panel")), ("P", L("Pause or resume alerts"))], id: \.0) { k in
+                        HStack(spacing: 8) {
+                            Text("⌃⌥⌘\(k.0)").font(UI.detail.monospaced()).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
+                            Text(k.1).font(UI.detail)
+                        }
+                    }
+                }
+                .opacity(m.hotkeys ? 1 : 0.45)
+            }
+            Divider().padding(.vertical, 8)
+            group("remote", "iphone.gen3", L("Remote work"), m.sshOn ? L("Ready") : L("SSH off"),
+                  warning: !m.sshOn, key: \.autoGroup) {
+                option(L("Remote Login"), m.sshOn ? L("On: you can reach this Mac over SSH") : L("Off: turn it on to reach this Mac"),
+                       warning: !m.sshOn) {
+                    Button(L("Open")) { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")!) }
+                        .controlSize(.small)
+                }
+                option(L("Command"), L("Copies the SSH command to run from your phone")) {
+                    Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small)
+                }
+                option(L("Phone alerts"), m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
+                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty)
+                }
+                Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
+                    .buttonStyle(.link).font(UI.detail)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+    }
+
+    /// What each AI session is doing right now, from its hooks.
+    private var agentsSection: some View {
+        let now = Date().timeIntervalSince1970
+        let shown = m.board.filter { $0.isLive || now - $0.since < 600 }.prefix(4)
+        return VStack(alignment: .leading, spacing: 6) {
+            if !shown.isEmpty {
+                Text(L("Agents")).font(UI.detail.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(Array(shown)) { e in
+                    HStack(spacing: 8) {
+                        Image(systemName: Self.stateIcon(e.state)).font(UI.icon).foregroundStyle(Self.stateColor(e.state))
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(e.from).font(UI.title).lineLimit(1)
+                            Text([Self.stateName(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
+                                .font(UI.detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer(minLength: 4)
+                        Text(Self.age(e.since)).font(UI.detail.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func stateIcon(_ s: String) -> String {
+        ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
+    }
+    private static func stateColor(_ s: String) -> Color {
+        s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Color.accentColor
+    }
+    private static func stateName(_ s: String) -> String {
+        ["working": L("Working"), "waiting": L("Needs you"), "done": L("Done"), "error": L("Error")][s] ?? s
+    }
+    private static let relative: RelativeDateTimeFormatter = { let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated; return f }()
+    private static func age(_ since: Double) -> String {
+        Date().timeIntervalSince1970 - since < 45 ? L("now") : relative.localizedString(for: Date(timeIntervalSince1970: since), relativeTo: Date())
+    }
+
     private var status: String {
         if m.needsAuth { return L("Admin password needed") }
         if m.on && m.holdMissing { return L("Keeping the screen on…") }
@@ -975,6 +1381,8 @@ private struct PanelView: View {
 
             Divider()
 
+            if !m.board.isEmpty { agentsSection }
+
             if m.ai.available {
                 VStack(alignment: .leading, spacing: 8) {
                     Button { m.aiExpanded.toggle() } label: {  // the whole row opens and closes the section
@@ -1001,6 +1409,23 @@ private struct PanelView: View {
                 }
                 if m.aiExpanded { Divider() }
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Button { m.autoExpanded.toggle() } label: {   // timer, battery, triggers, shortcuts, remote work
+                    HStack(spacing: 6) {
+                        Text(L("Automation")).lineLimit(1)
+                        Spacer(minLength: 6)
+                        if !m.autoExpanded { Text(autoSummary).font(UI.value).foregroundStyle(.secondary).lineLimit(1) }
+                        Image(systemName: "chevron.right").font(UI.chevron)
+                            .foregroundStyle(.tertiary).rotationEffect(.degrees(m.autoExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("Timer, battery, smart triggers, shortcuts and remote work"))
+                if m.autoExpanded { automationSection }
+            }
+            if m.autoExpanded { Divider() }
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
                 HStack(spacing: 6) {
@@ -1095,6 +1520,13 @@ private enum Feedback {
         c.queryItems = [URLQueryItem(name: "subject", value: "Cocaine \(appVersion) – " + L("Feedback")),
                         URLQueryItem(name: "body", value: "\n\n\n— \(details)")]
         if let url = c.url { NSWorkspace.shared.open(url) }
+    }
+
+    /// The README's section on remote work.
+    static var remoteGuide: URL {
+        (Language.chosen ?? Language.system) == "it"
+            ? URL(string: "https://github.com/Mattiakart/cocaine/blob/main/README.it.md#lavoro-da-remoto")!
+            : URL(string: "https://github.com/Mattiakart/cocaine#remote-work")!
     }
 
     /// The README's section on alerts, in Italian for Italian users.
@@ -1303,6 +1735,7 @@ private enum AIHooks {
         let name: String
         let kind: String                                  // the alert: "done" or "input"
         var matcher: String? = nil
+        var minVersion: [Int]? = nil                      // only for tools new enough to know this event (Claude Code)
     }
 
     struct Tool {
@@ -1316,6 +1749,7 @@ private enum AIHooks {
         var top: [JSONValue.Member] = []                  // top-level keys the file must have (Cursor's "version": 1)
         var contents: ((Tool) -> String)? = nil           // .ownFile: the whole file
         var skipIf: String? = nil                         // an env variable set by another tool that runs these hooks too
+        var activeEvents: [Event] { events.filter { $0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true } }
         var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
     }
 
@@ -1333,20 +1767,25 @@ private enum AIHooks {
         [Tool(id: "claude", name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
               events: [.init(name: "Stop", kind: "done"),
                        .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog"),
-                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop")],
+                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
+                       .init(name: "UserPromptSubmit", kind: "start"),
+                       .init(name: "StopFailure", kind: "error", minVersion: [2, 1, 78])],
               skipIf: "CURSOR_VERSION"),               // Cursor runs Claude Code's hooks as well; it has its own below
          Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
               events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "input"),
-                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop")]),
+                       .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
+                       .init(name: "UserPromptSubmit", kind: "start")]),
          Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
               events: [.init(name: "stop", kind: "done"),   // Cursor has no hook for "waiting for you"
-                       .init(name: "subagentStart", kind: "agentstart"), .init(name: "subagentStop", kind: "agentstop")],
+                       .init(name: "subagentStart", kind: "agentstart"), .init(name: "subagentStop", kind: "agentstop"),
+                       .init(name: "beforeSubmitPrompt", kind: "start")],
               handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10"))] },
               top: [.init(key: "version", value: .scalar("1"))]),
          Tool(id: "copilot", name: "GitHub Copilot", folder: home + "/.copilot", file: home + "/.copilot/hooks/cocaine.json",
               layout: .ownFile, contents: copilotFile),  // Copilot CLI and VS Code's Copilot agent both read it
          Tool(id: "gemini", name: "Gemini CLI", folder: home + "/.gemini", file: home + "/.gemini/settings.json",
-              events: [.init(name: "AfterAgent", kind: "done"), .init(name: "Notification", kind: "input")],
+              events: [.init(name: "AfterAgent", kind: "done"), .init(name: "Notification", kind: "input"),
+                       .init(name: "BeforeAgent", kind: "start")],
               handler: { command, kind in                // milliseconds; a name, so it can be disabled by name
                   [.init(key: "name", value: .string("cocaine-\(kind)")), .init(key: "type", value: .string("command")),
                    .init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10000"))] },
@@ -1357,9 +1796,31 @@ private enum AIHooks {
               layout: .flat, events: [.init(name: "post_cascade_response", kind: "done")],
               handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "show_output", value: .scalar("false"))] }),
          Tool(id: "qwen", name: "Qwen Code", folder: home + "/.qwen", file: home + "/.qwen/settings.json",
-              events: [.init(name: "Stop", kind: "done"), .init(name: "Notification", kind: "input", matcher: "permission_prompt")]),
+              events: [.init(name: "Stop", kind: "done"), .init(name: "Notification", kind: "input", matcher: "permission_prompt"),
+                       .init(name: "UserPromptSubmit", kind: "start")]),
          Tool(id: "opencode", name: "OpenCode", folder: home + "/.config/opencode", file: home + "/.config/opencode/plugins/cocaine.js",
               layout: .ownFile, contents: openCodeFile)]
+    }
+    /// Claude Code's version, asked once (a login shell finds it like Terminal does); nil if it can't be read.
+    private static var claudeVersionCache: [Int]??
+    static func claudeVersion(atLeast need: [Int]) -> Bool {
+        if claudeVersionCache == nil {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            p.arguments = ["-lc", "claude --version"]
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = FileHandle.nullDevice
+            var parsed: [Int]?
+            if (try? p.run()) != nil {
+                let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                p.waitUntilExit()
+                if let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) { parsed = out[r].split(separator: ".").compactMap { Int($0) } }
+            }
+            claudeVersionCache = .some(parsed)
+        }
+        guard let have = claudeVersionCache ?? nil else { return false }
+        return have.lexicographicallyPrecedes(need) == false
     }
     static var present: [Tool] { tools.filter(isInstalled) }
     static func tool(_ id: String) -> Tool? { tools.first { $0.id == id } }
@@ -1463,7 +1924,7 @@ private enum AIHooks {
     static func edited(_ root: JSONValue, for tool: Tool, on: Bool) -> JSONValue? {
         let before = root["hooks"]
         guard let events = (before ?? .object([])).members else { return nil }
-        var wanted = on ? Dictionary(uniqueKeysWithValues: tool.events.map { ($0.name, entry(tool, $0)) }) : [:]
+        var wanted = on ? Dictionary(uniqueKeysWithValues: tool.activeEvents.map { ($0.name, entry(tool, $0)) }) : [:]
         var result: [JSONValue.Member] = []
         for var event in events {
             guard let entries = event.value.items else { wanted[event.key] = nil; result.append(event); continue }
@@ -1487,7 +1948,7 @@ private enum AIHooks {
             event.value = .array(out)
             result.append(event)
         }
-        for e in tool.events { if let w = wanted.removeValue(forKey: e.name) { result.append(.init(key: e.name, value: .array([w]))) } }
+        for e in tool.activeEvents { if let w = wanted.removeValue(forKey: e.name) { result.append(.init(key: e.name, value: .array([w]))) } }
         var root = root
         if !result.isEmpty { root["hooks"] = .object(result) }
         else if before?.members?.isEmpty == false { root["hooks"] = nil }
@@ -1678,6 +2139,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchedForAlert = false         // started only to show an alert: don't turn Cocaine on
     private var repeatTimer: Timer?
     private let speech = AVSpeechSynthesizer()
+    private let board = AgentBoard()                 // what each AI session is doing, from the hooks
+    private var batteryGuard = BatteryGuard()
+    private var autoOn = AutoOn()
+    private var triggerActive = false
+    private let hotkeys = Hotkeys()
+    private var pendingCommands: [URL] = []          // cocaine://on|off|… that arrived while the app was still starting
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
 
@@ -1701,6 +2168,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.settings.alertHistory = []
             self?.model.history = []
         }
+        model.timerChanged = { [weak self] in self?.timerChanged() }
+        model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
+        model.copyRemoteCommand = { [weak self] in self?.copyRemoteCommand() }
+        model.testPhone = { Phone.send(L("This is a test")) }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
@@ -1724,11 +2195,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         ticker = t
         tick()
         didFinishLaunching = true
+        applyHotkeys()
+        model.phone = Phone.configured ? Phone.summary : ""
         if launchedForAlert {                        // `open cocaine://…` started us: show it, then go away again
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
             return
         }
         if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
+        pendingCommands.forEach(command)             // then whatever was asked for while it started
+        pendingCommands = []
         DispatchQueue.global().async {
             AIHooks.update()
             let ai = AIHooks.status()
@@ -1736,39 +2211,94 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// `cocaine://alert?from=Claude%20Code&event=done|input|agentstart|agentstop&session=<id>&project=<folder>`
-    /// (or `&message=…`) from an AI agent's hook or any script.
+    /// `cocaine://alert?from=Claude%20Code&event=done|input|error|start|agentstart|agentstop&session=<id>&project=<folder>`
+    /// (or `&message=…`) from an AI agent's hook or any script; and control commands: `cocaine://on|off|toggle|panel`,
+    /// `cocaine://timer?minutes=90`, `cocaine://pause?minutes=60`, `cocaine://resume` (for Shortcuts, scripts, hotkeys).
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == "cocaine" && url.host == "alert" {
+        for url in urls where url.scheme == "cocaine" {
+            guard url.host == "alert" else {
+                if didFinishLaunching { command(url) } else { pendingCommands.append(url) }
+                continue
+            }
             if !didFinishLaunching { launchedForAlert = true }
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            func value(_ name: String) -> String? { items.first { $0.name == name }?.value.flatMap { $0.isEmpty ? nil : $0 } }
+            // Anything can open a cocaine:// URL: keep values short and free of control characters.
+            func value(_ name: String) -> String? {
+                items.first { $0.name == name }?.value.flatMap { raw in
+                    let cleaned = String(String.UnicodeScalarView(raw.unicodeScalars.map { $0.value < 32 || $0.value == 127 ? " " : $0 }))
+                    let clean = String(cleaned.prefix(name == "message" ? 200 : 80)).trimmingCharacters(in: .whitespaces)
+                    return clean.isEmpty ? nil : clean
+                }
+            }
+            let trusted = value("token") == settings.testToken                  // only the app's own tools know it
             let from = value("from") ?? "Cocaine"
             let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
             let session = value("session") ?? "\(from)|\(project ?? "")"   // tools that don't say: one per AI and folder
             let event = value("event") ?? "done"
+            if trusted && value("test") == "phone" { Phone.send(value("message") ?? L("This is a test")); continue }
             if let running = value("running").flatMap(Int.init) {    // the tool's own list of work still in flight
                 var s = sessions[session] ?? SessionState()
                 s.inFlight = running
                 sessions[session] = s
             }
-            if event != "done" && event != "input" {                 // silent signs of life: agents and tasks
+            let isTest = trusted && value("test") != nil
+            if event == "error" {                                    // an agent stopped with an error
+                if !isTest { boardSet(session, from, project, "error") }
+                if settings.alertError { alert(Notice(from: from, message: value("message") ?? L("stopped with an error"), project: project),
+                                                away: trusted && value("test") == "away" ? true : nil) }
+                continue
+            }
+            if event != "done" && event != "input" {                 // silent signs of life: prompts, agents and tasks
+                if !isTest, ["start", "agentstart", "taskstart"].contains(event) { boardSet(session, from, project, "working") }
                 activity(session, event)
                 continue
             }
             let input = event == "input"
-            if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) { continue }   // not wanted
+            if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) {   // alerts of this kind are off
+                if !isTest { boardSet(session, from, project, input ? "waiting" : "done") }
+                continue
+            }
             let message = value("message") ?? (input ? L("needs your input") : L("has finished"))
             let notice = Notice(from: from, message: message, project: project)
-            if value("message") == nil && !input && settings.alertPerSession && value("test") == nil {
+            if value("message") == nil && !input && settings.alertPerSession && !isTest {
+                boardSet(session, from, project, "working")        // still counts as at work until it stays quiet
                 holdUntilQuiet(session, notice)                    // one alert when the whole session is done
                 continue
             }
+            if !isTest { boardSet(session, from, project, input ? "waiting" : "done") }
             if input, var s = sessions[session] {                 // it needs you now; "done" will come again later
                 s.timer?.cancel(); s.notice = nil; sessions[session] = s
             }
-            alert(notice, away: value("test") == "away" ? true : nil)
+            alert(notice, away: trusted && value("test") == "away" ? true : nil)
         }
+    }
+
+    /// The control commands above.
+    private func command(_ url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let minutes = items.first { $0.name == "minutes" }?.value.flatMap(Int.init).map { min(max($0, 1), 1440) }
+        log.notice("command \(url.host ?? "", privacy: .public)")
+        switch url.host {
+        case "on": autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true)
+        case "off": autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
+        case "toggle": toggleCocaine()
+        case "timer": autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes ?? (settings.timerMinutes > 0 ? settings.timerMinutes : 60))
+        case "pause": pauseAlerts(until: Date().addingTimeInterval(Double(minutes ?? 60) * 60))
+        case "resume": pauseAlerts(until: nil)
+        case "panel": if !panel.isVisible { showPanel(fromClick: false) }
+        default: break
+        }
+    }
+
+    private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String) {
+        board.set(session, from: from, project: project, state: state)
+        writeBoard()
+    }
+
+    private func writeBoard() {
+        board.prune()
+        model.board = board.entries
+        board.write(cocaineOn: System.cocaineOn, until: settings.onUntil)
     }
 
     /// Per session: agents and tasks still running, its last sign of life, and a "finished" on hold. `inFlight` is the
@@ -1826,6 +2356,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             self.sessions[key] = nil
+            self.boardSet(key, n.from, n.project, "done")
             self.alert(n)
         }
         s.timer = work
@@ -1850,6 +2381,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             model.history = settings.alertHistory
         }
         pulseIcon()
+        if away && !repeated && !test && Phone.configured {
+            Phone.send([a.from, a.message, a.project].compactMap { $0 }.joined(separator: " · "))
+        }
         guard away || settings.alertWhenPresent else { return }
         if settings.alertFlash {
             var activity: IOPMAssertionID = 0            // wakes a sleeping display
@@ -1903,7 +2437,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
         settings.savedBrightness = [:]
-        if System.cocaineOn { engine("off") }
+        if System.cocaineOn && !launchedForAlert { engine("off") }
     }
 
     /// Opening Cocaine again (e.g. from Spotlight) shows the panel.
@@ -1989,12 +2523,17 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.global().async {
             let missing = on && !System.displayHeld
             let ai = AIHooks.status()
+            let ssh = System.sshOn
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
                 if !self.model.settingAI && self.model.ai != ai { self.model.ai = ai }
                 let paused = self.settings.alertsPausedUntil   // a pause ends by itself
                 if self.model.alertsPausedUntil != paused { self.model.alertsPausedUntil = paused }
+                if self.model.sshOn != ssh { self.model.sshOn = ssh }
+                let phone = Phone.configured ? Phone.summary : ""
+                if self.model.phone != phone { self.model.phone = phone }
+                self.model.battery = System.battery.map { "\($0.percent)%" }
             }
         }
     }
@@ -2040,6 +2579,90 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             alerter.close(animated: true)            // the user is back
         }
         updateDimming(on: on)
+        if ticks % 4 == 0 { checkTimer(on) }                     // every 2 s
+        if ticks % 10 == 0 { evaluateTriggers(on) }              // every 5 s
+        if ticks % 20 == 0 { checkBattery(on); writeBoard() }    // every 10 s
+    }
+
+    // MARK: Timer, Battery Guard, Smart Triggers, hotkeys
+
+    /// Turns Cocaine off when its time is up (a timer from the panel, `cocaine://timer` or `cocaine remote on --for`).
+    private func checkTimer(_ on: Bool) {
+        let until = settings.onUntil
+        if model.onUntil != until { model.onUntil = until }
+        guard wantOn == nil else { return }
+        if on, let until, Date() >= until {
+            settings.onUntil = nil
+            model.onUntil = nil
+            autoOn.userToggled(to: false, triggerActive: triggerActive)     // a trigger doesn't undo it at once
+            setCocaine(false, auto: true)
+            log.notice("timer over: Cocaine off")
+            alert(Notice(from: "Cocaine", message: L("Timer over: Cocaine is off"), project: nil), away: true)
+        } else if !on && until != nil {
+            settings.onUntil = nil                               // a deadline with nothing to end
+            model.onUntil = nil
+        }
+    }
+
+    /// On battery power, at the chosen level: turn Cocaine off (or just warn), once until the battery recovers.
+    private func checkBattery(_ on: Bool) {
+        let b = System.battery
+        model.battery = b.map { "\($0.percent)%" }
+        guard let b else { return }
+        guard batteryGuard.check(percent: b.percent, onAC: b.onAC, threshold: settings.batteryThreshold), on else { return }
+        log.notice("battery at \(b.percent, privacy: .public)%")
+        if settings.batteryTurnsOff {
+            autoOn.userToggled(to: false, triggerActive: triggerActive)
+            setCocaine(false, auto: true)
+            alert(Notice(from: "Cocaine", message: String(format: L("Battery at %d%%: Cocaine is off"), b.percent), project: nil), away: true)
+        } else {
+            alert(Notice(from: "Cocaine", message: String(format: L("Battery at %d%%"), b.percent), project: nil), away: true)
+        }
+    }
+
+    /// Smart Triggers: an AI at work (from the hooks), or a chosen program running, keeps Cocaine on.
+    private func evaluateTriggers(_ on: Bool) {
+        var active = settings.triggerAgents && board.anyLive()
+        let apps = settings.triggerApps.map { $0.lowercased() }
+        if !active && !apps.isEmpty {
+            let names = System.runningNames()
+            active = apps.contains { names.contains($0) }
+        }
+        triggerActive = active
+        switch autoOn.step(active: active, isOn: wantOn ?? on, now: Date()) {
+        case .turnOn: log.notice("smart trigger: on"); setCocaine(true, auto: true)
+        case .turnOff: log.notice("smart trigger: off"); setCocaine(false, auto: true)
+        case .none: break
+        }
+    }
+
+    private func timerChanged() {
+        guard System.cocaineOn || model.on else { return }
+        let minutes = settings.timerMinutes
+        settings.onUntil = minutes > 0 ? Date().addingTimeInterval(Double(minutes) * 60) : nil    // applies to now
+        model.onUntil = settings.onUntil
+    }
+
+    /// ⌃⌥⌘C toggles Cocaine, ⌃⌥⌘O opens the panel, ⌃⌥⌘P pauses (or resumes) alerts.
+    private func applyHotkeys() {
+        hotkeys.set(enabled: settings.hotkeys) { [weak self] id in
+            guard let self else { return }
+            switch id {
+            case 1: self.toggleCocaine()
+            case 2: if self.panel.isVisible { self.hidePanel() } else { self.showPanel(fromClick: false) }
+            case 3: self.pauseAlerts(until: self.settings.alertsPausedUntil == nil ? Date().addingTimeInterval(3600) : nil)
+            default: break
+            }
+        }
+    }
+
+    /// The command to run from a phone (a terminal or Shortcuts' "Run Script Over SSH").
+    private func copyRemoteCommand() {
+        let host = (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
+        let local = ProcessInfo.processInfo.hostName.hasSuffix(".local") ? ProcessInfo.processInfo.hostName : "\(host.replacingOccurrences(of: " ", with: "-")).local"
+        let text = "ssh \(NSUserName())@\(local) '\(scriptPath) remote status'"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// Fills the baggie gradually when Cocaine turns on, empties it when it turns off.
@@ -2089,8 +2712,20 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Flips the switch at once and applies it in the background; clicks made meanwhile are never lost.
     private func toggleCocaine() {
         let target = !(wantOn ?? model.on)
+        autoOn.userToggled(to: target, triggerActive: triggerActive)
+        setCocaine(target)
+    }
+
+    /// Sets Cocaine on or off. By hand it also starts the chosen timer (or `forMinutes`); a trigger, the timer itself or
+    /// the battery guard (`auto`) leaves the deadline alone.
+    private func setCocaine(_ target: Bool, auto: Bool = false, forMinutes: Int? = nil) {
         wantOn = target
         model.on = target
+        if !auto {
+            let minutes = forMinutes ?? settings.timerMinutes
+            settings.onUntil = target && minutes > 0 ? Date().addingTimeInterval(Double(minutes) * 60) : nil
+            model.onUntil = settings.onUntil
+        }
         applyWanted()
     }
 
@@ -2269,6 +2904,49 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule"
     _ = NSApplication.shared
     exit(Authorization.remove() ? 0 : 1)
 }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
+    // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
+    var failed = 0
+    func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    var g = BatteryGuard()
+    check("battery: off threshold never fires", !g.check(percent: 5, onAC: false, threshold: 0))
+    check("battery: above threshold is quiet", !g.check(percent: 40, onAC: false, threshold: 20))
+    check("battery: fires at the threshold", g.check(percent: 20, onAC: false, threshold: 20))
+    check("battery: fires only once while it stays low", !g.check(percent: 15, onAC: false, threshold: 20))
+    check("battery: not re-armed by a small recovery", !g.check(percent: 22, onAC: false, threshold: 20) && !g.check(percent: 19, onAC: false, threshold: 20))
+    check("battery: plugging in re-arms it", !g.check(percent: 19, onAC: true, threshold: 20) && g.check(percent: 19, onAC: false, threshold: 20))
+    check("battery: never fires on power", { var x = BatteryGuard(); return !x.check(percent: 3, onAC: true, threshold: 30) }())
+    var a = AutoOn(); let t0 = Date()
+    check("trigger: nothing active, nothing to do", a.step(active: false, isOn: false, now: t0) == .none)
+    check("trigger: active and off → turn on", a.step(active: true, isOn: false, now: t0) == .turnOn)
+    check("trigger: stays on while active", a.step(active: true, isOn: true, now: t0 + 60) == .none)
+    check("trigger: waits out the grace period", a.step(active: false, isOn: true, now: t0 + 120) == .none)
+    check("trigger: off after 3 quiet minutes", a.step(active: false, isOn: true, now: t0 + 61 + 180) == .turnOff)
+    var b = AutoOn()
+    _ = b.step(active: true, isOn: false, now: t0)
+    b.userToggled(to: false, triggerActive: true)
+    check("trigger: user's OFF is respected while active", b.step(active: true, isOn: false, now: t0 + 10) == .none)
+    check("trigger: …until the trigger has gone away", b.step(active: false, isOn: false, now: t0 + 20) == .none && b.step(active: true, isOn: false, now: t0 + 30) == .turnOn)
+    var c = AutoOn()
+    check("trigger: a manual ON is never turned off by it", { _ = c.step(active: true, isOn: true, now: t0); return c.step(active: false, isOn: true, now: t0 + 999) == .none }())
+    var d = AutoOn()
+    _ = d.step(active: true, isOn: false, now: t0)
+    d.userToggled(to: true, triggerActive: true)
+    check("trigger: user takes over an auto-on", d.step(active: false, isOn: true, now: t0 + 999) == .none)
+    let board = AgentBoard(); let now = Date()
+    board.set("s1", from: "Claude Code", project: "x", state: "working", now: now)
+    board.set("s2", from: "Codex", project: nil, state: "waiting", now: now)
+    check("board: working and waiting are live", board.anyLive(now))
+    board.set("s1", from: "Claude Code", project: "x", state: "done", now: now)
+    board.set("s2", from: "Codex", project: nil, state: "done", now: now)
+    check("board: nothing live when all are done", !board.anyLive(now))
+    board.prune(now.addingTimeInterval(1900))
+    check("board: finished sessions fade after 30 minutes", board.entries.isEmpty)
+    board.set("s3", from: "Gemini CLI", project: nil, state: "working", now: now)
+    board.prune(now.addingTimeInterval(7300))
+    check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
+    exit(failed == 0 ? 0 : 1)
+}
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
     // `on|off|status [tool ids…] [--home <dir>]` for the AI alerts hooks: every tool on this Mac unless ids are given.
     // The Homebrew uninstall runs `off`; --home works on a copy, for tests.
@@ -2309,6 +2987,19 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
                          ("Cursor", "has finished", "Gestionale", 4000)]
             .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
+    }
+    if let i = CommandLine.arguments.firstIndex(of: "--auto"), i + 1 < CommandLine.arguments.count {   // open a group of Automation
+        model.autoExpanded = true
+        model.autoGroup = CommandLine.arguments[i + 1] == "none" ? "" : CommandLine.arguments[i + 1]
+        model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
+        model.sshOn = !CommandLine.arguments.contains("--no-ssh"); model.battery = "80%"
+        model.phone = "Comando Rapido “Avvisa iPhone”"
+    }
+    if CommandLine.arguments.contains("--agents") {
+        let t = Date().timeIntervalSince1970
+        model.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
+                       AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90),
+                       AgentEntry(id: "3", from: "Cursor", project: "Gestionale", state: "error", since: t - 30)]
     }
     if let i = CommandLine.arguments.firstIndex(of: "--group"), i + 1 < CommandLine.arguments.count {
         model.aiGroup = CommandLine.arguments[i + 1]

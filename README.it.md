@@ -99,6 +99,59 @@ chiuso.
 La ✉︎ accanto alla versione, nel pannello, apre una mail all'autore con le versioni di Cocaine e di macOS già scritte.
 Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattiakart/cocaine/issues).
 
+## Lavoro da remoto
+
+Lasci il Mac e continui a lavorare dal telefono. Cocaine tiene sveglio il Mac (il coperchio può restare chiuso) e un
+piccolo comando ti permette di avviare, seguire e guidare gli agent AI da qualsiasi posto in cui puoi eseguire un comando.
+
+**Da fare una volta, sul Mac:** Impostazioni di Sistema → Generali → Condivisione → **Login remoto** attivo (meglio con
+accesso solo a chiave), e raggiungi il Mac dal telefono dalla rete di casa o da una VPN che già usi (per esempio
+Tailscale). Cocaine non apre nessuna porta di rete: passa tutto dall'SSH di macOS.
+
+**Dal telefono**, con una qualsiasi app SSH o con l'azione **Esegui script tramite SSH** di Comandi Rapidi. In
+*Automazioni → Lavoro da remoto → Copia* nel pannello trovi il comando già pronto; le parti sono:
+
+```
+C=/Applications/Cocaine.app/Contents/Resources/cocaine
+ssh tu@il-tuo-mac.local "$C remote status"                       # Cocaine, batteria, agent al lavoro
+ssh tu@il-tuo-mac.local "$C remote on --for 3h"                  # Mac sveglio per 3 ore
+ssh tu@il-tuo-mac.local "$C remote projects"                     # le cartelle in cui puoi lavorare
+ssh tu@il-tuo-mac.local "$C remote start claude mio-progetto Correggi i test che falliscono"
+ssh tu@il-tuo-mac.local "$C remote start codex mio-progetto --resume"
+ssh tu@il-tuo-mac.local "$C remote log claude-mio-progetto 30"    # cosa mostra l'agent sullo schermo
+ssh tu@il-tuo-mac.local "$C remote send claude-mio-progetto Sì, procedi"
+ssh tu@il-tuo-mac.local "$C remote key claude-mio-progetto enter" # anche esc, up, down, tab, ctrl-c, y, n, 1-9
+ssh tu@il-tuo-mac.local "$C remote stop claude-mio-progetto"
+```
+
+Agent: Claude Code, Codex, Gemini CLI, Cursor, GitHub Copilot, OpenCode, Qwen Code e Aider (`remote agents` elenca quelli
+installati; `--resume` riprende l'ultima conversazione per Claude Code, Codex, Cursor, Copilot e OpenCode). Ognuno gira
+in una sessione `screen` che sopravvive alla chiusura della connessione (`remote attach <run>` la riprende in un
+terminale). I progetti sono le cartelle con un `.git` sotto `~/Developer`, `~/Projects`, `~/Documents` e `~/Desktop`
+(la lista si cambia in `~/Library/Application Support/Cocaine/projects.conf`). Cocaine si attiva quando parte il lavoro
+e torna com'era quando finisce l'ultimo.
+
+**Sapere cosa succede.** Gli hook degli Avvisi AI dicono a Cocaine anche quando un agent inizia a lavorare, aspetta te,
+finisce o va in errore, e il pannello li elenca. `remote status` mostra lo stesso, e gli **Avvisi sul telefono** ti
+mandano ogni avviso: con `cocaine remote notify shortcut "Nome"` Cocaine esegue quel Comando Rapido (con il testo
+dell'avviso come input: costruiscine uno che ti manda un messaggio o una notifica), oppure con
+`cocaine remote notify ntfy https://ntfy.sh/il-tuo-argomento-segreto` ricevi una notifica push (il testo dell'avviso
+passa da quel servizio). `cocaine remote notify test` lo prova.
+
+**Svegliare il Mac.** È Cocaine attivo a tenerlo raggiungibile. Un Mac già andato in stop si risveglia solo dalla sua rete:
+con un'app Wake-on-LAN (`cocaine remote wake-info` stampa l'indirizzo da usare) oppure, se in rete c'è un Sleep Proxy
+(Apple TV, HomePod, alcuni router), semplicemente collegandoti. Da internet, raggiungi prima la rete di casa con una VPN.
+
+**Anche dai Comandi Rapidi sul Mac**, con i link: `cocaine://on`, `cocaine://off`, `cocaine://toggle`,
+`cocaine://timer?minutes=90`, `cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.
+
+### Automazioni
+
+Nel pannello, *Automazioni*: **Timer** (resta attivo da 30 minuti a 8 ore, poi si spegne), **Battery Guard** (a batteria,
+al 10–30 % spegne Cocaine o ti avvisa soltanto), **Smart Triggers** (attivo mentre un'AI lavora o aspetta te, o mentre
+girano i programmi scelti; si spegne dopo 3 minuti; se lo spegni tu a mano, vale la tua scelta) e **Scorciatoie**
+(⌃⌥⌘C attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi).
+
 ## Da sapere
 
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.

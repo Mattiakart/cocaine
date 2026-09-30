@@ -16,7 +16,9 @@ PMSET=/usr/bin/pmset
 SELF=${0:A}   # capture now: inside functions zsh sets $0 to the function name
 SELF_RE=$(print -r -- "$SELF" | /usr/bin/sed 's/[][\\.^$*+?(){}|]/\\&/g')   # the path as a literal regex
 POLL=10       # seconds between SleepDisabled checks while holding
-HLOCK="${TMPDIR:-/tmp}/cocaine.hold.lock"
+HLOCKDIR="${COCAINE_SUPPORT:-$HOME/Library/Application Support/Cocaine}"   # private (0700), never a shared /tmp
+/bin/mkdir -p -m 700 "$HLOCKDIR" 2>/dev/null
+HLOCK="$HLOCKDIR/hold.lock"
 zmodload zsh/system
 
 # Prints 1 or 0; prints nothing and fails if pmset could not be read.
@@ -83,5 +85,6 @@ case "$1" in
   status) if is_on; then print -r -- "ON"; hold_pid >/dev/null && print -r -- "display: held" || print -r -- "display: not held"
           else print -r -- "OFF"; fi
           exit 0 ;;
-  *)      print -ru2 -- "usage: cocaine on|off|status"; exit 64 ;;
+  remote) shift; exec /bin/zsh "${SELF:h}/remote.zsh" "$@" ;;
+  *)      print -ru2 -- "usage: cocaine on|off|status|remote …"; exit 64 ;;
 esac

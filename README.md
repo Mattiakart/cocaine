@@ -99,6 +99,57 @@ running.
 The ✉︎ next to the version in the panel opens an email to the author, with your Cocaine and macOS versions already filled
 in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattiakart/cocaine/issues).
 
+## Remote work
+
+Leave the Mac, keep working from your phone. Cocaine keeps the Mac awake (the lid can stay closed), and a small
+command lets you start, follow and steer AI agents from anywhere you can run a command.
+
+**Set up once, on the Mac:** System Settings → General → Sharing → **Remote Login** on (better with key-only login), and
+reach the Mac from your phone over your home network or a VPN you already use (for example Tailscale). Cocaine opens no
+network port of its own: everything goes through macOS's own SSH.
+
+**From the phone**, with any SSH app or Apple Shortcuts' **Run Script Over SSH** action. The panel's *Automation → Remote
+work → Copy* puts the command on the clipboard; the parts are:
+
+```
+C=/Applications/Cocaine.app/Contents/Resources/cocaine
+ssh you@your-mac.local "$C remote status"                       # Cocaine, battery, agents at work
+ssh you@your-mac.local "$C remote on --for 3h"                  # keep the Mac awake for 3 hours
+ssh you@your-mac.local "$C remote projects"                     # the folders you can start work in
+ssh you@your-mac.local "$C remote start claude my-project Fix the failing tests"
+ssh you@your-mac.local "$C remote start codex my-project --resume"
+ssh you@your-mac.local "$C remote log claude-my-project 30"      # what the agent shows on screen
+ssh you@your-mac.local "$C remote send claude-my-project Yes, go ahead"
+ssh you@your-mac.local "$C remote key claude-my-project enter"   # also esc, up, down, tab, ctrl-c, y, n, 1-9
+ssh you@your-mac.local "$C remote stop claude-my-project"
+```
+
+Agents: Claude Code, Codex, Gemini CLI, Cursor, GitHub Copilot, OpenCode, Qwen Code and Aider (`remote agents` lists
+what's installed; `--resume` continues the latest conversation for Claude Code, Codex, Cursor, Copilot and OpenCode).
+Each one runs in a `screen` session that survives the connection closing (`remote attach <run>` takes it over in a
+terminal). Projects are the folders with a `.git` under `~/Developer`, `~/Projects`, `~/Documents` and `~/Desktop`
+(change the list in `~/Library/Application Support/Cocaine/projects.conf`). Cocaine turns on when work starts and goes
+back to how it was when the last run ends.
+
+**Knowing what's going on.** The AI alerts hooks also tell Cocaine when an agent starts working, waits for you, finishes
+or fails, and the panel lists them. `remote status` shows the same, and **Phone alerts** send every alert to you: run
+`cocaine remote notify shortcut "Name"` and Cocaine runs that Shortcut (with the alert text as its input; build one that
+sends you a message or notification), or `cocaine remote notify ntfy https://ntfy.sh/your-secret-topic` for a
+push notification (that sends the alert text to that service). `cocaine remote notify test` tries it.
+
+**Waking the Mac.** Cocaine on is what keeps it reachable. A Mac that has already gone to sleep wakes only from its own
+network: with a Wake-on-LAN app (`cocaine remote wake-info` prints the address to use) or, if a Sleep Proxy (Apple TV,
+HomePod, some routers) is present, just by connecting. From the internet, reach your home network first through a VPN.
+
+**Also from Shortcuts on the Mac**, links: `cocaine://on`, `cocaine://off`, `cocaine://toggle`, `cocaine://timer?minutes=90`,
+`cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.
+
+### Automation
+
+In the panel, *Automation*: **Timer** (stay on for 30 minutes … 8 hours, then turn off), **Battery Guard** (on battery, at
+10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, or while chosen programs
+run; off 3 minutes after; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
+
 ## Good to know
 
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.

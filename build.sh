@@ -21,6 +21,7 @@ lipo -create "$BUILD/arm64/Cocaine" "$BUILD/x86_64/Cocaine" -output "$APP/Conten
 "$BUILD/$(uname -m)/Cocaine" --render-assets "$BUILD"
 iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 install -m 0755 cocaine.zsh "$APP/Contents/Resources/cocaine"
+install -m 0644 remote.zsh "$APP/Contents/Resources/remote.zsh"
 cp Info.plist "$APP/Contents/Info.plist"
 cp -R Localization/*.lproj "$APP/Contents/Resources/"   # UI text; macOS picks the Mac's language, else English
 codesign --force --sign - "$APP"          # ad-hoc: free, but other Macs need "Open Anyway" the first time
