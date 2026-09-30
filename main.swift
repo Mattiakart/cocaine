@@ -3014,6 +3014,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
     host.cacheDisplay(in: host.bounds, to: rep)
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil"] {
+        UserDefaults.standard.removeObject(forKey: key)     // the sample values above must not stay in the real settings
+    }
     print(Bundle.main.preferredLocalizations.first ?? "?")
     exit(0)
 }
