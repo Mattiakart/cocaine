@@ -146,3 +146,12 @@
 "Working" = "Trabajando";
 "now" = "ahora";
 "stopped with an error" = "se detuvo con un error";
+"Can't make the Shortcut" = "No se pudo crear el atajo";
+"Projects" = "Proyectos";
+"Send" = "Enviar";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "Te envía un atajo listo: AirDrop, Mensajes…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "Para firmarlo hace falta conexión a internet e iCloud (inicia sesión en Ajustes del Sistema).";
+"Status" = "Estado";
+"Turn off" = "Apagar";
+"Turn on" = "Activar";
+"iPhone" = "iPhone";

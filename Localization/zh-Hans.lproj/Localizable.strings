@@ -146,3 +146,12 @@
 "Working" = "工作中";
 "now" = "刚刚";
 "stopped with an error" = "因错误而停止";
+"Can't make the Shortcut" = "无法创建快捷指令";
+"Projects" = "项目";
+"Send" = "发送";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "把现成的快捷指令发给你：AirDrop、信息…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "签名需要联网和 iCloud（请在系统设置中登录）。";
+"Status" = "状态";
+"Turn off" = "关闭";
+"Turn on" = "开启";
+"iPhone" = "iPhone";

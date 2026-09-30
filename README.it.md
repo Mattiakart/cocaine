@@ -108,8 +108,11 @@ piccolo comando ti permette di avviare, seguire e guidare gli agent AI da qualsi
 accesso solo a chiave), e raggiungi il Mac dal telefono dalla rete di casa o da una VPN che già usi (per esempio
 Tailscale). Cocaine non apre nessuna porta di rete: passa tutto dall'SSH di macOS.
 
-**Dal telefono**, con una qualsiasi app SSH o con l'azione **Esegui script tramite SSH** di Comandi Rapidi. In
-*Automazioni → Lavoro da remoto → Copia* nel pannello trovi il comando già pronto; le parti sono:
+**Dall'iPhone**, in *Automazioni → Lavoro da remoto → iPhone → Invia* nel pannello Cocaine crea un Comando Rapido pronto
+(un menu: Stato, Attiva, Spegni, Progetti, con già il nome del tuo Mac e il tuo utente), lo firma e apre la condivisione:
+lo mandi con AirDrop o con Messaggi. Sull'iPhone lo apri e, la prima volta, scegli come accedere nel suo passo SSH
+(password o chiave). Per firmarlo servono una connessione a internet e iCloud sul Mac. Oppure usa una qualsiasi app SSH o
+l'azione **Esegui script tramite SSH**: *Copia* mette il comando sugli appunti; le parti sono:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine

@@ -538,6 +538,77 @@ private final class Hotkeys {
     }
 }
 
+// MARK: - The iPhone Shortcut: a menu that runs Cocaine's remote commands over SSH
+
+private enum PhoneShortcut {
+    /// `MacBook-Pro-di-Mattia.local`: the name an iPhone on the same network (or VPN) reaches this Mac by.
+    static var host: String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/scutil")
+        p.arguments = ["--get", "LocalHostName"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        var name = ""
+        if (try? p.run()) != nil {
+            name = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            p.waitUntilExit()
+        }
+        if name.isEmpty { name = ProcessInfo.processInfo.hostName.replacingOccurrences(of: ".local", with: "") }
+        return name + ".local"
+    }
+
+    /// The shortcut as an (unsigned) property list. Sign it before sharing: an iPhone refuses unsigned files.
+    static func build(user: String, host: String, command: String) -> Data? {
+        func uuid() -> String { UUID().uuidString }
+        func action(_ id: String, _ params: [String: Any]) -> [String: Any] {
+            ["WFWorkflowActionIdentifier": "is.workflow.actions.\(id)", "WFWorkflowActionParameters": params]
+        }
+        func token(_ output: String, _ name: String) -> [String: Any] {   // "the result of that action" as text
+            ["Value": ["string": "\u{FFFC}", "attachmentsByRange": ["{0, 1}": ["OutputUUID": output, "Type": "ActionOutput", "OutputName": name]]],
+             "WFSerializationType": "WFTextTokenString"]
+        }
+        let items: [(title: String, args: String)] = [
+            (L("Status"), "status"), (L("Turn on"), "on"), (L("Turn off"), "off"), (L("Projects"), "projects"),
+        ]
+        let group = uuid()
+        var actions: [[String: Any]] = [
+            action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine",
+                                      "WFMenuItems": items.map(\.title)]),
+        ]
+        for item in items {
+            let ssh = uuid()
+            actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": item.title]))
+            actions.append(action("runsshscript", [
+                "UUID": ssh, "WFSSHHost": host, "WFSSHPort": "22", "WFSSHUser": user, "WFSSHAuthenticationType": "Password",
+                "WFSSHPassword": "", "WFSSHScript": "\(command) remote \(item.args)",
+            ]))
+            actions.append(action("showresult", ["Text": token(ssh, "Shell Script Result")]))
+        }
+        actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 2]))
+        let plist: [String: Any] = [
+            "WFWorkflowClientVersion": "900", "WFWorkflowMinimumClientVersion": 900, "WFWorkflowMinimumClientRelease": 900,
+            "WFWorkflowIcon": ["WFWorkflowIconStartColor": 4282601983, "WFWorkflowIconGlyphNumber": 59511],
+            "WFWorkflowActions": actions, "WFWorkflowInputContentItemClasses": [String](), "WFWorkflowTypes": [String](),
+            "WFWorkflowImportQuestions": [Any](),
+        ]
+        return try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
+    }
+
+    /// Builds and signs `Cocaine.shortcut` in a temporary folder; nil if signing fails (it needs to be online, and
+    /// signed in to iCloud).
+    static func signedFile() -> URL? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-shortcut-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let raw = dir.appendingPathComponent("raw.shortcut"), out = dir.appendingPathComponent("Cocaine.shortcut")
+        guard let data = build(user: NSUserName(), host: host, command: scriptPath), (try? data.write(to: raw)) != nil,
+              run("/usr/bin/shortcuts", ["sign", "--mode", "people-who-know-me", "--input", raw.path, "--output", out.path]) == 0,
+              FileManager.default.fileExists(atPath: out.path) else { return nil }
+        try? FileManager.default.removeItem(at: raw)
+        return out
+    }
+}
+
 // MARK: Phone alerts: a Shortcut and/or an ntfy topic
 
 private enum Phone {
@@ -801,6 +872,7 @@ private final class PanelModel: ObservableObject {
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var sshOn = false
+    @Published var makingShortcut = false
     @Published var phone = ""                        // "" = not set up; else what alerts go to
     @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
@@ -838,6 +910,7 @@ private final class PanelModel: ObservableObject {
     var hotkeysChanged: () -> Void = {}
     var copyRemoteCommand: () -> Void = {}
     var testPhone: () -> Void = {}
+    var sendShortcut: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -1266,6 +1339,9 @@ private struct PanelView: View {
                        warning: !m.sshOn) {
                     Button(L("Open")) { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")!) }
                         .controlSize(.small)
+                }
+                option(L("iPhone"), L("Sends you a ready Shortcut: AirDrop, Messages…")) {
+                    Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
                 }
                 option(L("Command"), L("Copies the SSH command to run from your phone")) {
                     Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small)
@@ -2171,6 +2247,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
         model.copyRemoteCommand = { [weak self] in self?.copyRemoteCommand() }
+        model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
         model.testPhone = { Phone.send(L("This is a test")) }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
@@ -2656,6 +2733,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Builds the iPhone Shortcut and opens the share sheet (AirDrop, Messages, Mail…) on it.
+    private func sendShortcutToPhone() {
+        model.makingShortcut = true
+        DispatchQueue.global().async {
+            let file = PhoneShortcut.signedFile()
+            DispatchQueue.main.async {
+                self.model.makingShortcut = false
+                guard let file else {
+                    self.hidePanel(); NSApp.activate()
+                    let a = NSAlert()
+                    a.messageText = L("Can't make the Shortcut")
+                    a.informativeText = L("Signing it needs an internet connection and iCloud (sign in to it in System Settings).")
+                    a.runModal()
+                    return
+                }
+                let picker = NSSharingServicePicker(items: [file])
+                picker.show(relativeTo: self.hostView.bounds, of: self.hostView, preferredEdge: .minY)
+                log.notice("shortcut ready to share: \(file.lastPathComponent, privacy: .public)")
+            }
+        }
+    }
+
     /// The command to run from a phone (a terminal or Shortcuts' "Run Script Over SSH").
     private func copyRemoteCommand() {
         let host = (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
@@ -2903,6 +3002,14 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--auth-preview
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remove-rule" {
     _ = NSApplication.shared
     exit(Authorization.remove() ? 0 : 1)
+}
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcut" {
+    // Builds and signs the iPhone Shortcut, copies it to the given path (for tests).
+    guard let f = PhoneShortcut.signedFile() else { print("could not sign"); exit(1) }
+    try? FileManager.default.removeItem(atPath: CommandLine.arguments[2])
+    try? FileManager.default.copyItem(at: f, to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    print("ok \(PhoneShortcut.host)")
+    exit(0)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.

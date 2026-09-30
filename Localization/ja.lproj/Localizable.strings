@@ -146,3 +146,12 @@
 "Working" = "作業中";
 "now" = "たった今";
 "stopped with an error" = "エラーで停止しました";
+"Can't make the Shortcut" = "ショートカットを作成できません";
+"Projects" = "プロジェクト";
+"Send" = "送信";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "準備済みのショートカットを送ります（AirDrop、メッセージなど）";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "署名にはインターネット接続と iCloud が必要です（システム設定でサインイン）。";
+"Status" = "状態";
+"Turn off" = "オフにする";
+"Turn on" = "オンにする";
+"iPhone" = "iPhone";

@@ -146,3 +146,12 @@
 "Working" = "Au travail";
 "now" = "à l'instant";
 "stopped with an error" = "s'est arrêté sur une erreur";
+"Can't make the Shortcut" = "Impossible de créer le raccourci";
+"Projects" = "Projets";
+"Send" = "Envoyer";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "Vous envoie un raccourci prêt : AirDrop, Messages…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "La signature nécessite une connexion internet et iCloud (connectez-vous dans Réglages Système).";
+"Status" = "État";
+"Turn off" = "Éteindre";
+"Turn on" = "Activer";
+"iPhone" = "iPhone";

@@ -146,3 +146,12 @@
 "Working" = "工作中";
 "now" = "剛剛";
 "stopped with an error" = "因錯誤而停止";
+"Can't make the Shortcut" = "無法建立捷徑";
+"Projects" = "專案";
+"Send" = "傳送";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "把現成的捷徑傳給你：AirDrop、訊息…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "簽署需要網路連線與 iCloud（請在系統設定中登入）。";
+"Status" = "狀態";
+"Turn off" = "關閉";
+"Turn on" = "開啟";
+"iPhone" = "iPhone";

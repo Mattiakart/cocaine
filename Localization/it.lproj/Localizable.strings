@@ -146,3 +146,12 @@
 "Working" = "Al lavoro";
 "now" = "ora";
 "stopped with an error" = "si è fermato con un errore";
+"Can't make the Shortcut" = "Non riesco a creare il Comando Rapido";
+"Projects" = "Progetti";
+"Send" = "Invia";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "Ti manda un Comando Rapido pronto: AirDrop, Messaggi…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "Per firmarlo serve una connessione a internet e iCloud (accedi da Impostazioni di Sistema).";
+"Status" = "Stato";
+"Turn off" = "Spegni";
+"Turn on" = "Attiva";
+"iPhone" = "iPhone";

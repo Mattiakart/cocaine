@@ -146,3 +146,12 @@
 "Working" = "Arbeitet";
 "now" = "jetzt";
 "stopped with an error" = "wurde mit einem Fehler beendet";
+"Can't make the Shortcut" = "Kurzbefehl konnte nicht erstellt werden";
+"Projects" = "Projekte";
+"Send" = "Senden";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "Schickt dir einen fertigen Kurzbefehl: AirDrop, Nachrichten …";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "Zum Signieren braucht es Internet und iCloud (in den Systemeinstellungen anmelden).";
+"Status" = "Status";
+"Turn off" = "Ausschalten";
+"Turn on" = "Einschalten";
+"iPhone" = "iPhone";

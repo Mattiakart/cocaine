@@ -108,8 +108,11 @@ command lets you start, follow and steer AI agents from anywhere you can run a c
 reach the Mac from your phone over your home network or a VPN you already use (for example Tailscale). Cocaine opens no
 network port of its own: everything goes through macOS's own SSH.
 
-**From the phone**, with any SSH app or Apple Shortcuts' **Run Script Over SSH** action. The panel's *Automation → Remote
-work → Copy* puts the command on the clipboard; the parts are:
+**From the iPhone**, the panel's *Automation → Remote work → iPhone → Send* builds a ready Shortcut (a menu: Status, Turn on,
+Turn off, Projects, with your Mac's name and user filled in), signs it, and opens the share sheet: AirDrop it, or send it by
+Messages. Open it on the iPhone and, the first time, choose how to log in in its SSH step (password or key). It needs
+an internet connection and iCloud on the Mac, to sign it. Or use any SSH app or the **Run Script Over SSH** action yourself:
+*Copy* puts the command on the clipboard; the parts are:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine

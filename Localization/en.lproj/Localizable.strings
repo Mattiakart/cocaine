@@ -146,3 +146,12 @@
 "Working" = "Working";
 "now" = "now";
 "stopped with an error" = "stopped with an error";
+"Can't make the Shortcut" = "Can't make the Shortcut";
+"Projects" = "Projects";
+"Send" = "Send";
+"Sends you a ready Shortcut: AirDrop, Messages…" = "Sends you a ready Shortcut: AirDrop, Messages…";
+"Signing it needs an internet connection and iCloud (sign in to it in System Settings)." = "Signing it needs an internet connection and iCloud (sign in to it in System Settings).";
+"Status" = "Status";
+"Turn off" = "Turn off";
+"Turn on" = "Turn on";
+"iPhone" = "iPhone";
