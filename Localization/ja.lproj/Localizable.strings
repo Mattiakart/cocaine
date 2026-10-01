@@ -123,7 +123,6 @@
 "Stay on for" = "オンにしておく時間";
 "Then" = "そのとき";
 "These programs are open" = "これらのプログラムが起動中";
-"Timer" = "タイマー";
 "Timer over: Cocaine is off" = "タイマー終了：Cocaine をオフにしました";
 "Turn Cocaine on or off" = "Cocaine のオン/オフ";
 "Until I turn it off" = "自分でオフにするまで";
@@ -164,3 +163,5 @@
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "iPhone のために Mac を起こすには、一度だけ許可が必要です。";
 "Couldn't turn on the wake-ups" = "起動の設定をオンにできませんでした";
 "Back" = "戻る";
+"Automation" = "オートメーション";
+"%d on" = "%d件オン";

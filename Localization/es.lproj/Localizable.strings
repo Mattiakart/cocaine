@@ -123,7 +123,6 @@
 "Stay on for" = "Mantener activo durante";
 "Then" = "Después";
 "These programs are open" = "Estos programas están abiertos";
-"Timer" = "Temporizador";
 "Timer over: Cocaine is off" = "Tiempo terminado: Cocaine está apagado";
 "Turn Cocaine on or off" = "Activar o apagar Cocaine";
 "Until I turn it off" = "Hasta que lo apague";
@@ -164,3 +163,5 @@
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine necesita tu permiso, una sola vez, para despertar tu Mac para tu iPhone.";
 "Couldn't turn on the wake-ups" = "No se pudieron activar los despertares";
 "Back" = "Atrás";
+"Automation" = "Automatizaciones";
+"%d on" = "%d activas";

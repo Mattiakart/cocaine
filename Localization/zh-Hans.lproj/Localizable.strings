@@ -123,7 +123,6 @@
 "Stay on for" = "保持开启时长";
 "Then" = "然后";
 "These programs are open" = "这些程序已打开";
-"Timer" = "定时器";
 "Timer over: Cocaine is off" = "定时结束：Cocaine 已关闭";
 "Turn Cocaine on or off" = "开启或关闭 Cocaine";
 "Until I turn it off" = "直到我关闭";
@@ -164,3 +163,5 @@
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine 需要你授权一次，才能为你的 iPhone 唤醒 Mac。";
 "Couldn't turn on the wake-ups" = "无法开启定时唤醒";
 "Back" = "返回";
+"Automation" = "自动化";
+"%d on" = "%d 项已开";

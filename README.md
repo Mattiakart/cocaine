@@ -174,7 +174,7 @@ Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app need
 
 ### Automation
 
-In the panel, each one has its own page (tap it in the list): **Timer** (stay on for 30 minutes … 8 hours, then turn off), **Battery Guard** (on battery, at
+In the panel, **Timer** sits right under the switch (stay on for 30 minutes … 8 hours, then turn off). The rest is on the *Automation* page: **Battery Guard** (on battery, at
 10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, or while chosen programs
 run; off 3 minutes after; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
 
