@@ -165,3 +165,7 @@
 "They stop working until you send a new Shortcut." = "Sie funktionieren nicht mehr, bis du einen neuen Kurzbefehl sendest.";
 "Last reply" = "Letzte Antwort";
 "Command (for example: start claude my-project Fix the tests)" = "Befehl (zum Beispiel: start claude mein-projekt Behebe die Tests)";
+"Wake for iPhone" = "Aufwecken für iPhone";
+"Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Alle 15 Minuten wacht er kurz auf, auch bei geschlossenem Deckel, um dein iPhone zu beantworten";
+"Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine braucht einmalig deine Erlaubnis, um deinen Mac für dein iPhone aufzuwecken.";
+"Couldn't turn on the wake-ups" = "Aufwecken konnte nicht aktiviert werden";

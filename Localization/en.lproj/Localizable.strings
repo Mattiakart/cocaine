@@ -165,3 +165,7 @@
 "They stop working until you send a new Shortcut." = "They stop working until you send a new Shortcut.";
 "Last reply" = "Last reply";
 "Command (for example: start claude my-project Fix the tests)" = "Command (for example: start claude my-project Fix the tests)";
+"Wake for iPhone" = "Wake for iPhone";
+"Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone";
+"Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine needs your permission once, to wake your Mac for your iPhone.";
+"Couldn't turn on the wake-ups" = "Couldn't turn on the wake-ups";

@@ -165,3 +165,7 @@
 "They stop working until you send a new Shortcut." = "在你发送新的快捷指令之前，它们将无法使用。";
 "Last reply" = "最近的回复";
 "Command (for example: start claude my-project Fix the tests)" = "命令（例如：start claude my-project Fix the tests）";
+"Wake for iPhone" = "为 iPhone 唤醒";
+"Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "每 15 分钟短暂唤醒一次（即使合盖），以回应你的 iPhone";
+"Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine 需要你授权一次，才能为你的 iPhone 唤醒 Mac。";
+"Couldn't turn on the wake-ups" = "无法开启定时唤醒";

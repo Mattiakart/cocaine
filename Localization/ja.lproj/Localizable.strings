@@ -165,3 +165,7 @@
 "They stop working until you send a new Shortcut." = "新しいショートカットを送るまで動作しなくなります。";
 "Last reply" = "最後の返信";
 "Command (for example: start claude my-project Fix the tests)" = "コマンド（例：start claude my-project Fix the tests）";
+"Wake for iPhone" = "iPhone のために起こす";
+"Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "15分ごとに、蓋を閉じていても短時間起動して iPhone に応答します";
+"Cocaine needs your permission once, to wake your Mac for your iPhone." = "iPhone のために Mac を起こすには、一度だけ許可が必要です。";
+"Couldn't turn on the wake-ups" = "起動の設定をオンにできませんでした";

@@ -160,9 +160,14 @@ or fails, and the panel lists them. `remote status` shows the same, and **Phone 
 sends you a message or notification), or `cocaine remote notify ntfy https://ntfy.sh/your-secret-topic` for a
 push notification (that sends the alert text to that service). `cocaine remote notify test` tries it.
 
-**Waking the Mac.** Cocaine on is what keeps it reachable. A Mac that has already gone to sleep wakes only from its own
-network: with a Wake-on-LAN app (`cocaine remote wake-info` prints the address to use) or, if a Sleep Proxy (Apple TV,
-HomePod, some routers) is present, just by connecting. From the internet, reach your home network first through a VPN.
+**Waking the Mac.** Cocaine on is what keeps it reachable. A Mac that has already gone to sleep can't hear the relay, and
+nothing on the internet can wake a sleeping MacBook with the lid closed. So, in *Remote work*, turn on **Wake for iPhone**:
+Cocaine schedules a short wake every 15 minutes (even with the lid closed). On each wake it reconnects, runs the commands
+your iPhone sent meanwhile (up to 20 minutes old), answers, and lets the Mac sleep again. So a command sent to a sleeping
+Mac is answered within about 15 minutes: send it, then use *Last reply* later. It asks for your permission once (it extends
+Cocaine's sudo rule with `pmset schedule wake`/`cancel wake`, tagged `cocaine`, nothing else), costs a little battery, is
+paused on battery at 20% or less, and is cancelled when you quit Cocaine. If it matters that the answer is immediate, keep
+Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app needs, for use on your home network.)
 
 **Also from Shortcuts on the Mac**, links: `cocaine://on`, `cocaine://off`, `cocaine://toggle`, `cocaine://timer?minutes=90`,
 `cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.

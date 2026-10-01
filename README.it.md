@@ -162,9 +162,15 @@ dell'avviso come input: costruiscine uno che ti manda un messaggio o una notific
 `cocaine remote notify ntfy https://ntfy.sh/il-tuo-argomento-segreto` ricevi una notifica push (il testo dell'avviso
 passa da quel servizio). `cocaine remote notify test` lo prova.
 
-**Svegliare il Mac.** È Cocaine attivo a tenerlo raggiungibile. Un Mac già andato in stop si risveglia solo dalla sua rete:
-con un'app Wake-on-LAN (`cocaine remote wake-info` stampa l'indirizzo da usare) oppure, se in rete c'è un Sleep Proxy
-(Apple TV, HomePod, alcuni router), semplicemente collegandoti. Da internet, raggiungi prima la rete di casa con una VPN.
+**Svegliare il Mac.** È Cocaine attivo a tenerlo raggiungibile. Un Mac già andato in stop non sente il relay, e niente da
+internet può svegliare un MacBook in stop con il coperchio chiuso. Quindi, in *Lavoro da remoto*, attiva **Sveglia per
+iPhone**: Cocaine programma un breve risveglio ogni 15 minuti (anche con il coperchio chiuso). A ogni risveglio si
+ricollega, esegue i comandi che l'iPhone ha mandato nel frattempo (fino a 20 minuti di età), risponde e lascia che il Mac
+torni a dormire. Quindi un comando mandato a un Mac in stop riceve risposta entro circa 15 minuti: lo mandi e dopo usi
+*Ultima risposta*. Chiede il permesso una volta (estende la regola sudo di Cocaine con `pmset schedule wake`/`cancel wake`,
+marcati `cocaine`, nient'altro), consuma un po' di batteria, si ferma a batteria al 20% o meno e viene annullata quando
+chiudi Cocaine. Se serve la risposta subito, tieni Cocaine attivo. (`cocaine remote wake-info` stampa ancora quello che serve
+a un'app Wake-on-LAN, da usare sulla rete di casa.)
 
 **Anche dai Comandi Rapidi sul Mac**, con i link: `cocaine://on`, `cocaine://off`, `cocaine://toggle`,
 `cocaine://timer?minutes=90`, `cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.

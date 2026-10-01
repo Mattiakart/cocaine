@@ -165,3 +165,7 @@
 "They stop working until you send a new Shortcut." = "Smetteranno di funzionare finché non mandi un nuovo Comando Rapido.";
 "Last reply" = "Ultima risposta";
 "Command (for example: start claude my-project Fix the tests)" = "Comando (per esempio: start claude mio-progetto Correggi i test)";
+"Wake for iPhone" = "Sveglia per iPhone";
+"Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Ogni 15 minuti si risveglia per un momento, anche con il coperchio chiuso, per rispondere al tuo iPhone";
+"Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine ha bisogno del tuo permesso, una sola volta, per svegliare il Mac per il tuo iPhone.";
+"Couldn't turn on the wake-ups" = "Impossibile attivare le sveglie";

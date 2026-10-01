@@ -125,7 +125,9 @@ private enum Authorization {
     static func installCommand(user: String, dest: String = rulePath, asRoot: Bool = true) -> String? {
         guard user.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else { return nil }
         // pmset on/off, plus removing this very rule, so uninstalling needs no password.
+        // Also the scheduled wake-ups for the iPhone (only `schedule wake` and `schedule cancel wake`, tagged "cocaine").
         let rule = "\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1, /usr/bin/pmset -a disablesleep 0, "
+            + "/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine, "
             + "/bin/rm -f \(rulePath)"
         let owner = asRoot ? "-o root -g wheel " : ""
         return "t=$(/usr/bin/mktemp /tmp/cocaine.XXXXXX) || exit 1; /usr/bin/printf '%s\\n' '\(rule)' > \"$t\"; "
@@ -351,6 +353,7 @@ private extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var wakeForPhone: Bool { get { flag("wakeForPhone", false) } nonmutating set { d.set(newValue, forKey: "wakeForPhone") } }
     /// A random value the app keeps for its own tools (`cocaine remote notify test`); URLs need it for `test=` flags.
     var testToken: String {
         if let t = d.string(forKey: "testToken") { return t }
@@ -616,21 +619,56 @@ private enum PhoneLink {
 private final class PhoneListener {
     private var tasks: [String: (pairing: Pairing, task: Task<Void, Never>)] = [:]
     private var up = Set<String>()
+    private var cursor: [String: Int] = [:]            // newest message time handled, per phone: a reconnect resumes there
+    private var seenIds: [String: [String]] = [:]
     private let lock = NSLock()
-    var onChange: ((Bool) -> Void)?                // is at least one phone's connection up?
+    var onChange: ((Bool) -> Void)?                    // is at least one phone's connection up?
+    /// How old a command may be and still run, in seconds: longer when the Mac wakes on a schedule to pick them up.
+    var maxAge: () -> Double = { 120 }
 
     func sync(_ list: [Pairing]) {
         lock.lock(); defer { lock.unlock() }
         for (id, entry) in tasks where !list.contains(entry.pairing) { entry.task.cancel(); tasks[id] = nil; up.remove(id) }
-        for p in list where tasks[p.id] == nil { tasks[p.id] = (p, Task.detached { [weak self] in await self?.run(p) }) }
+        for p in list where tasks[p.id] == nil {
+            if cursor[p.id] == nil { cursor[p.id] = Int(Date().timeIntervalSince1970) }
+            tasks[p.id] = (p, spawn(p))
+        }
         notify()
     }
+
+    /// Drops the (stale, after sleep) connections and opens fresh ones, resuming where each phone left off.
+    func reconnect() {
+        lock.lock(); defer { lock.unlock() }
+        for (id, entry) in tasks { entry.task.cancel(); tasks[id] = (entry.pairing, spawn(entry.pairing)); up.remove(id) }
+        notify()
+    }
+
+    private func spawn(_ p: Pairing) -> Task<Void, Never> { Task.detached { [weak self] in await self?.run(p) } }
 
     private func set(_ id: String, _ connected: Bool) {
         lock.lock(); defer { lock.unlock() }
         guard tasks[id] != nil else { return }
         if connected { up.insert(id) } else { up.remove(id) }
         notify()
+    }
+
+    private func resumePoint(_ id: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return cursor[id] ?? Int(Date().timeIntervalSince1970)
+    }
+
+    private func advance(_ id: String, to time: Int) {
+        lock.lock(); defer { lock.unlock() }
+        cursor[id] = max(cursor[id] ?? 0, time)
+    }
+
+    /// Remembers the message id; true if it was already handled.
+    private func isDuplicate(_ id: String, _ message: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let seen = seenIds[id, default: []]
+        if seen.contains(message) { return true }
+        seenIds[id] = Array((seen + [message]).suffix(100))
+        return false
     }
 
     private func notify() {
@@ -644,10 +682,10 @@ private final class PhoneListener {
         config.waitsForConnectivity = true
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
-        var since = Int(Date().timeIntervalSince1970)
-        var seen: [String] = [], recent: [Date] = []
+        var recent: [Date] = []
         var delay = 2.0
         while !Task.isCancelled {
+            let since = resumePoint(p.id)
             if let url = URL(string: "\(p.relay)/\(p.cmd)/json?since=\(since)") {
                 do {
                     let (bytes, response) = try await session.bytes(from: url)
@@ -655,25 +693,26 @@ private final class PhoneListener {
                         delay = 2
                         set(p.id, true)
                         for try await line in bytes.lines {
-                            guard line.utf8.count <= 16_384, let m = Self.message(line), !seen.contains(m.id) else { continue }
-                            seen = Array((seen + [m.id]).suffix(100))
+                            guard line.utf8.count <= 16_384, let m = Self.message(line) else { continue }
+                            if isDuplicate(p.id, m.id) { continue }
                             // Old messages (the Mac was asleep) are never run, nor are ones dated in the future, and
                             // no more than 20 a minute are.
                             let age = Date().timeIntervalSince1970 - Double(m.time)
-                            guard age <= 120, age >= -120 else { continue }
-                            since = max(since, m.time)
+                            guard age <= maxAge(), age >= -120 else { continue }
+                            advance(p.id, to: m.time)
                             recent = recent.filter { $0.timeIntervalSinceNow > -60 }
                             guard recent.count < 20, m.text.count <= 1000 else { continue }
                             recent.append(Date())
                             log.notice("phone command received (\(m.text.count, privacy: .public) characters)")
+                            DispatchQueue.main.async { WakeHold.extend(60) }     // stay awake while it runs and the answer goes out
                             let answer = await Task.detached { PhoneLink.execute(m.text, tier: p.tier) }.value
                             await PhoneLink.publish(answer, to: p.reply, relay: p.relay, session: session)
                         }
                     }
                 } catch {}
             }
-            set(p.id, false)
             if Task.isCancelled { break }
+            set(p.id, false)
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             delay = min(delay * 2, 60)
         }
@@ -685,6 +724,96 @@ private final class PhoneListener {
               json["event"] as? String == "message", let id = json["id"] as? String,
               let time = json["time"] as? Int, let text = json["message"] as? String else { return nil }
         return (id, time, text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+// MARK: - Waking the Mac on a schedule, so a sleeping Mac still answers the phone within a few minutes
+
+/// A sleeping Mac (lid closed or not) can't hear the relay. With this on, Cocaine schedules a short wake every
+/// `minutes` minutes: on wake it reconnects, runs what the phone sent meanwhile, and lets the Mac sleep again.
+/// `pmset schedule` needs root, so it goes through the narrow sudo rule Cocaine installs.
+private enum WakeSchedule {
+    static let minutes = 15
+    static let owner = "cocaine"
+    private static let key = "nextWake"
+
+    /// How long a command may wait for the next wake before it's too old to run.
+    static var maxCommandAge: Double { Double(minutes + 5) * 60 }
+
+    static func format(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MM/dd/yy HH:mm:ss"
+        return f.string(from: date)
+    }
+
+    private static func pmset(_ args: [String]) -> Bool { run("/usr/bin/sudo", ["-n", "/usr/bin/pmset"] + args) == 0 }
+
+    /// Replaces the scheduled wake with one `minutes` from now. False when sudo isn't allowed to (yet).
+    @discardableResult
+    static func arm() -> Bool {
+        cancel()
+        let date = Date().addingTimeInterval(Double(minutes) * 60)
+        guard pmset(["schedule", "wake", format(date), owner]) else { return false }
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: key)
+        return true
+    }
+
+    static func cancel() {
+        let t = UserDefaults.standard.double(forKey: key)
+        guard t > 0 else { return }
+        _ = pmset(["schedule", "cancel", "wake", format(Date(timeIntervalSince1970: t)), owner])
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
+/// Keeps the Mac awake a little after a wake-up, long enough to reconnect, run a command and answer.
+private enum WakeHold {
+    private static var assertion: IOPMAssertionID = 0
+    private static var releaseAt = Date.distantPast
+
+    static func extend(_ seconds: Double) {
+        let until = Date().addingTimeInterval(seconds)
+        guard until > releaseAt else { return }
+        releaseAt = until
+        if assertion == 0 {
+            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                                        "Cocaine is answering your iPhone" as CFString, &assertion)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.5) {
+            guard Date() >= releaseAt, assertion != 0 else { return }
+            IOPMAssertionRelease(assertion)
+            assertion = 0
+        }
+    }
+}
+
+/// Tells us when the Mac is about to sleep and when it has woken (including the short "dark" wakes with the lid closed).
+private final class SleepWatcher {
+    var willSleep: (() -> Void)?
+    var didWake: (() -> Void)?
+    private var port: IONotificationPortRef?
+    private var notifier: io_object_t = 0
+    fileprivate private(set) var root: io_connect_t = 0
+
+    @discardableResult
+    func start() -> Bool {
+        guard root == 0 else { return true }
+        root = IORegisterForSystemPower(Unmanaged.passUnretained(self).toOpaque(), &port, { refcon, _, message, argument in
+            guard let refcon else { return }
+            let w = Unmanaged<SleepWatcher>.fromOpaque(refcon).takeUnretainedValue()
+            switch message {
+            case 0xE000_0270, 0xE000_0280:                 // may sleep / will sleep: answer, or sleep waits 30 s
+                if message == 0xE000_0280 { w.willSleep?() }
+                IOAllowPowerChange(w.root, Int(bitPattern: argument))
+            case 0xE000_0300:                              // has powered on
+                w.didWake?()
+            default: break
+            }
+        }, &notifier)
+        guard root != 0, let port else { return false }
+        CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(port).takeUnretainedValue(), .commonModes)
+        return true
     }
 }
 
@@ -738,7 +867,7 @@ private enum PhoneShortcut {
                                              "WFSerializationType": "WFTextTokenAttachment"]]),
             get(token(send, encoded, "URL Encoded Text")), wait(),
         ] + show("20s"))
-        item(L("Last reply"), show("10m"))
+        item(L("Last reply"), show("30m"))
         actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 2]))
         let plist: [String: Any] = [
             "WFWorkflowClientVersion": "900", "WFWorkflowMinimumClientVersion": 900, "WFWorkflowMinimumClientRelease": 900,
@@ -1038,6 +1167,7 @@ private final class PanelModel: ObservableObject {
     @Published var triggerAgents: Bool { didSet { settings.triggerAgents = triggerAgents } }
     @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
+    @Published var wakeForPhone: Bool { didSet { settings.wakeForPhone = wakeForPhone; wakeChanged() } }
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
     @Published var phoneCount = 0                    // iPhones paired for remote control
@@ -1077,6 +1207,7 @@ private final class PanelModel: ObservableObject {
     var previewVoice: () -> Void = {}
     var timerChanged: () -> Void = {}
     var hotkeysChanged: () -> Void = {}
+    var wakeChanged: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1105,6 +1236,7 @@ private final class PanelModel: ObservableObject {
         triggerAgents = settings.triggerAgents
         triggerApps = settings.triggerApps
         hotkeys = settings.hotkeys
+        wakeForPhone = settings.wakeForPhone
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -1512,6 +1644,9 @@ private struct PanelView: View {
                             .help(L("Send the Shortcut to your iPhone"))
                         if m.phoneCount > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
                     }
+                }
+                option(L("Wake for iPhone"), L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
+                    toggle(L("Wake for iPhone"), $m.wakeForPhone)
                 }
                 option(L("Phone alerts"), m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
                     Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
@@ -2425,6 +2560,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
+        model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
         model.revokePhones = { [weak self] in self?.revokePhones() }
         model.testPhone = { Phone.send(L("This is a test")) }
@@ -2691,6 +2827,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
+        WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
         settings.savedBrightness = [:]
@@ -2912,6 +3049,42 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private let phoneListener = PhoneListener()
+    private let sleepWatcher = SleepWatcher()
+
+    /// Applies the "Wake for iPhone" option: schedules the next wake (asking, when the user just turned it on, for the
+    /// one-time permission) or cancels it.
+    private func applyWake(ask: Bool) {
+        phoneListener.maxAge = { [weak self] in (self?.settings.wakeForPhone ?? false) ? WakeSchedule.maxCommandAge : 120 }
+        guard settings.wakeForPhone else { WakeSchedule.cancel(); return }
+        sleepWatcher.willSleep = { [weak self] in self?.armWake() }
+        sleepWatcher.didWake = { [weak self] in
+            WakeHold.extend(90)                      // long enough to reconnect and answer
+            self?.phoneListener.reconnect()
+            self?.armWake()
+        }
+        sleepWatcher.start()
+        var ok = WakeSchedule.arm()
+        if !ok && ask {
+            hidePanel(); NSApp.activate()
+            if let cmd = Authorization.installCommand(user: NSUserName()),
+               Authorization.runAsRoot(cmd, prompt: L("Cocaine needs your permission once, to wake your Mac for your iPhone.")) { ok = WakeSchedule.arm() }
+            if !ok {
+                settings.wakeForPhone = false
+                model.wakeForPhone = false
+                let e = NSAlert(); e.messageText = L("Couldn't turn on the wake-ups"); e.runModal()
+                return
+            }
+        }
+        if model.phoneCount == 0 { WakeSchedule.cancel() }
+    }
+
+    /// Schedules the next wake just before sleeping and just after waking (so there is always one ahead), unless the
+    /// battery is low and unplugged.
+    private func armWake() {
+        guard settings.wakeForPhone, model.phoneCount > 0 else { return }
+        if let b = System.battery, !b.onAC, b.percent <= 20 { WakeSchedule.cancel(); return }
+        WakeSchedule.arm()
+    }
 
     /// Starts listening for the paired phones (at launch and whenever the list changes).
     private func syncPhones(_ given: [Pairing]? = nil) {
@@ -2919,6 +3092,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.phoneCount = list.count
         phoneListener.onChange = { [weak self] up in self?.model.phoneLinkUp = up }
         phoneListener.sync(list)
+        applyWake(ask: false)
     }
 
     /// Pairs a new iPhone: asks what it may do, makes a Shortcut carrying its own secret topics, and opens the share
@@ -3273,8 +3447,27 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--relay-test" 
         Thread.sleep(forTimeInterval: 1.5)
         answer = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=60s")
     }
-    print(answer.contains("not allowed") ? "PASS  relay round trip: \(answer)" : "FAIL  relay round trip: '\(answer)'")
-    exit(answer.contains("not allowed") ? 0 : 1)
+    let first = answer.contains("not allowed")
+    print(first ? "PASS  relay round trip: \(answer)" : "FAIL  relay round trip: '\(answer)'")
+    // What a sleeping Mac does: the connection is gone, a command arrives meanwhile, and the next wake picks it up.
+    listener.sync([])
+    Thread.sleep(forTimeInterval: 1)
+    _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=ping-while-asleep")
+    Thread.sleep(forTimeInterval: 2)
+    listener.maxAge = { WakeSchedule.maxCommandAge }
+    listener.sync([pairing])
+    var count = 0
+    for _ in 0..<12 where count < 2 {
+        Thread.sleep(forTimeInterval: 1.5)
+        count = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=60s").split(separator: "\n").count
+    }
+    print(count == 2 ? "PASS  command sent while disconnected is answered after reconnect (once)" : "FAIL  after reconnect: \(count) answers")
+    Thread.sleep(forTimeInterval: 4)
+    listener.reconnect()                                    // the wake-up path: no repeat of what was already handled
+    Thread.sleep(forTimeInterval: 6)
+    let total = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=90s").split(separator: "\n").count
+    print(total == 2 ? "PASS  reconnect doesn't run old commands again" : "FAIL  reconnect repeated a command: \(total) answers")
+    exit(first && count == 2 && total == 2 ? 0 : 1)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
@@ -3317,6 +3510,13 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     board.set("s3", from: "Gemini CLI", project: nil, state: "working", now: now)
     board.prune(now.addingTimeInterval(7300))
     check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
+    check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
+    check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
+          Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
+    check("wake: sleep/wake notifications can be registered", SleepWatcher().start())
+    check("relay: a message event is read", PhoneListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
+    check("relay: keepalives and open events are ignored", PhoneListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
+          && PhoneListener.message(#"{"id":"a","time":1,"event":"open"}"#) == nil && PhoneListener.message("garbage") == nil)
     exit(failed == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
@@ -3386,7 +3586,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
     host.cacheDisplay(in: host.bounds, to: rep)
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
-    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil"] {
+    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone"] {
         UserDefaults.standard.removeObject(forKey: key)     // the sample values above must not stay in the real settings
     }
     print(Bundle.main.preferredLocalizations.first ?? "?")
