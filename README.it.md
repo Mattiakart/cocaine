@@ -177,7 +177,7 @@ a un'app Wake-on-LAN, da usare sulla rete di casa.)
 
 ### Automazioni
 
-Nel pannello, il **Timer** è subito sotto l'interruttore (resta attivo da 30 minuti a 8 ore, poi si spegne). Il resto è nella pagina *Automazioni*: **Battery Guard** (a batteria,
+Il pannello ha tre schede: *Generale* (il **Timer** subito sotto l'interruttore: ∞, da 30 minuti a 8 ore, o qualsiasi durata a passi di 15 minuti fino a 24 ore, poi si spegne; più luminosità e agent al lavoro), *Avvisi AI* e *Automazioni*: **Battery Guard** (a batteria,
 al 10–30 % spegne Cocaine o ti avvisa soltanto), **Smart Triggers** (attivo mentre un'AI lavora o aspetta te, o mentre
 girano i programmi scelti; si spegne dopo 3 minuti; se lo spegni tu a mano, vale la tua scelta) e **Scorciatoie**
 (⌃⌥⌘C attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi).

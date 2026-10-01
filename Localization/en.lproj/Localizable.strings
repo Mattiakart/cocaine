@@ -162,6 +162,9 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine needs your permission once, to wake your Mac for your iPhone.";
 "Couldn't turn on the wake-ups" = "Couldn't turn on the wake-ups";
-"Back" = "Back";
 "Automation" = "Automation";
-"%d on" = "%d on";
+"General" = "General";
+"Section" = "Section";
+"Shorter" = "Shorter";
+"Longer" = "Longer";
+"Any length, in steps of 15 minutes" = "Any length, in steps of 15 minutes";

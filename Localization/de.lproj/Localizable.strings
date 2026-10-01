@@ -162,6 +162,9 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Alle 15 Minuten wacht er kurz auf, auch bei geschlossenem Deckel, um dein iPhone zu beantworten";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine braucht einmalig deine Erlaubnis, um deinen Mac für dein iPhone aufzuwecken.";
 "Couldn't turn on the wake-ups" = "Aufwecken konnte nicht aktiviert werden";
-"Back" = "Zurück";
 "Automation" = "Automatisierung";
-"%d on" = "%d an";
+"General" = "Allgemein";
+"Section" = "Bereich";
+"Shorter" = "Kürzer";
+"Longer" = "Länger";
+"Any length, in steps of 15 minutes" = "Beliebige Dauer, in 15-Minuten-Schritten";

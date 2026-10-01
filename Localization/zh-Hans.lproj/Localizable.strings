@@ -162,6 +162,9 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "每 15 分钟短暂唤醒一次（即使合盖），以回应你的 iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine 需要你授权一次，才能为你的 iPhone 唤醒 Mac。";
 "Couldn't turn on the wake-ups" = "无法开启定时唤醒";
-"Back" = "返回";
 "Automation" = "自动化";
-"%d on" = "%d 项已开";
+"General" = "通用";
+"Section" = "分区";
+"Shorter" = "缩短";
+"Longer" = "延长";
+"Any length, in steps of 15 minutes" = "任意时长，以15分钟为步长";

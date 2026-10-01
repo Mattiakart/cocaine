@@ -162,6 +162,9 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "15分ごとに、蓋を閉じていても短時間起動して iPhone に応答します";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "iPhone のために Mac を起こすには、一度だけ許可が必要です。";
 "Couldn't turn on the wake-ups" = "起動の設定をオンにできませんでした";
-"Back" = "戻る";
 "Automation" = "オートメーション";
-"%d on" = "%d件オン";
+"General" = "一般";
+"Section" = "セクション";
+"Shorter" = "短く";
+"Longer" = "長く";
+"Any length, in steps of 15 minutes" = "15分刻みで好きな長さに";

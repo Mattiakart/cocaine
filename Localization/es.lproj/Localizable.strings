@@ -162,6 +162,9 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Cada 15 minutos despierta un momento, incluso con la tapa cerrada, para responder a tu iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine necesita tu permiso, una sola vez, para despertar tu Mac para tu iPhone.";
 "Couldn't turn on the wake-ups" = "No se pudieron activar los despertares";
-"Back" = "Atrás";
 "Automation" = "Automatizaciones";
-"%d on" = "%d activas";
+"General" = "General";
+"Section" = "Sección";
+"Shorter" = "Más corto";
+"Longer" = "Más largo";
+"Any length, in steps of 15 minutes" = "Cualquier duración, en pasos de 15 minutos";
