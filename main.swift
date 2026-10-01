@@ -490,18 +490,6 @@ private extension System {
         Array(Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)))
             .filter { $0 != "Cocaine" }.sorted { $0.lowercased() < $1.lowercased() }
     }
-
-    /// Whether anything is listening for SSH on this Mac (System Settings → General → Sharing → Remote Login).
-    static var sshOn: Bool {
-        let s = socket(AF_INET, SOCK_STREAM, 0)
-        guard s >= 0 else { return false }
-        defer { close(s) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = UInt16(22).bigEndian
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        return withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(s, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 } }
-    }
 }
 
 // MARK: Global hotkeys (⌃⌥⌘ + letter): Carbon's RegisterEventHotKey needs no privacy permission
@@ -538,104 +526,219 @@ private final class Hotkeys {
     }
 }
 
-// MARK: - Reaching this Mac from anywhere: Tailscale's private network plus a restricted SSH key per phone
+// MARK: - Remote control through a relay: the phone publishes a command, the Mac (outbound connection only) runs and answers
 
-private enum RemoteAccess {
-    static let download = URL(string: "https://tailscale.com/download")!
-    private static let cliPaths = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
-    static var installed: Bool { FileManager.default.fileExists(atPath: "/Applications/Tailscale.app") || cliPaths.contains { FileManager.default.isExecutableFile(atPath: $0) } }
+/// One paired iPhone. The two topics are random secrets on the relay (ntfy): knowing them is what lets a phone in.
+private struct Pairing: Codable, Equatable {
+    var id: String
+    var cmd: String        // the phone publishes commands here
+    var reply: String      // the Mac publishes answers here
+    var tier: String       // "basic" or "agents": what the commands may do (the gate in remote.zsh enforces it)
+    var relay: String      // the server it was made for: later changes to the setting never move existing secrets
+}
 
-    /// Runs `cocaine remote …` and returns its status and output (`input` goes to its stdin).
-    @discardableResult
-    static func remote(_ args: [String], input: String? = nil) -> (status: Int32, text: String) {
-        capture("/bin/zsh", [scriptPath, "remote"] + args, input: input)
+private enum PhoneLink {
+    static let file = AgentBoard.directory.appendingPathComponent("phones.json")
+
+    /// The relay server: ntfy.sh unless the `relayURL` default points to another (https) ntfy server.
+    static var relay: String {
+        let v = UserDefaults.standard.string(forKey: "relayURL") ?? ""
+        return v.hasPrefix("https://") ? v.trimmingCharacters(in: CharacterSet(charactersIn: "/")) : "https://ntfy.sh"
     }
 
-    static func capture(_ path: String, _ args: [String], input: String? = nil) -> (status: Int32, text: String) {
+    static func load() -> [Pairing] {
+        (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Pairing].self, from: $0) } ?? []
+    }
+
+    @discardableResult
+    static func save(_ list: [Pairing]) -> Bool {
+        try? FileManager.default.createDirectory(at: AgentBoard.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard let data = try? JSONEncoder().encode(list), (try? data.write(to: file, options: .atomic)) != nil else { return false }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        return true
+    }
+
+    private static func random(_ bytes: Int) -> String? {
+        var b = [UInt8](repeating: 0, count: bytes)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes, &b) == errSecSuccess else { return nil }
+        return b.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 192 random bits per topic: unguessable. (ntfy topic names allow up to 64 characters.)
+    static func newPairing(tier: String) -> Pairing? {
+        guard let id = random(8), let c = random(24), let r = random(24) else { return nil }
+        return Pairing(id: id, cmd: "cc" + c, reply: "cr" + r, tier: tier == "agents" ? "agents" : "basic", relay: relay)
+    }
+
+    /// Runs one command from a phone through the gate (the same allow-list as `cocaine remote gate`) and returns what
+    /// to answer: its output, at most 3500 bytes (the relay's limit is 4096).
+    static func execute(_ text: String, tier: String) -> String {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let out = Pipe(), inp = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        p.arguments = [scriptPath, "remote", "gate", "--tier=\(tier == "agents" ? "agents" : "basic")"]
+        var env = ProcessInfo.processInfo.environment
+        env["SSH_ORIGINAL_COMMAND"] = String(text.prefix(1000))
+        p.environment = env
+        let out = Pipe()
         p.standardOutput = out
         p.standardError = out
-        p.standardInput = inp
-        do { try p.run() } catch { return (-1, "") }
-        if let input { inp.fileHandleForWriting.write(Data(input.utf8)) }
-        try? inp.fileHandleForWriting.close()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        p.standardInput = FileHandle.nullDevice
+        // Read what it prints as it comes and stop when the command ends (or after 25 s): a child that kept the pipe
+        // open, such as an agent starting up, must not hold the answer back.
+        let lock = NSLock(), done = DispatchSemaphore(value: 0)
+        var data = Data()
+        out.fileHandleForReading.readabilityHandler = { h in
+            let chunk = h.availableData
+            lock.lock(); if data.count < 8192 { data.append(chunk) }; lock.unlock()
+        }
+        p.terminationHandler = { _ in done.signal() }
+        do { try p.run() } catch { return "cocaine: can't run" }
+        if done.wait(timeout: .now() + 25) == .timedOut { p.terminate() }
+        Thread.sleep(forTimeInterval: 0.2)               // the last bytes
+        out.fileHandleForReading.readabilityHandler = nil
+        lock.lock(); let got = data; lock.unlock()
+        let text = String(decoding: got.prefix(3500), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "OK" : text
     }
 
-    /// This Mac's name on the tailnet (`my-mac.tail1234.ts.net`), or nil when Tailscale isn't installed or connected.
-    static var tailnetName: String? {
-        guard let cli = cliPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return nil }
-        let r = capture(cli, ["status", "--json"])
-        guard r.status == 0, let json = try? JSONSerialization.jsonObject(with: Data(r.text.utf8)) as? [String: Any],
-              json["BackendState"] as? String == "Running", let me = json["Self"] as? [String: Any] else { return nil }
-        var name = (me["DNSName"] as? String ?? "")
-        while name.hasSuffix(".") { name.removeLast() }
-        if name.isEmpty { name = (me["TailscaleIPs"] as? [String])?.first ?? "" }
-        return name.isEmpty ? nil : name
-    }
-
-    /// How many phone keys Cocaine has authorized.
-    static var keyCount: Int {
-        let r = remote(["keys"])
-        return r.status == 0 ? r.text.split(separator: "\n").filter { $0.hasPrefix("cocaine-remote:") }.count : 0
+    static func publish(_ text: String, to topic: String, relay: String, session: URLSession) async {
+        guard let url = URL(string: "\(relay)/\(topic)") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.httpBody = Data(text.utf8)
+        req.setValue("Cocaine", forHTTPHeaderField: "Title")
+        req.setValue("no", forHTTPHeaderField: "X-Firebase")       // keep it off Google's push service
+        _ = try? await session.data(for: req)
     }
 }
 
-// MARK: - The iPhone Shortcut: a menu that runs Cocaine's remote commands over SSH
+/// Keeps one outbound connection per paired phone to the relay and answers what arrives. Nothing listens on this Mac.
+private final class PhoneListener {
+    private var tasks: [String: (pairing: Pairing, task: Task<Void, Never>)] = [:]
+    private var up = Set<String>()
+    private let lock = NSLock()
+    var onChange: ((Bool) -> Void)?                // is at least one phone's connection up?
 
-
-private enum PhoneShortcut {
-    /// The tailnet name when Tailscale is connected (works from anywhere), else `MacBook-Pro-di-Mattia.local` (same network only).
-    static var host: String { RemoteAccess.tailnetName ?? localHost }
-
-    static var localHost: String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/scutil")
-        p.arguments = ["--get", "LocalHostName"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
-        var name = ""
-        if (try? p.run()) != nil {
-            name = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            p.waitUntilExit()
-        }
-        if name.isEmpty { name = ProcessInfo.processInfo.hostName.replacingOccurrences(of: ".local", with: "") }
-        return name + ".local"
+    func sync(_ list: [Pairing]) {
+        lock.lock(); defer { lock.unlock() }
+        for (id, entry) in tasks where !list.contains(entry.pairing) { entry.task.cancel(); tasks[id] = nil; up.remove(id) }
+        for p in list where tasks[p.id] == nil { tasks[p.id] = (p, Task.detached { [weak self] in await self?.run(p) }) }
+        notify()
     }
 
+    private func set(_ id: String, _ connected: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        guard tasks[id] != nil else { return }
+        if connected { up.insert(id) } else { up.remove(id) }
+        notify()
+    }
+
+    private func notify() {
+        let any = !up.isEmpty
+        DispatchQueue.main.async { self.onChange?(any) }
+    }
+
+    private func run(_ p: Pairing) async {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 150           // the relay sends a keepalive every 45 s
+        config.waitsForConnectivity = true
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        var since = Int(Date().timeIntervalSince1970)
+        var seen: [String] = [], recent: [Date] = []
+        var delay = 2.0
+        while !Task.isCancelled {
+            if let url = URL(string: "\(p.relay)/\(p.cmd)/json?since=\(since)") {
+                do {
+                    let (bytes, response) = try await session.bytes(from: url)
+                    if (response as? HTTPURLResponse)?.statusCode == 200 {
+                        delay = 2
+                        set(p.id, true)
+                        for try await line in bytes.lines {
+                            guard line.utf8.count <= 16_384, let m = Self.message(line), !seen.contains(m.id) else { continue }
+                            seen = Array((seen + [m.id]).suffix(100))
+                            // Old messages (the Mac was asleep) are never run, nor are ones dated in the future, and
+                            // no more than 20 a minute are.
+                            let age = Date().timeIntervalSince1970 - Double(m.time)
+                            guard age <= 120, age >= -120 else { continue }
+                            since = max(since, m.time)
+                            recent = recent.filter { $0.timeIntervalSinceNow > -60 }
+                            guard recent.count < 20, m.text.count <= 1000 else { continue }
+                            recent.append(Date())
+                            log.notice("phone command received (\(m.text.count, privacy: .public) characters)")
+                            let answer = await Task.detached { PhoneLink.execute(m.text, tier: p.tier) }.value
+                            await PhoneLink.publish(answer, to: p.reply, relay: p.relay, session: session)
+                        }
+                    }
+                } catch {}
+            }
+            set(p.id, false)
+            if Task.isCancelled { break }
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            delay = min(delay * 2, 60)
+        }
+    }
+
+    /// A relay event line → the message, or nil for keepalives and anything else.
+    static func message(_ line: String) -> (id: String, time: Int, text: String)? {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              json["event"] as? String == "message", let id = json["id"] as? String,
+              let time = json["time"] as? Int, let text = json["message"] as? String else { return nil }
+        return (id, time, text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+// MARK: - The iPhone Shortcut: a menu that sends Cocaine's remote commands through the relay and shows the answer
+
+private enum PhoneShortcut {
     /// The shortcut as an (unsigned) property list. Sign it before sharing: an iPhone refuses unsigned files.
-    static func build(user: String, host: String) -> Data? {
+    static func build(_ pairing: Pairing) -> Data? {
         func uuid() -> String { UUID().uuidString }
         func action(_ id: String, _ params: [String: Any]) -> [String: Any] {
             ["WFWorkflowActionIdentifier": "is.workflow.actions.\(id)", "WFWorkflowActionParameters": params]
         }
-        func token(_ output: String, _ name: String) -> [String: Any] {   // "the result of that action" as text
-            ["Value": ["string": "\u{FFFC}", "attachmentsByRange": ["{0, 1}": ["OutputUUID": output, "Type": "ActionOutput", "OutputName": name]]],
+        /// Text with the result of an earlier action at its end ("the prefix, then that output").
+        func token(_ prefix: String, _ output: String, _ name: String) -> [String: Any] {
+            ["Value": ["string": prefix + "\u{FFFC}",
+                       "attachmentsByRange": ["{\((prefix as NSString).length), 1}": ["OutputUUID": output, "Type": "ActionOutput", "OutputName": name]]],
              "WFSerializationType": "WFTextTokenString"]
         }
-        let items: [(title: String, args: String)] = [
+        func get(_ url: Any, _ id: String? = nil) -> [String: Any] {
+            var params: [String: Any] = ["WFURL": url, "WFHTTPMethod": "GET"]
+            if let id { params["UUID"] = id }
+            return action("downloadurl", params)
+        }
+        let relay = pairing.relay
+        let send = "\(relay)/\(pairing.cmd)/publish?firebase=no&message="
+        func read(_ since: String) -> String { "\(relay)/\(pairing.reply)/raw?poll=1&since=\(since)" }
+        func show(_ since: String) -> [[String: Any]] {      // fetch what the Mac answered and show it
+            let r = uuid()
+            return [get(read(since), r), action("showresult", ["Text": token("", r, "Contents of URL")])]
+        }
+        func wait() -> [String: Any] { action("delay", ["WFDelayTime": 4]) }
+
+        let fixed: [(title: String, command: String)] = [
             (L("Status"), "status"), (L("Turn on"), "on"), (L("Turn off"), "off"), (L("Projects"), "projects"),
         ]
+        let titles = fixed.map(\.title) + [L("Command"), L("Last reply")]
         let group = uuid()
         var actions: [[String: Any]] = [
-            action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine",
-                                      "WFMenuItems": items.map(\.title)]),
+            action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine", "WFMenuItems": titles]),
         ]
-        for item in items {
-            let ssh = uuid()
-            actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": item.title]))
-            actions.append(action("runsshscript", [
-                "UUID": ssh, "WFSSHHost": host, "WFSSHPort": "22", "WFSSHUser": user, "WFSSHAuthenticationType": "SSH Key",
-                "WFSSHScript": "remote \(item.args)",   // the key's forced command only accepts these
-            ]))
-            actions.append(action("showresult", ["Text": token(ssh, "Shell Script Result")]))
+        func item(_ title: String, _ body: [[String: Any]]) {
+            actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": title]))
+            actions += body
         }
+        for f in fixed { item(f.title, [get(send + f.command), wait()] + show("20s")) }
+        let ask = uuid(), encoded = uuid()
+        item(L("Command"), [
+            action("ask", ["UUID": ask, "WFAskActionPrompt": L("Command (for example: start claude my-project Fix the tests)"), "WFInputType": "Text"]),
+            action("urlencode", ["UUID": encoded, "WFEncodeMode": "Encode",
+                                 "WFInput": ["Value": ["OutputUUID": ask, "Type": "ActionOutput", "OutputName": "Provided Input"],
+                                             "WFSerializationType": "WFTextTokenAttachment"]]),
+            get(token(send, encoded, "URL Encoded Text")), wait(),
+        ] + show("20s"))
+        item(L("Last reply"), show("10m"))
         actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 2]))
         let plist: [String: Any] = [
             "WFWorkflowClientVersion": "900", "WFWorkflowMinimumClientVersion": 900, "WFWorkflowMinimumClientRelease": 900,
@@ -646,17 +749,31 @@ private enum PhoneShortcut {
         return try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
     }
 
-    /// Builds and signs `Cocaine.shortcut` in a temporary folder; nil if signing fails (it needs to be online, and
-    /// signed in to iCloud).
-    static func signedFile() -> URL? {
+    /// Builds and signs `Cocaine.shortcut` for that pairing in a temporary folder; nil if signing fails (it needs to be
+    /// online, and signed in to iCloud).
+    static func signedFile(_ pairing: Pairing) -> URL? {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-shortcut-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let raw = dir.appendingPathComponent("raw.shortcut"), out = dir.appendingPathComponent("Cocaine.shortcut")
-        guard let data = build(user: NSUserName(), host: host), (try? data.write(to: raw)) != nil,
+        guard let data = build(pairing), (try? data.write(to: raw)) != nil,
               run("/usr/bin/shortcuts", ["sign", "--mode", "people-who-know-me", "--input", raw.path, "--output", out.path]) == 0,
-              FileManager.default.fileExists(atPath: out.path) else { return nil }
+              FileManager.default.fileExists(atPath: out.path) else { try? FileManager.default.removeItem(at: dir); return nil }
         try? FileManager.default.removeItem(at: raw)
         return out
+    }
+}
+
+private enum RelayTest {
+    static func curl(_ url: String) -> String {
+        let p = Process(), out = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        p.arguments = ["-sS", "-m", "10", url]
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return "" }
+        let d = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -922,11 +1039,9 @@ private final class PanelModel: ObservableObject {
     @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
-    @Published var sshOn = false
     @Published var makingShortcut = false
-    @Published var tailnet: String?                  // this Mac's Tailscale name; nil = not connected
-    @Published var tailscaleInstalled = false
-    @Published var phoneKeys = 0                     // phone SSH keys authorized
+    @Published var phoneCount = 0                    // iPhones paired for remote control
+    @Published var phoneLinkUp = false               // at least one is connected to the relay
     @Published var phone = ""                        // "" = not set up; else what alerts go to
     @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
@@ -962,11 +1077,9 @@ private final class PanelModel: ObservableObject {
     var previewVoice: () -> Void = {}
     var timerChanged: () -> Void = {}
     var hotkeysChanged: () -> Void = {}
-    var copyRemoteCommand: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
-    var authorizeKey: () -> Void = {}
-    var revokeKeys: () -> Void = {}
+    var revokePhones: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -1390,34 +1503,15 @@ private struct PanelView: View {
             }
             Divider().padding(.vertical, 8)
             group("remote", "iphone.gen3", L("Remote work"),
-                  !m.sshOn ? L("SSH off") : (m.tailnet != nil && m.phoneKeys > 0 ? L("Ready") : L("Set up")),
-                  warning: !m.sshOn, key: \.autoGroup) {
-                option(L("Remote Login"), m.sshOn ? L("On: you can reach this Mac over SSH") : L("Off: turn it on to reach this Mac"),
-                       warning: !m.sshOn) {
-                    Button(L("Open")) { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")!) }
-                        .controlSize(.small)
-                }
-                option(L("Anywhere"), m.tailnet.map { "\(L("Tailscale on")): \($0)" }
-                       ?? (m.tailscaleInstalled ? L("Tailscale installed: open it and sign in") : L("Needs Tailscale (free) on this Mac and your iPhone"))) {
-                    if m.tailnet == nil {
-                        Button(m.tailscaleInstalled ? L("Open") : L("Get")) {
-                            if m.tailscaleInstalled { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Tailscale.app")) }
-                            else { NSWorkspace.shared.open(RemoteAccess.download) }
-                        }.controlSize(.small)
-                    }
-                }
-                option(L("iPhone"), L("Sends you a ready Shortcut: AirDrop, Messages…")) {
-                    Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
-                        .help(L("Send the Shortcut to your iPhone"))
-                }
-                option(L("iPhone key"), m.phoneKeys > 0 ? "\(m.phoneKeys) \(L("authorized"))" : L("None: no password needed once authorized")) {
+                  m.phoneCount == 0 ? L("Set up") : (m.phoneLinkUp ? L("Ready") : L("Connecting…")),
+                  warning: false, key: \.autoGroup) {
+                option(L("iPhone"), m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
+                       : "\(m.phoneCount) \(L("paired")) · \(m.phoneLinkUp ? L("Connected") : L("Connecting…"))") {
                     HStack(spacing: 6) {
-                        Button(L("Authorize")) { m.authorizeKey() }.controlSize(.small).help(L("Authorize the key copied from your iPhone"))
-                        if m.phoneKeys > 0 { Button(L("Revoke")) { m.revokeKeys() }.controlSize(.small) }
+                        Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
+                            .help(L("Send the Shortcut to your iPhone"))
+                        if m.phoneCount > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
                     }
-                }
-                option(L("Command"), L("Copies the SSH command to run from your phone")) {
-                    Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small).help(L("Copy the SSH command"))
                 }
                 option(L("Phone alerts"), m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
                     Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
@@ -2331,11 +2425,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
-        model.copyRemoteCommand = { [weak self] in self?.copyRemoteCommand() }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
-        model.authorizeKey = { [weak self] in self?.authorizePhoneKey() }
-        model.revokeKeys = { [weak self] in self?.revokePhoneKeys() }
+        model.revokePhones = { [weak self] in self?.revokePhones() }
         model.testPhone = { Phone.send(L("This is a test")) }
+        syncPhones()
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
@@ -2687,18 +2780,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.global().async {
             let missing = on && !System.displayHeld
             let ai = AIHooks.status()
-            let ssh = System.sshOn
-            let tailnet = RemoteAccess.tailnetName, installed = RemoteAccess.installed, keys = RemoteAccess.keyCount
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
                 if !self.model.settingAI && self.model.ai != ai { self.model.ai = ai }
                 let paused = self.settings.alertsPausedUntil   // a pause ends by itself
                 if self.model.alertsPausedUntil != paused { self.model.alertsPausedUntil = paused }
-                if self.model.sshOn != ssh { self.model.sshOn = ssh }
-                if self.model.tailnet != tailnet { self.model.tailnet = tailnet }
-                if self.model.tailscaleInstalled != installed { self.model.tailscaleInstalled = installed }
-                if self.model.phoneKeys != keys { self.model.phoneKeys = keys }
                 let phone = Phone.configured ? Phone.summary : ""
                 if self.model.phone != phone { self.model.phone = phone }
                 self.model.battery = System.battery.map { "\($0.percent)%" }
@@ -2824,25 +2911,69 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the iPhone Shortcut and opens the share sheet (AirDrop, Messages, Mail…) on it.
+    private let phoneListener = PhoneListener()
+
+    /// Starts listening for the paired phones (at launch and whenever the list changes).
+    private func syncPhones(_ given: [Pairing]? = nil) {
+        let list = given ?? PhoneLink.load()
+        model.phoneCount = list.count
+        phoneListener.onChange = { [weak self] up in self?.model.phoneLinkUp = up }
+        phoneListener.sync(list)
+    }
+
+    /// Pairs a new iPhone: asks what it may do, makes a Shortcut carrying its own secret topics, and opens the share
+    /// sheet (AirDrop, Messages, Mail…) on it.
     private func sendShortcutToPhone() {
+        hidePanel(); NSApp.activate()
+        let a = NSAlert()
+        a.messageText = L("Pair an iPhone")
+        a.informativeText = L("The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices.")
+        let level = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26))
+        level.addItems(withTitles: [L("Status, on/off and projects"), L("Also start and steer AI agents")])
+        a.accessoryView = level
+        a.addButton(withTitle: L("Send"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        guard let pairing = PhoneLink.newPairing(tier: level.indexOfSelectedItem == 1 ? "agents" : "basic") else { return }
         model.makingShortcut = true
         DispatchQueue.global().async {
-            let file = PhoneShortcut.signedFile()
+            let file = PhoneShortcut.signedFile(pairing)
             DispatchQueue.main.async {
                 self.model.makingShortcut = false
                 guard let file else {
-                    self.hidePanel(); NSApp.activate()
-                    let a = NSAlert()
-                    a.messageText = L("Can't make the Shortcut")
-                    a.informativeText = L("Signing it needs an internet connection and iCloud (sign in to it in System Settings).")
-                    a.runModal()
+                    NSApp.activate()
+                    let e = NSAlert()
+                    e.messageText = L("Can't make the Shortcut")
+                    e.informativeText = L("Signing it needs an internet connection and iCloud (sign in to it in System Settings).")
+                    e.runModal()
                     return
                 }
+                guard PhoneLink.save(PhoneLink.load() + [pairing]) else {
+                    NSApp.activate()
+                    let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
+                    return
+                }
+                self.syncPhones()
                 self.presentShare(file)
                 log.notice("shortcut ready to share: \(file.lastPathComponent, privacy: .public)")
+                // It holds a secret: don't leave the file lying around.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 600) { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
             }
         }
+    }
+
+    private func revokePhones() {
+        hidePanel(); NSApp.activate()
+        let a = NSAlert()
+        a.messageText = L("Remove every paired iPhone?")
+        a.informativeText = L("They stop working until you send a new Shortcut.")
+        a.addButton(withTitle: L("Revoke"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        if !PhoneLink.save([]) {                          // couldn't write: still stop answering now
+            let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
+        }
+        syncPhones([])
     }
 
     /// A menu of the ways to share the file (AirDrop, Messages, Mail, Notes…) plus "Show in Finder". The panel closes and
@@ -2861,50 +2992,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(ClosureItem(title: L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([file]) })
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    /// Authorizes the public key the iPhone's Shortcut showed (copied to the clipboard by "Copy Public Key"). Shows its
-    /// fingerprint first, and what it will be allowed to do.
-    private func authorizePhoneKey() {
-        hidePanel(); NSApp.activate()
-        let clip = NSPasteboard.general.string(forType: .string) ?? ""
-        let check = RemoteAccess.remote(["authorize", "--dry-run"], input: clip)
-        let a = NSAlert()
-        guard check.status == 0 else {
-            a.messageText = L("Copy the key from your iPhone first")
-            a.informativeText = L("In the Shortcut's SSH step, tap “Copy Public Key”, then come back here. It reaches this Mac through the clipboard.")
-            a.runModal(); return
-        }
-        a.messageText = L("Authorize this iPhone?")
-        a.informativeText = "\(L("Fingerprint")): \(check.text)\n\n" + L("The key can only run Cocaine's remote commands, only from Tailscale, never a shell. Check that it is the one your iPhone just showed.")
-        let level = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26))
-        level.addItems(withTitles: [L("Status, on/off and projects"), L("Also start and steer AI agents")])
-        a.accessoryView = level
-        a.addButton(withTitle: L("Authorize"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        let done = RemoteAccess.remote(["authorize", "--yes"] + (level.indexOfSelectedItem == 1 ? ["--agents"] : []), input: clip)
-        if done.status == 0 { model.phoneKeys = RemoteAccess.keyCount }
-        else { let e = NSAlert(); e.messageText = L("Couldn't authorize the key"); e.informativeText = done.text; e.runModal() }
-    }
-
-    private func revokePhoneKeys() {
-        hidePanel(); NSApp.activate()
-        let a = NSAlert()
-        a.messageText = L("Remove every iPhone key?")
-        a.informativeText = L("Your iPhone will need a new key to reach this Mac again.")
-        a.addButton(withTitle: L("Revoke"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        RemoteAccess.remote(["revoke"])
-        model.phoneKeys = RemoteAccess.keyCount
-    }
-
-    /// The command to run from a phone (a terminal or Shortcuts' "Run Script Over SSH").
-    private func copyRemoteCommand() {
-        let text = "ssh \(NSUserName())@\(PhoneShortcut.host) 'remote status'"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// Fills the baggie gradually when Cocaine turns on, empties it when it turns off.
@@ -3151,7 +3238,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--share-test" 
     // windows that appear (for tests).
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    guard let file = PhoneShortcut.signedFile() else { print("could not sign"); exit(1) }
+    guard let file = PhoneShortcut.signedFile(PhoneLink.newPairing(tier: "basic")!) else { print("could not sign"); exit(1) }
     app.activate()
     let services = NSSharingService.sharingServices(forItems: [file])
     print("services: " + services.map(\.title).joined(separator: ", "))
@@ -3167,11 +3254,27 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--share-test" 
 }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcut" {
     // Builds and signs the iPhone Shortcut, copies it to the given path (for tests).
-    guard let f = PhoneShortcut.signedFile() else { print("could not sign"); exit(1) }
+    guard let f = PhoneShortcut.signedFile(PhoneLink.newPairing(tier: "basic")!) else { print("could not sign"); exit(1) }
     try? FileManager.default.removeItem(atPath: CommandLine.arguments[2])
     try? FileManager.default.copyItem(at: f, to: URL(fileURLWithPath: CommandLine.arguments[2]))
-    print("ok \(PhoneShortcut.host)")
+    print("ok")
     exit(0)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--relay-test" {
+    // A real round trip through the relay with throwaway topics: sends an unknown command ("ping-test"), which the gate
+    // refuses, and expects that refusal back on the reply topic. Nothing about this Mac leaves it.
+    let pairing = PhoneLink.newPairing(tier: "basic")!
+    let listener = PhoneListener()
+    listener.sync([pairing])
+    Thread.sleep(forTimeInterval: 4)
+    _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=ping-test")
+    var answer = ""
+    for _ in 0..<12 where answer.isEmpty {
+        Thread.sleep(forTimeInterval: 1.5)
+        answer = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=60s")
+    }
+    print(answer.contains("not allowed") ? "PASS  relay round trip: \(answer)" : "FAIL  relay round trip: '\(answer)'")
+    exit(answer.contains("not allowed") ? 0 : 1)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
@@ -3261,7 +3364,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         model.autoExpanded = true
         model.autoGroup = CommandLine.arguments[i + 1] == "none" ? "" : CommandLine.arguments[i + 1]
         model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
-        model.sshOn = !CommandLine.arguments.contains("--no-ssh"); model.battery = "80%"
+        model.phoneCount = CommandLine.arguments.contains("--no-phone") ? 0 : 1; model.phoneLinkUp = true; model.battery = "80%"
         model.phone = "Comando Rapido “Avvisa iPhone”"
     }
     if CommandLine.arguments.contains("--agents") {

@@ -104,41 +104,48 @@ Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattia
 Lasci il Mac e continui a lavorare dal telefono. Cocaine tiene sveglio il Mac (il coperchio può restare chiuso) e un
 piccolo comando ti permette di avviare, seguire e guidare gli agent AI da qualsiasi posto in cui puoi eseguire un comando.
 
-**Da fare una volta, da qualsiasi parte del mondo, senza password.** Cocaine non apre nessuna porta di rete: passa tutto
-dall'SSH di macOS, raggiunto tramite [Tailscale](https://tailscale.com/download) (gratis: una rete privata tra i tuoi
-dispositivi, quindi il Mac non è mai esposto a internet), con una chiave limitata per ogni telefono al posto della password.
+**Da fare una volta, da qualsiasi parte del mondo, senza password e senza altre app.** Cocaine non apre nessuna porta di
+rete e non richiede né il Login remoto né una VPN. L'app tiene una connessione in uscita verso un relay ([ntfy](https://ntfy.sh),
+lo stesso servizio che possono usare gli avvisi sul telefono) e il Comando Rapido dell'iPhone parla con l'app attraverso di esso.
 
-1. Sul Mac: Impostazioni di Sistema → Generali → Condivisione → **Login remoto** attivo. Installa Tailscale su Mac e iPhone
-   e accedi con lo stesso account su entrambi.
-2. Nel pannello: *Automazioni → Lavoro da remoto → iPhone → Invia* crea un Comando Rapido pronto (un menu: Stato, Attiva,
-   Spegni, Progetti, con già il nome Tailscale del Mac e il tuo utente), lo firma (servono internet e iCloud sul Mac) e apre
-   la condivisione: lo mandi con AirDrop o con Messaggi.
-3. Sull'iPhone apri il Comando Rapido ed eseguilo una volta: nel suo passo SSH la chiave viene creata sul telefono. Tocca
-   **Copia chiave pubblica**, poi sul Mac premi *Chiave iPhone → Autorizza*: Cocaine mostra l'impronta della chiave e il
-   livello da concedere, e la aggiunge. Da quel momento il Comando Rapido non chiede più la password.
+1. Nel pannello: *Automazioni → Lavoro da remoto → iPhone → Invia*. Scegli cosa può fare il telefono e Cocaine crea un Comando
+   Rapido (un menu: Stato, Attiva, Spegni, Progetti, Comando, Ultima risposta), lo firma (servono internet e iCloud sul Mac)
+   e apre la condivisione: lo mandi con AirDrop o con Messaggi.
+2. Sull'iPhone lo aggiungi e lo esegui. Basta: il segreto che contiene il Mac lo conosce già.
 
-Quello che la chiave può fare è volutamente poco: può solo eseguire `cocaine remote …` (mai una shell), niente
-inoltro di porte, e solo dagli indirizzi di Tailscale. Il livello di base permette stato, attiva/spegni ed elenco dei
-progetti; il livello *Anche avviare e guidare gli agenti AI* aggiunge l'avvio degli agent e la possibilità di scrivere
-loro, il che equivale a eseguire codice come te: concedilo consapevolmente. Ogni richiesta, permessa o rifiutata, è
-registrata in `~/Library/Application Support/Cocaine/remote-ssh.log`. *Revoca* (o `cocaine remote revoke`) toglie tutte le
-chiavi aggiunte da Cocaine; `cocaine remote keys` le elenca. Cocaine tocca solo le sue righe in `~/.ssh/authorized_keys`. Il Mac
-deve essere sveglio per rispondere: a questo serve Cocaine acceso.
+*Comando* accetta qualsiasi comando `cocaine remote`, per esempio `start claude mio-progetto Correggi i test che falliscono`,
+`log claude-mio-progetto 30`, `send claude-mio-progetto Sì, procedi` (gli ultimi tre richiedono il livello agent). Il Comando
+Rapido aspetta qualche secondo e mostra la risposta; *Ultima risposta* la mostra di nuovo.
 
-Puoi anche usare una qualsiasi app SSH o l'azione **Esegui script tramite SSH**: *Copia* mette il comando sugli appunti
-(autorizza una tua chiave con `cocaine remote authorize --clipboard`). Le parti sono:
+Come è protetto: ogni iPhone abbinato riceve due nomi di canale casuali da 192 bit sul relay, uno per i comandi e uno per le
+risposte; li conosce solo chi ha il Comando Rapido. Ogni comando passa da una lista fissa di comandi permessi: il livello di
+base permette stato, attiva/spegni ed elenco dei progetti; *Anche avviare e guidare gli agenti AI* aggiunge l'avvio degli
+agent e la possibilità di scrivere loro, il che equivale a eseguire codice come te: concedilo consapevolmente. I comandi più
+vecchi di due minuti non vengono mai eseguiti (un Mac che dormiva non li ripete), al massimo 20 al minuto, e ognuno è
+registrato in `~/Library/Application Support/Cocaine/remote-phone.log`. *Revoca* dimentica tutti gli iPhone abbinati: i loro
+Comandi Rapidi smettono di funzionare. Trattalo come una chiave: mandalo solo ai tuoi dispositivi.
+
+Cosa vede il relay: il traffico è HTTPS, ma comandi e risposte sono testo in chiaro su quel server (un nome di progetto, il
+livello della batteria), protetti solo dai nomi di canale impossibili da indovinare, e li conserva per circa 12 ore. Cocaine
+chiede di non inoltrarli al servizio push di Google. Il Comando Rapido stesso si sincronizza tramite iCloud sugli altri tuoi
+dispositivi Apple (cifrato end-to-end solo con la Protezione avanzata dei dati), e chi scoprisse i canali potrebbe anche
+inviare risposte false. Se non va bene, usa un tuo server ntfy e
+indicalo a Cocaine: `defaults write local.cocaine.toggle relayURL https://ntfy.esempio.it` (solo https), poi abbina di nuovo.
+Il Mac deve essere sveglio per rispondere: a questo serve Cocaine acceso.
+
+Gli stessi comandi funzionano in Terminale:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine
-ssh tu@il-tuo-mac.local "$C remote status"                       # Cocaine, batteria, agent al lavoro
-ssh tu@il-tuo-mac.local "$C remote on --for 3h"                  # Mac sveglio per 3 ore
-ssh tu@il-tuo-mac.local "$C remote projects"                     # le cartelle in cui puoi lavorare
-ssh tu@il-tuo-mac.local "$C remote start claude mio-progetto Correggi i test che falliscono"
-ssh tu@il-tuo-mac.local "$C remote start codex mio-progetto --resume"
-ssh tu@il-tuo-mac.local "$C remote log claude-mio-progetto 30"    # cosa mostra l'agent sullo schermo
-ssh tu@il-tuo-mac.local "$C remote send claude-mio-progetto Sì, procedi"
-ssh tu@il-tuo-mac.local "$C remote key claude-mio-progetto enter" # anche esc, up, down, tab, ctrl-c, y, n, 1-9
-ssh tu@il-tuo-mac.local "$C remote stop claude-mio-progetto"
+$C remote status                       # Cocaine, batteria, agent al lavoro
+$C remote on --for 3h                  # Mac sveglio per 3 ore
+$C remote projects                     # le cartelle in cui puoi lavorare
+$C remote start claude mio-progetto Correggi i test che falliscono
+$C remote start codex mio-progetto --resume
+$C remote log claude-mio-progetto 30    # cosa mostra l'agent sullo schermo
+$C remote send claude-mio-progetto Sì, procedi
+$C remote key claude-mio-progetto enter # anche esc, up, down, tab, ctrl-c, y, n, 1-9
+$C remote stop claude-mio-progetto
 ```
 
 Agent: Claude Code, Codex, Gemini CLI, Cursor, GitHub Copilot, OpenCode, Qwen Code e Aider (`remote agents` elenca quelli

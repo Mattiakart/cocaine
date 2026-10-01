@@ -104,40 +104,47 @@ in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattia
 Leave the Mac, keep working from your phone. Cocaine keeps the Mac awake (the lid can stay closed), and a small
 command lets you start, follow and steer AI agents from anywhere you can run a command.
 
-**Set up once, from anywhere in the world, no password.** Cocaine opens no network port of its own: everything goes
-through macOS's own SSH, reached over [Tailscale](https://tailscale.com/download) (free: a private network between your
-own devices, so the Mac is never exposed to the internet), with one restricted key per phone instead of a password.
+**Set up once, from anywhere in the world, no password, no other app.** Cocaine opens no network port and needs neither
+Remote Login nor a VPN. The app keeps one outbound connection to a relay ([ntfy](https://ntfy.sh), the same service the
+phone alerts can use) and your iPhone's Shortcut talks to the app through it.
 
-1. On the Mac: System Settings → General → Sharing → **Remote Login** on. Install Tailscale on the Mac and the iPhone and
-   sign in to the same account on both.
-2. In the panel: *Automation → Remote work → iPhone → Send* builds a ready Shortcut (a menu: Status, Turn on, Turn off,
-   Projects, with your Mac's Tailscale name and your user filled in), signs it (needs internet and iCloud on the Mac) and
+1. In the panel: *Automation → Remote work → iPhone → Send*. Choose what the phone may do, and Cocaine builds a Shortcut (a
+   menu: Status, Turn on, Turn off, Projects, Command, Last reply), signs it (needs internet and iCloud on the Mac) and
    opens the share sheet: AirDrop it or send it by Messages.
-3. On the iPhone, open the Shortcut and run it once: in its SSH step, the key is created on the phone. Tap **Copy Public
-   Key** there, then on the Mac press *iPhone key → Authorize*: Cocaine shows the key's fingerprint and the level to
-   grant, and adds it. From then on the Shortcut never asks for a password.
+2. On the iPhone, add it and run it. That's all: the secret it carries is already known to the Mac.
 
-What that key can do is deliberately small: it can only run `cocaine remote …` (never a shell), no port forwarding, and
-only from Tailscale's addresses. The default level allows status, on/off and listing projects; the *Also start and steer AI
-agents* level adds starting agents and typing into them, which amounts to running code as you, so grant it knowingly.
-Every allowed or refused request is logged in `~/Library/Application Support/Cocaine/remote-ssh.log`. *Revoke* (or
-`cocaine remote revoke`) removes every key Cocaine added; `cocaine remote keys` lists them. Cocaine only touches its own
-lines in `~/.ssh/authorized_keys`. The Mac has to be awake to answer: that's what Cocaine on is for.
+*Command* takes any `cocaine remote` command, for example `start claude my-project Fix the failing tests`, `log
+claude-my-project 30`, `send claude-my-project Yes, go ahead` (the last three need the agents level). The Shortcut waits a
+few seconds and shows the answer; *Last reply* shows it again.
 
-You can also use any SSH app or the **Run Script Over SSH** action yourself: *Copy* puts the command on the clipboard
-(authorize your own key with `cocaine remote authorize --clipboard`). The parts are:
+How it's kept safe: each paired iPhone gets two random 192-bit topic names on the relay, one for commands and one for
+answers; only whoever has the Shortcut knows them. Every command goes through a fixed allow-list (the same for any tier):
+the default level allows status, on/off and listing projects; *Also start and steer AI agents* adds starting agents and
+typing into them, which amounts to running code as you, so grant it knowingly. Commands older than two minutes are
+never run (a Mac that was asleep doesn't replay them), at most 20 a minute are, and every one is logged in
+`~/Library/Application Support/Cocaine/remote-phone.log`. *Revoke* forgets every paired iPhone at once: their Shortcuts stop
+working. Treat the Shortcut like a key: send it only to your own devices.
+
+What the relay sees: the traffic is HTTPS, but the commands and answers are plain text on that server (a project name, a
+battery level), protected only by the unguessable topic names, and it keeps them for about 12 hours. Cocaine asks it not to
+forward them to Google's push service. The Shortcut itself syncs through iCloud to your other Apple devices (end-to-end
+encrypted only with Advanced Data Protection), and anyone who learns the topics could also post fake answers. If that isn't acceptable, run your own ntfy server and point
+Cocaine at it: `defaults write local.cocaine.toggle relayURL https://ntfy.example.com` (https only), then pair again. The Mac
+has to be awake to answer: that's what Cocaine on is for.
+
+The same commands run in Terminal:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine
-ssh you@your-mac.local "$C remote status"                       # Cocaine, battery, agents at work
-ssh you@your-mac.local "$C remote on --for 3h"                  # keep the Mac awake for 3 hours
-ssh you@your-mac.local "$C remote projects"                     # the folders you can start work in
-ssh you@your-mac.local "$C remote start claude my-project Fix the failing tests"
-ssh you@your-mac.local "$C remote start codex my-project --resume"
-ssh you@your-mac.local "$C remote log claude-my-project 30"      # what the agent shows on screen
-ssh you@your-mac.local "$C remote send claude-my-project Yes, go ahead"
-ssh you@your-mac.local "$C remote key claude-my-project enter"   # also esc, up, down, tab, ctrl-c, y, n, 1-9
-ssh you@your-mac.local "$C remote stop claude-my-project"
+$C remote status                       # Cocaine, battery, agents at work
+$C remote on --for 3h                  # keep the Mac awake for 3 hours
+$C remote projects                     # the folders you can start work in
+$C remote start claude my-project Fix the failing tests
+$C remote start codex my-project --resume
+$C remote log claude-my-project 30      # what the agent shows on screen
+$C remote send claude-my-project Yes, go ahead
+$C remote key claude-my-project enter   # also esc, up, down, tab, ctrl-c, y, n, 1-9
+$C remote stop claude-my-project
 ```
 
 Agents: Claude Code, Codex, Gemini CLI, Cursor, GitHub Copilot, OpenCode, Qwen Code and Aider (`remote agents` lists
