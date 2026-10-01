@@ -25,7 +25,6 @@
 "has finished" = "ist fertig";
 "needs your input" = "braucht deine Eingabe";
 "AI alerts" = "KI-Hinweise";
-"Codex: approve them once in Settings → Hooks" = "Codex: in Einstellungen → Hooks bestätigen";
 "Can't change AI alerts" = "KI-Hinweise können nicht geändert werden";
 "Choose" = "Auswählen";
 "until %@" = "bis %@";
@@ -33,7 +32,6 @@
 "Sound" = "Ton";
 "No sound" = "Kein Ton";
 "Other apps and scripts…" = "Andere Apps und Skripte …";
-"Flashes the screen when an AI finishes or needs you" = "Lässt den Bildschirm blinken, wenn eine KI fertig ist oder dich braucht";
 "Feedback or help" = "Feedback oder Hilfe";
 "Feedback" = "Feedback";
 "This is a test" = "Das ist ein Test";
@@ -95,7 +93,6 @@
 "AI at work" = "KI arbeitet";
 "Agents" = "Agenten";
 "An AI is at work" = "Eine KI arbeitet";
-"Automation" = "Automatisierung";
 "Battery" = "Akku";
 "Battery Guard" = "Akku-Wächter";
 "Battery at %d%%" = "Akku bei %d%%";
@@ -105,7 +102,6 @@
 "Done" = "Fertig";
 "Error" = "Fehler";
 "Global shortcuts" = "Globale Tastenkürzel";
-"Keys" = "Kürzel";
 "Not set up" = "Nicht eingerichtet";
 "Not set up: see the guide" = "Nicht eingerichtet: siehe Anleitung";
 "Off" = "Aus";
@@ -129,8 +125,6 @@
 "These programs are open" = "Diese Programme laufen";
 "Timer" = "Timer";
 "Timer over: Cocaine is off" = "Timer abgelaufen: Cocaine ist aus";
-"Timer, battery, smart triggers, shortcuts and remote work" = "Timer, Akku, Auslöser, Kürzel und Fernarbeit";
-"Triggers" = "Auslöser";
 "Turn Cocaine on or off" = "Cocaine ein- oder ausschalten";
 "Until I turn it off" = "Bis ich es ausschalte";
 "What Cocaine does at that level" = "Was Cocaine bei diesem Stand tut";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Alle 15 Minuten wacht er kurz auf, auch bei geschlossenem Deckel, um dein iPhone zu beantworten";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine braucht einmalig deine Erlaubnis, um deinen Mac für dein iPhone aufzuwecken.";
 "Couldn't turn on the wake-ups" = "Aufwecken konnte nicht aktiviert werden";
+"Back" = "Zurück";

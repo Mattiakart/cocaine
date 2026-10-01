@@ -108,7 +108,7 @@ piccolo comando ti permette di avviare, seguire e guidare gli agent AI da qualsi
 rete e non richiede né il Login remoto né una VPN. L'app tiene una connessione in uscita verso un relay ([ntfy](https://ntfy.sh),
 lo stesso servizio che possono usare gli avvisi sul telefono) e il Comando Rapido dell'iPhone parla con l'app attraverso di esso.
 
-1. Nel pannello: *Automazioni → Lavoro da remoto → iPhone → Invia*. Scegli cosa può fare il telefono e Cocaine crea un Comando
+1. Nel pannello: *Lavoro da remoto → iPhone → Invia*. Scegli cosa può fare il telefono e Cocaine crea un Comando
    Rapido (un menu: Stato, Attiva, Spegni, Progetti, Comando, Ultima risposta), lo firma (servono internet e iCloud sul Mac)
    e apre la condivisione: lo mandi con AirDrop o con Messaggi.
 2. Sull'iPhone lo aggiungi e lo esegui. Basta: il segreto che contiene il Mac lo conosce già.
@@ -177,7 +177,7 @@ a un'app Wake-on-LAN, da usare sulla rete di casa.)
 
 ### Automazioni
 
-Nel pannello, *Automazioni*: **Timer** (resta attivo da 30 minuti a 8 ore, poi si spegne), **Battery Guard** (a batteria,
+Nel pannello, ognuna ha la sua pagina (tocca la riga nell'elenco): **Timer** (resta attivo da 30 minuti a 8 ore, poi si spegne), **Battery Guard** (a batteria,
 al 10–30 % spegne Cocaine o ti avvisa soltanto), **Smart Triggers** (attivo mentre un'AI lavora o aspetta te, o mentre
 girano i programmi scelti; si spegne dopo 3 minuti; se lo spegni tu a mano, vale la tua scelta) e **Scorciatoie**
 (⌃⌥⌘C attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi).

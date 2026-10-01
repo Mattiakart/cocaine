@@ -25,7 +25,6 @@
 "has finished" = "a terminé";
 "needs your input" = "a besoin de vous";
 "AI alerts" = "Alertes IA";
-"Codex: approve them once in Settings → Hooks" = "Codex : approuvez-les dans Réglages → Hooks";
 "Can't change AI alerts" = "Impossible de modifier les alertes IA";
 "Choose" = "Choisir";
 "until %@" = "jusqu'à %@";
@@ -33,7 +32,6 @@
 "Sound" = "Son";
 "No sound" = "Aucun son";
 "Other apps and scripts…" = "Autres apps et scripts…";
-"Flashes the screen when an AI finishes or needs you" = "Fait clignoter l'écran quand une IA a fini ou a besoin de vous";
 "Feedback or help" = "Avis ou aide";
 "Feedback" = "Avis";
 "This is a test" = "Ceci est un test";
@@ -95,7 +93,6 @@
 "AI at work" = "IA au travail";
 "Agents" = "Agents";
 "An AI is at work" = "Une IA travaille";
-"Automation" = "Automatisation";
 "Battery" = "Batterie";
 "Battery Guard" = "Garde de batterie";
 "Battery at %d%%" = "Batterie à %d%%";
@@ -105,7 +102,6 @@
 "Done" = "Terminé";
 "Error" = "Erreur";
 "Global shortcuts" = "Raccourcis globaux";
-"Keys" = "Raccourcis";
 "Not set up" = "Non configurées";
 "Not set up: see the guide" = "Non configurées : voir le guide";
 "Off" = "Désactivé";
@@ -129,8 +125,6 @@
 "These programs are open" = "Ces programmes sont ouverts";
 "Timer" = "Minuterie";
 "Timer over: Cocaine is off" = "Minuterie terminée : Cocaine est éteint";
-"Timer, battery, smart triggers, shortcuts and remote work" = "Minuterie, batterie, déclencheurs, raccourcis et travail à distance";
-"Triggers" = "Déclencheurs";
 "Turn Cocaine on or off" = "Activer ou éteindre Cocaine";
 "Until I turn it off" = "Jusqu'à ce que je l'éteigne";
 "What Cocaine does at that level" = "Ce que fait Cocaine à ce niveau";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Toutes les 15 minutes il se réveille brièvement, même capot fermé, pour répondre à votre iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine a besoin de votre autorisation, une seule fois, pour réveiller votre Mac pour votre iPhone.";
 "Couldn't turn on the wake-ups" = "Impossible d'activer les réveils";
+"Back" = "Retour";

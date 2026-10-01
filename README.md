@@ -108,7 +108,7 @@ command lets you start, follow and steer AI agents from anywhere you can run a c
 Remote Login nor a VPN. The app keeps one outbound connection to a relay ([ntfy](https://ntfy.sh), the same service the
 phone alerts can use) and your iPhone's Shortcut talks to the app through it.
 
-1. In the panel: *Automation → Remote work → iPhone → Send*. Choose what the phone may do, and Cocaine builds a Shortcut (a
+1. In the panel: *Remote work → iPhone → Send*. Choose what the phone may do, and Cocaine builds a Shortcut (a
    menu: Status, Turn on, Turn off, Projects, Command, Last reply), signs it (needs internet and iCloud on the Mac) and
    opens the share sheet: AirDrop it or send it by Messages.
 2. On the iPhone, add it and run it. That's all: the secret it carries is already known to the Mac.
@@ -174,7 +174,7 @@ Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app need
 
 ### Automation
 
-In the panel, *Automation*: **Timer** (stay on for 30 minutes … 8 hours, then turn off), **Battery Guard** (on battery, at
+In the panel, each one has its own page (tap it in the list): **Timer** (stay on for 30 minutes … 8 hours, then turn off), **Battery Guard** (on battery, at
 10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, or while chosen programs
 run; off 3 minutes after; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
 

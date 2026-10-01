@@ -25,7 +25,6 @@
 "has finished" = "完了しました";
 "needs your input" = "入力が必要です";
 "AI alerts" = "AI 通知";
-"Codex: approve them once in Settings → Hooks" = "Codex：設定 → Hooks で一度承認してください";
 "Can't change AI alerts" = "AI 通知を変更できません";
 "Choose" = "選択";
 "until %@" = "%@まで";
@@ -33,7 +32,6 @@
 "Sound" = "サウンド";
 "No sound" = "なし";
 "Other apps and scripts…" = "ほかのアプリとスクリプト…";
-"Flashes the screen when an AI finishes or needs you" = "AI が完了したときや入力が必要なときに画面を点滅させます";
 "Feedback or help" = "フィードバック・サポート";
 "Feedback" = "フィードバック";
 "This is a test" = "これはテストです";
@@ -95,7 +93,6 @@
 "AI at work" = "AI 作業中";
 "Agents" = "エージェント";
 "An AI is at work" = "AI が作業中";
-"Automation" = "自動化";
 "Battery" = "バッテリー";
 "Battery Guard" = "バッテリーガード";
 "Battery at %d%%" = "バッテリー残量 %d%%";
@@ -105,7 +102,6 @@
 "Done" = "完了";
 "Error" = "エラー";
 "Global shortcuts" = "グローバルショートカット";
-"Keys" = "キー";
 "Not set up" = "未設定";
 "Not set up: see the guide" = "未設定：ガイドを参照";
 "Off" = "オフ";
@@ -129,8 +125,6 @@
 "These programs are open" = "これらのプログラムが起動中";
 "Timer" = "タイマー";
 "Timer over: Cocaine is off" = "タイマー終了：Cocaine をオフにしました";
-"Timer, battery, smart triggers, shortcuts and remote work" = "タイマー、バッテリー、トリガー、ショートカット、リモートワーク";
-"Triggers" = "トリガー";
 "Turn Cocaine on or off" = "Cocaine のオン/オフ";
 "Until I turn it off" = "自分でオフにするまで";
 "What Cocaine does at that level" = "その残量で Cocaine が行うこと";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "15分ごとに、蓋を閉じていても短時間起動して iPhone に応答します";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "iPhone のために Mac を起こすには、一度だけ許可が必要です。";
 "Couldn't turn on the wake-ups" = "起動の設定をオンにできませんでした";
+"Back" = "戻る";

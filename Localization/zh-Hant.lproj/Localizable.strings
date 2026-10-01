@@ -25,7 +25,6 @@
 "has finished" = "已完成";
 "needs your input" = "需要你的輸入";
 "AI alerts" = "AI 提醒";
-"Codex: approve them once in Settings → Hooks" = "Codex：請在「設定 → Hooks」中核准一次";
 "Can't change AI alerts" = "無法更改 AI 提醒";
 "Choose" = "選擇";
 "until %@" = "直到 %@";
@@ -33,7 +32,6 @@
 "Sound" = "聲音";
 "No sound" = "無";
 "Other apps and scripts…" = "其他 App 和指令碼…";
-"Flashes the screen when an AI finishes or needs you" = "AI 完成或需要你時讓螢幕閃爍";
 "Feedback or help" = "意見回饋或協助";
 "Feedback" = "意見回饋";
 "This is a test" = "這是一次測試";
@@ -95,7 +93,6 @@
 "AI at work" = "AI 工作中";
 "Agents" = "代理";
 "An AI is at work" = "有 AI 在工作";
-"Automation" = "自動化";
 "Battery" = "電池";
 "Battery Guard" = "電池保護";
 "Battery at %d%%" = "電量 %d%%";
@@ -105,7 +102,6 @@
 "Done" = "已完成";
 "Error" = "錯誤";
 "Global shortcuts" = "全域快速鍵";
-"Keys" = "快速鍵";
 "Not set up" = "未設定";
 "Not set up: see the guide" = "未設定：見指南";
 "Off" = "關";
@@ -129,8 +125,6 @@
 "These programs are open" = "這些程式已開啟";
 "Timer" = "計時器";
 "Timer over: Cocaine is off" = "計時結束：Cocaine 已關閉";
-"Timer, battery, smart triggers, shortcuts and remote work" = "計時器、電池、觸發、快速鍵和遠端工作";
-"Triggers" = "觸發";
 "Turn Cocaine on or off" = "開啟或關閉 Cocaine";
 "Until I turn it off" = "直到我關閉";
 "What Cocaine does at that level" = "到該電量時 Cocaine 的動作";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "每 15 分鐘短暫喚醒一次（即使闔上螢幕），以回應你的 iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine 需要你授權一次，才能為你的 iPhone 喚醒 Mac。";
 "Couldn't turn on the wake-ups" = "無法開啟定時喚醒";
+"Back" = "返回";

@@ -1144,22 +1144,11 @@ private final class PanelModel: ObservableObject {
     @Published var pouring = false
     @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
     @Published var settingAI = false
-    @Published var aiExpanded = UserDefaults.standard.bool(forKey: "aiExpanded") {
-        didSet { if persistLanguage { UserDefaults.standard.set(aiExpanded, forKey: "aiExpanded") } }
-    }
-    /// The open group of the AI alerts card ("" = none); only one at a time, so the panel stays short.
-    @Published var aiGroup = UserDefaults.standard.string(forKey: "aiGroup") ?? "" {
-        didSet { if persistLanguage { UserDefaults.standard.set(aiGroup, forKey: "aiGroup") } }
-    }
+    /// Which page of the panel is open: "" = the home, else "ai", "timer", "battery", "triggers", "keys" or "remote".
+    @Published var page = "" { didSet { if page != oldValue { pageChanged() } } }
+    var pageChanged: () -> Void = {}
     @Published var alertsPausedUntil: Date?
     @Published var history: [AlertRecord] = []       // newest first; kept by the app delegate
-    // Automation: the panel's second section
-    @Published var autoExpanded = UserDefaults.standard.bool(forKey: "autoExpanded") {
-        didSet { if persistLanguage { UserDefaults.standard.set(autoExpanded, forKey: "autoExpanded") } }
-    }
-    @Published var autoGroup = UserDefaults.standard.string(forKey: "autoGroup") ?? "" {
-        didSet { if persistLanguage { UserDefaults.standard.set(autoGroup, forKey: "autoGroup") } }
-    }
     @Published var timerMinutes: Int { didSet { settings.timerMinutes = timerMinutes; timerChanged() } }
     @Published var onUntil: Date?                    // when Cocaine will turn itself off
     @Published var batteryThreshold: Int { didSet { settings.batteryThreshold = batteryThreshold } }
@@ -1338,6 +1327,15 @@ private enum PowderLine {
     }
 }
 
+private extension View {
+    /// The soft rounded card that holds a page's settings (and the home list).
+    func panelCard() -> some View {
+        self.padding(.horizontal, 0)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+    }
+}
+
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
 
@@ -1359,34 +1357,37 @@ private struct PanelView: View {
         return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
     }
 
-    /// One group of the AI alerts card: a line with its summary that opens (one group at a time) onto its options.
-    private func group<Content: View>(_ id: String, _ icon: String, _ title: String, _ summary: String, warning: Bool = false,
-                                      key: ReferenceWritableKeyPath<PanelModel, String> = \.aiGroup,
-                                      @ViewBuilder _ content: () -> Content) -> some View {
-        let open = m[keyPath: key] == id
-        return VStack(alignment: .leading, spacing: 9) {
-            Button { m[keyPath: key] = open ? "" : id } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: icon).font(UI.icon).foregroundStyle(Color.accentColor)
-                        .frame(width: 16)
-                    Text(title).font(UI.groupTitle).lineLimit(1).layoutPriority(1)
-                    Spacer(minLength: 6)
-                    if warning {
-                        Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor)
-                    }
-                    if !open { Text(summary).font(UI.value).foregroundStyle(.secondary).lineLimit(1) }
-                    Image(systemName: "chevron.right").font(UI.chevron).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(open ? 90 : 0))
-                }
-                .contentShape(Rectangle())
+    /// A line of the home list: icon, name, what it's set to, and a chevron that opens its page.
+    private func navRow(_ id: String, _ icon: String, _ title: String, _ summary: String, warning: Bool = false) -> some View {
+        Button { m.page = id } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(UI.icon).foregroundStyle(Color.accentColor).frame(width: 18)
+                Text(title).font(UI.groupTitle).lineLimit(1).layoutPriority(1)
+                Spacer(minLength: 6)
+                if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
+                Text(summary).font(UI.value).foregroundStyle(.secondary).lineLimit(1)
+                Image(systemName: "chevron.right").font(UI.chevron).foregroundStyle(.tertiary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .accessibilityValue(summary)
-            if open {
-                VStack(alignment: .leading, spacing: 9) { content() }
-                    .padding(.leading, 23)                      // under the title, past the icon
-            }
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
+    }
+
+    private func pageTitle(_ id: String) -> String {
+        switch id {
+        case "ai": return L("AI alerts")
+        case "ai-tools": return L("Connected AIs")
+        case "ai-when": return L("When")
+        case "ai-how": return L("How")
+        case "ai-pause": return L("Pause")
+        case "timer": return L("Timer")
+        case "battery": return L("Battery Guard")
+        case "triggers": return L("Smart Triggers")
+        case "keys": return L("Shortcuts")
+        default: return L("Remote work")
         }
     }
 
@@ -1449,10 +1450,11 @@ private struct PanelView: View {
     private func durationName(_ s: Double) -> String { s == 0 ? L("Until you're back") : String(format: L("%d s"), Int(s)) }
     private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
 
-    /// Which AIs, when, how, pause: four lines, one of them open.
-    private var aiSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            group("ai", "sparkles", L("Connected AIs"), connectedSummary, warning: m.ai.codexNeedsTrust) {
+    /// One page of the AI alerts: which AIs, when, how, or the pause. Options in a card.
+    @ViewBuilder private func aiPage(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            switch id {
+            case "ai-tools":
                 ForEach(m.ai.tools.filter(\.installed)) { t in
                     let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
                     option(t.name, untrusted ? L("Approve once in Settings → Hooks") : toolDetail(t.id), warning: untrusted) {
@@ -1468,9 +1470,7 @@ private struct PanelView: View {
                     Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
                         .buttonStyle(.link).font(UI.detail)
                 }
-            }
-            Divider().padding(.vertical, 8)
-            group("when", "bell.badge", L("When"), whenSummary) {
+            case "ai-when":
                 option(L("Finishes"), L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
                 option(L("Needs you"), L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
                 option(L("Also at the Mac"), L("Otherwise only when you've been away for 20 seconds")) {
@@ -1480,9 +1480,7 @@ private struct PanelView: View {
                        L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
                     toggle(L("One alert per session"), $m.alertPerSession)
                 }
-            }
-            Divider().padding(.vertical, 8)
-            group("how", "rays", L("How"), howSummary) {
+            case "ai-how":
                 option(L("Flash"), L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
                 option(L("Sound"), L("Plays when the alert arrives")) {
                     choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
@@ -1502,10 +1500,7 @@ private struct PanelView: View {
                 option(L("Try it"), L("Shows an alert with these settings")) {
                     Button(L("Test")) { m.testAlert() }.controlSize(.small)
                 }
-            }
-            Divider().padding(.vertical, 8)
-            group("pause", "pause.circle", L("Pause"),
-                  m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Active")) {
+            case "ai-pause":
                 if let until = m.alertsPausedUntil {
                     option(String(format: L("Paused until %@"), Self.time.string(from: until)), L("No alerts until then")) {
                         Button(L("Resume")) { m.pauseAlerts(nil) }.controlSize(.small)
@@ -1522,11 +1517,32 @@ private struct PanelView: View {
                     }
                     .controlSize(.small)
                 }
+            default: EmptyView()
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
+    }
+
+    private var pauseSummary: String {
+        m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Active")
+    }
+
+    /// The AI alerts page: the four things to set, one line each, then the recent alerts.
+    private var aiList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            navRow("ai-tools", "sparkles", L("Connected AIs"), connectedSummary, warning: m.ai.codexNeedsTrust)
+            Divider()
+            navRow("ai-when", "bell.badge", L("When"), whenSummary)
+            Divider()
+            navRow("ai-how", "rays", L("How"), howSummary)
+            Divider()
+            navRow("ai-pause", "pause.circle", L("Pause"), pauseSummary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
     }
 
     /// Not a setting, so it sits apart, under the card: the latest alerts, newest first.
@@ -1574,22 +1590,15 @@ private struct PanelView: View {
         if let first = m.triggerApps.first { parts.append(m.triggerApps.count == 1 ? first : "\(first) +\(m.triggerApps.count - 1)") }
         return parts.isEmpty ? L("Off") : parts.joined(separator: ", ")
     }
-    private var autoSummary: String {
-        let on = [m.timerMinutes > 0 ? L("Timer") : nil, m.batteryThreshold > 0 ? L("Battery") : nil,
-                  m.triggerAgents || !m.triggerApps.isEmpty ? L("Triggers") : nil, m.hotkeys ? L("Keys") : nil].compactMap { $0 }
-        return on.isEmpty ? L("Off") : on.joined(separator: ", ")
-    }
-
-    private var automationSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            group("timer", "timer", L("Timer"), timerSummary, key: \.autoGroup) {
+    /// One automation's page: its options in a card.
+    @ViewBuilder private func automationPage(_ id: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            switch id {
+            case "timer":
                 option(L("Stay on for"), L("Cocaine turns itself off when the time is up")) {
                     choice(L("Stay on for"), $m.timerMinutes, Settings.timerChoices, timerName)
                 }
-            }
-            Divider().padding(.vertical, 8)
-            group("battery", "battery.50", L("Battery Guard"),
-                  m.batteryThreshold == 0 ? L("Off") : "≤ \(m.batteryThreshold)%", key: \.autoGroup) {
+            case "battery":
                 option(L("When the battery reaches"), m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
                     choice(L("Battery"), $m.batteryThreshold, Settings.batteryChoices, batteryName)
                 }
@@ -1597,9 +1606,7 @@ private struct PanelView: View {
                     choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
                 }
                 .disabled(m.batteryThreshold == 0).opacity(m.batteryThreshold == 0 ? 0.45 : 1)
-            }
-            Divider().padding(.vertical, 8)
-            group("triggers", "bolt.badge.automatic", L("Smart Triggers"), triggersSummary, key: \.autoGroup) {
+            case "triggers":
                 option(L("An AI is at work"), L("On while an AI works or waits for you; off 3 minutes after")) {
                     toggle(L("An AI is at work"), $m.triggerAgents)
                 }
@@ -1619,9 +1626,7 @@ private struct PanelView: View {
                     }
                     .menuStyle(.borderlessButton).font(UI.value)
                 }
-            }
-            Divider().padding(.vertical, 8)
-            group("keys", "keyboard", L("Shortcuts"), m.hotkeys ? "⌃⌥⌘" : L("Off"), key: \.autoGroup) {
+            case "keys":
                 option(L("Global shortcuts"), L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach([("C", L("Turn Cocaine on or off")), ("O", L("Open the panel")), ("P", L("Pause or resume alerts"))], id: \.0) { k in
@@ -1632,11 +1637,7 @@ private struct PanelView: View {
                     }
                 }
                 .opacity(m.hotkeys ? 1 : 0.45)
-            }
-            Divider().padding(.vertical, 8)
-            group("remote", "iphone.gen3", L("Remote work"),
-                  m.phoneCount == 0 ? L("Set up") : (m.phoneLinkUp ? L("Ready") : L("Connecting…")),
-                  warning: false, key: \.autoGroup) {
+            case "remote":
                 option(L("iPhone"), m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
                        : "\(m.phoneCount) \(L("paired")) · \(m.phoneLinkUp ? L("Connected") : L("Connecting…"))") {
                     HStack(spacing: 6) {
@@ -1653,11 +1654,38 @@ private struct PanelView: View {
                 }
                 Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
                     .buttonStyle(.link).font(UI.detail)
+            default: EmptyView()
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
+    }
+
+    private var remoteSummary: String {
+        m.phoneCount == 0 ? L("Set up") : (m.phoneLinkUp ? L("Ready") : L("Connecting…"))
+    }
+
+    /// The home list: AI alerts and each automation on one line, each opening its own page.
+    private var navList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if m.ai.available {
+                navRow("ai", "sparkles", L("AI alerts"), aiSummary, warning: m.ai.codexNeedsTrust)
+                Divider()
+            }
+            navRow("timer", "timer", L("Timer"), timerSummary)
+            Divider()
+            navRow("battery", "battery.50", L("Battery Guard"), m.batteryThreshold == 0 ? L("Off") : "≤ \(m.batteryThreshold)%")
+            Divider()
+            navRow("triggers", "bolt.badge.automatic", L("Smart Triggers"), triggersSummary)
+            Divider()
+            navRow("keys", "keyboard", L("Shortcuts"), m.hotkeys ? "⌃⌥⌘" : L("Off"))
+            Divider()
+            navRow("remote", "iphone.gen3", L("Remote work"), remoteSummary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
     }
 
     /// What each AI session is doing right now, from its hooks.
@@ -1704,7 +1732,8 @@ private struct PanelView: View {
         return m.on ? L("Your Mac stays awake") : L("Your Mac sleeps as usual")
     }
 
-    var body: some View {
+    /// The first screen: the switch, what's happening, and the list of things to set up. Short enough for any screen.
+    private var home: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
@@ -1757,53 +1786,14 @@ private struct PanelView: View {
                 .opacity(m.dimEnabled ? 1 : 0.45)
             }
 
+
             Divider()
 
             if !m.board.isEmpty { agentsSection }
 
-            if m.ai.available {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button { m.aiExpanded.toggle() } label: {  // the whole row opens and closes the section
-                        HStack(spacing: 6) {
-                            Text(L("AI alerts")).lineLimit(1)
-                            Spacer(minLength: 6)
-                            if !m.aiExpanded { Text(aiSummary).font(UI.value).foregroundStyle(.secondary).lineLimit(1) }
-                            Image(systemName: "chevron.right").font(UI.chevron)
-                                .foregroundStyle(.tertiary).rotationEffect(.degrees(m.aiExpanded ? 90 : 0))
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(L("Flashes the screen when an AI finishes or needs you"))
-                    if m.ai.codexNeedsTrust && !m.aiExpanded {   // open, the Codex row itself says so
-                        Label(L("Codex: approve them once in Settings → Hooks"), systemImage: "exclamationmark.triangle.fill")
-                            .font(UI.detail.weight(.medium)).foregroundStyle(warningColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if m.aiExpanded {
-                        aiSection
-                        recentSection.padding(.top, 6)           // history, not a setting: apart from the card
-                    }
-                }
-                if m.aiExpanded { Divider() }
-            }
+            navList
 
-            VStack(alignment: .leading, spacing: 8) {
-                Button { m.autoExpanded.toggle() } label: {   // timer, battery, triggers, shortcuts, remote work
-                    HStack(spacing: 6) {
-                        Text(L("Automation")).lineLimit(1)
-                        Spacer(minLength: 6)
-                        if !m.autoExpanded { Text(autoSummary).font(UI.value).foregroundStyle(.secondary).lineLimit(1) }
-                        Image(systemName: "chevron.right").font(UI.chevron)
-                            .foregroundStyle(.tertiary).rotationEffect(.degrees(m.autoExpanded ? 90 : 0))
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L("Timer, battery, smart triggers, shortcuts and remote work"))
-                if m.autoExpanded { automationSection }
-            }
-            if m.autoExpanded { Divider() }
+            Divider()
 
             HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
                 HStack(spacing: 6) {
@@ -1833,6 +1823,37 @@ private struct PanelView: View {
                 }
                 .layoutPriority(2)                     // never truncated
             }
+        }
+    }
+
+    /// One page: a way back, then its settings. Taller than the screen scrolls.
+    private var pageView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { m.page = m.page.hasPrefix("ai-") ? "ai" : "" } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left").font(UI.chevron.weight(.semibold)).foregroundStyle(Color.accentColor)
+                    Text(pageTitle(m.page)).font(.headline)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("Back"))
+            Divider()
+            if m.page == "ai" {
+                aiList
+                recentSection.padding(.top, 4)               // history, not a setting: apart from the list
+            } else if m.page.hasPrefix("ai-") {
+                aiPage(m.page)
+            } else {
+                automationPage(m.page)
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if m.page.isEmpty { home } else { pageView }
         }
         .padding(14)
         .frame(width: 312, alignment: .topLeading)     // never centered, so nothing can slide out sideways
@@ -2449,6 +2470,8 @@ private final class PanelHostingView: NSHostingView<PanelView> {
 /// resizes while open, and closes only when you click elsewhere, press Esc or click the icon again.
 private final class MenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    /// The content scrolls when it is taller than the screen allows (the app sizes the window; see fitPanel).
+    let scroll = NSScrollView()
 
     init(content: NSView) {
         super.init(contentRect: .zero, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
@@ -2465,12 +2488,23 @@ private final class MenuPanel: NSPanel {
         fx.blendingMode = .behindWindow
         fx.state = .active
         fx.maskImage = MenuPanel.roundedMask(radius: 12)
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.translatesAutoresizingMaskIntoConstraints = false
         content.translatesAutoresizingMaskIntoConstraints = false
-        fx.addSubview(content)
-        NSLayoutConstraint.activate([      // pinned to the top only: the app sizes the window, top edge fixed
-            content.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
-            content.topAnchor.constraint(equalTo: fx.topAnchor),
+        scroll.documentView = content
+        fx.addSubview(scroll)
+        NSLayoutConstraint.activate([      // the document is pinned to the top: the app sizes the window, top edge fixed
+            scroll.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: fx.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: fx.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+            content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
         ])
         contentView = fx
     }
@@ -2571,6 +2605,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         hostView.sizingOptions = [.intrinsicContentSize]
         hostView.onSizeChange = { [weak self] in DispatchQueue.main.async { self?.fitPanel(animated: true) } }
         panel = MenuPanel(content: hostView)
+        model.pageChanged = { [weak self] in                     // a new page starts at its top
+            guard let scroll = self?.panel.scroll else { return }
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
 
         for (id, saved) in settings.savedBrightness {   // quit or crashed while screens were lowered
             if let cur = screens.brightness(id), cur < saved { screens.setBrightness(id, saved) }
@@ -2860,6 +2899,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let screen else { return }
         panelTop = (screen.visibleFrame.maxY - 6).rounded()          // just under that screen's menu bar
+        model.page = ""                                              // always opens on the home
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.makeKeyAndOrderFront(nil)
         statusItem.button?.highlight(true)
@@ -2869,7 +2909,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if !iconZone.contains(NSEvent.mouseLocation) { self?.hidePanel() }
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
-            if e.keyCode == 53 { self?.hidePanel(); return nil }   // Esc
+            if e.keyCode == 53 {                                   // Esc: back from a page first, then close
+                if let self, !self.model.page.isEmpty { self.model.page = self.model.page.hasPrefix("ai-") ? "ai" : "" } else { self?.hidePanel() }
+                return nil
+            }
             return e
         }) { panelMonitors.append(m) }
     }
@@ -2878,8 +2921,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func fitPanel(animated: Bool, centeredOn midX: CGFloat? = nil, screen: NSScreen? = nil) {
         guard panel.isVisible || midX != nil else { return }
         hostView.layoutSubtreeIfNeeded()
-        let size = hostView.fittingSize
-        guard size.height > 0 else { return }
+        let natural = hostView.fittingSize
+        guard natural.height > 0 else { return }
+        // Never taller than the screen it's on (below the menu bar, 8 pt from the bottom): the rest scrolls.
+        let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        var limit = max(240, panelTop - visible.minY - 8)
+        let test = UserDefaults.standard.double(forKey: "testMaxHeight")        // tests: pretend the screen is small
+        if test > 0 { limit = test }
+        let size = NSSize(width: natural.width, height: min(natural.height, limit))
         var frame = NSRect(x: panel.frame.minX, y: panelTop - size.height, width: size.width, height: size.height)
         if let midX {
             frame = Self.panelFrame(size: size, anchorX: midX, top: panelTop,
@@ -3554,15 +3603,14 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
                       on: CommandLine.arguments.contains("--ai-on") && i < 2)
     }, codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
     if CommandLine.arguments.contains("--paused") { model.alertsPausedUntil = Date().addingTimeInterval(3600) }
-    model.aiExpanded = CommandLine.arguments.contains("--ai-open")
+    if CommandLine.arguments.contains("--ai-open") { model.page = "ai" }
     if CommandLine.arguments.contains("--last") {                  // a sample "Recent alerts" list
         model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
                          ("Cursor", "has finished", "Gestionale", 4000)]
             .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
     }
     if let i = CommandLine.arguments.firstIndex(of: "--auto"), i + 1 < CommandLine.arguments.count {   // open a group of Automation
-        model.autoExpanded = true
-        model.autoGroup = CommandLine.arguments[i + 1] == "none" ? "" : CommandLine.arguments[i + 1]
+        model.page = CommandLine.arguments[i + 1] == "none" ? "" : CommandLine.arguments[i + 1]
         model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
         model.phoneCount = CommandLine.arguments.contains("--no-phone") ? 0 : 1; model.phoneLinkUp = true; model.battery = "80%"
         model.phone = "Comando Rapido “Avvisa iPhone”"
@@ -3572,9 +3620,6 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         model.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
                        AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90),
                        AgentEntry(id: "3", from: "Cursor", project: "Gestionale", state: "error", since: t - 30)]
-    }
-    if let i = CommandLine.arguments.firstIndex(of: "--group"), i + 1 < CommandLine.arguments.count {
-        model.aiGroup = CommandLine.arguments[i + 1]
     }
     let host = NSHostingView(rootView: PanelView(m: model).background(Color(nsColor: .windowBackgroundColor)))
     let size = host.fittingSize

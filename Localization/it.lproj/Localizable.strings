@@ -25,7 +25,6 @@
 "has finished" = "ha finito";
 "needs your input" = "ha bisogno di te";
 "AI alerts" = "Avvisi AI";
-"Codex: approve them once in Settings → Hooks" = "Codex: approvali in Impostazioni → Hooks";
 "Can't change AI alerts" = "Non riesco a cambiare gli avvisi AI";
 "Choose" = "Scegli";
 "until %@" = "fino alle %@";
@@ -33,7 +32,6 @@
 "Sound" = "Suono";
 "No sound" = "Nessun suono";
 "Other apps and scripts…" = "Altre app e script…";
-"Flashes the screen when an AI finishes or needs you" = "Fa lampeggiare lo schermo quando un'AI finisce o ha bisogno di te";
 "Feedback or help" = "Feedback o assistenza";
 "Feedback" = "Feedback";
 "This is a test" = "Questa è una prova";
@@ -95,7 +93,6 @@
 "AI at work" = "AI al lavoro";
 "Agents" = "Agent";
 "An AI is at work" = "Un'AI è al lavoro";
-"Automation" = "Automazioni";
 "Battery" = "Batteria";
 "Battery Guard" = "Battery Guard";
 "Battery at %d%%" = "Batteria al %d%%";
@@ -105,7 +102,6 @@
 "Done" = "Finito";
 "Error" = "Errore";
 "Global shortcuts" = "Scorciatoie globali";
-"Keys" = "Tasti";
 "Not set up" = "Non impostate";
 "Not set up: see the guide" = "Non impostate: vedi la guida";
 "Off" = "Spento";
@@ -129,8 +125,6 @@
 "These programs are open" = "Questi programmi sono aperti";
 "Timer" = "Timer";
 "Timer over: Cocaine is off" = "Timer finito: Cocaine è spento";
-"Timer, battery, smart triggers, shortcuts and remote work" = "Timer, batteria, smart trigger, scorciatoie e lavoro da remoto";
-"Triggers" = "Trigger";
 "Turn Cocaine on or off" = "Attiva o spegni Cocaine";
 "Until I turn it off" = "Finché non lo spengo";
 "What Cocaine does at that level" = "Cosa fa Cocaine a quel livello";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Ogni 15 minuti si risveglia per un momento, anche con il coperchio chiuso, per rispondere al tuo iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine ha bisogno del tuo permesso, una sola volta, per svegliare il Mac per il tuo iPhone.";
 "Couldn't turn on the wake-ups" = "Impossibile attivare le sveglie";
+"Back" = "Indietro";

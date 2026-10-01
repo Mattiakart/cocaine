@@ -25,7 +25,6 @@
 "has finished" = "has finished";
 "needs your input" = "needs your input";
 "AI alerts" = "AI alerts";
-"Codex: approve them once in Settings → Hooks" = "Codex: approve them once in Settings → Hooks";
 "Can't change AI alerts" = "Can't change AI alerts";
 "Choose" = "Choose";
 "until %@" = "until %@";
@@ -33,7 +32,6 @@
 "Sound" = "Sound";
 "No sound" = "No sound";
 "Other apps and scripts…" = "Other apps and scripts…";
-"Flashes the screen when an AI finishes or needs you" = "Flashes the screen when an AI finishes or needs you";
 "Feedback or help" = "Feedback or help";
 "Feedback" = "Feedback";
 "This is a test" = "This is a test";
@@ -95,7 +93,6 @@
 "AI at work" = "AI at work";
 "Agents" = "Agents";
 "An AI is at work" = "An AI is at work";
-"Automation" = "Automation";
 "Battery" = "Battery";
 "Battery Guard" = "Battery Guard";
 "Battery at %d%%" = "Battery at %d%%";
@@ -105,7 +102,6 @@
 "Done" = "Done";
 "Error" = "Error";
 "Global shortcuts" = "Global shortcuts";
-"Keys" = "Keys";
 "Not set up" = "Not set up";
 "Not set up: see the guide" = "Not set up: see the guide";
 "Off" = "Off";
@@ -129,8 +125,6 @@
 "These programs are open" = "These programs are open";
 "Timer" = "Timer";
 "Timer over: Cocaine is off" = "Timer over: Cocaine is off";
-"Timer, battery, smart triggers, shortcuts and remote work" = "Timer, battery, smart triggers, shortcuts and remote work";
-"Triggers" = "Triggers";
 "Turn Cocaine on or off" = "Turn Cocaine on or off";
 "Until I turn it off" = "Until I turn it off";
 "What Cocaine does at that level" = "What Cocaine does at that level";
@@ -169,3 +163,4 @@
 "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone" = "Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone";
 "Cocaine needs your permission once, to wake your Mac for your iPhone." = "Cocaine needs your permission once, to wake your Mac for your iPhone.";
 "Couldn't turn on the wake-ups" = "Couldn't turn on the wake-ups";
+"Back" = "Back";
