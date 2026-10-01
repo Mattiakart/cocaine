@@ -9,7 +9,6 @@
 "Preview" = "テスト";
 "Shows the minimum brightness for 3 seconds" = "最低輝度を3秒間表示します";
 "After" = "待ち時間";
-"min" = "分";
 "Open at login" = "ログイン時に開く";
 "Quit" = "終了";
 "Turns Cocaine off and quits" = "Cocaine をオフにして終了します";
@@ -47,7 +46,6 @@
 "Until tomorrow" = "明日まで";
 "Test" = "テスト";
 "Connected AIs" = "接続中の AI";
-"None connected" = "なし";
 "Approve once in Settings → Hooks" = "設定 → Hooks で一度承認してください";
 "Also supported: %@" = "ほかの対応: %@";
 "Finishes, or asks permission or a question" = "完了時、許可や質問を求めたとき";
@@ -57,7 +55,6 @@
 "After each reply" = "返答のたびに";
 "Finishes, or asks permission" = "完了時、許可を求めたとき";
 "Never" = "しない";
-"Silent" = "サイレント";
 "Until you're back" = "戻るまで";
 "%d s" = "%d 秒";
 "Every %d min" = "%d 分ごと";
@@ -71,11 +68,7 @@
 "On screen" = "表示時間";
 "How long the alert stays" = "通知が表示される長さ";
 "While you're away, for up to 30 minutes" = "離席中、最大 30 分";
-"Try it" = "試す";
 "Shows an alert with these settings" = "この設定で通知を表示します";
-"Active" = "有効";
-"Paused until %@" = "%@まで一時停止中";
-"No alerts until then" = "それまで通知しません";
 "Resume" = "再開";
 "Silences every alert for a while" = "しばらくすべての通知を止めます";
 "Recent alerts" = "最近の通知";
@@ -90,10 +83,8 @@
 "One alert per session" = "セッションごとに 1 回通知";
 "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "エージェントやタスクごとではなく、セッション全体が 1 分間動いていないときだけ通知します";
 "%d h" = "%d 時間";
-"AI at work" = "AI 作業中";
 "Agents" = "エージェント";
 "An AI is at work" = "AI が作業中";
-"Battery" = "バッテリー";
 "Battery Guard" = "バッテリーガード";
 "Battery at %d%%" = "バッテリー残量 %d%%";
 "Battery at %d%%: Cocaine is off" = "バッテリー残量 %d%%：Cocaine をオフにしました";
@@ -114,7 +105,6 @@
 "Open the panel" = "パネルを開く";
 "Pause or resume alerts" = "通知の一時停止/再開";
 "Phone alerts" = "スマートフォンへの通知";
-"Ready" = "準備完了";
 "Remote work" = "リモートワーク";
 "Remote work guide…" = "リモートワークのガイド…";
 "Shortcut" = "ショートカット";
@@ -125,7 +115,6 @@
 "These programs are open" = "これらのプログラムが起動中";
 "Timer over: Cocaine is off" = "タイマー終了：Cocaine をオフにしました";
 "Turn Cocaine on or off" = "Cocaine のオン/オフ";
-"Until I turn it off" = "自分でオフにするまで";
 "What Cocaine does at that level" = "その残量で Cocaine が行うこと";
 "When the battery reaches" = "バッテリー残量が次になったら";
 "Work from any app" = "どのアプリからでも使えます";
@@ -147,7 +136,6 @@
 "Cancel" = "キャンセル";
 "Status, on/off and projects" = "状態、オン/オフ、プロジェクト";
 "Also start and steer AI agents" = "AI エージェントの起動と操作も許可";
-"Set up" = "要設定";
 "Connected" = "接続済み";
 "Connecting…" = "接続中…";
 "paired" = "ペアリング済み";
@@ -164,7 +152,6 @@
 "Couldn't turn on the wake-ups" = "起動の設定をオンにできませんでした";
 "Automation" = "オートメーション";
 "General" = "一般";
-"Section" = "セクション";
 "Shorter" = "短く";
 "Longer" = "長く";
 "Any length, in steps of 15 minutes" = "15分刻みで好きな長さに";

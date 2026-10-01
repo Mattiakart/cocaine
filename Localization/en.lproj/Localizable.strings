@@ -9,7 +9,6 @@
 "Preview" = "Preview";
 "Shows the minimum brightness for 3 seconds" = "Shows the minimum brightness for 3 seconds";
 "After" = "After";
-"min" = "min";
 "Open at login" = "Open at login";
 "Quit" = "Quit";
 "Turns Cocaine off and quits" = "Turns Cocaine off and quits";
@@ -47,7 +46,6 @@
 "Until tomorrow" = "Until tomorrow";
 "Test" = "Test";
 "Connected AIs" = "Connected AIs";
-"None connected" = "None connected";
 "Approve once in Settings → Hooks" = "Approve once in Settings → Hooks";
 "Also supported: %@" = "Also supported: %@";
 "Finishes, or asks permission or a question" = "Finishes, or asks permission or a question";
@@ -57,7 +55,6 @@
 "After each reply" = "After each reply";
 "Finishes, or asks permission" = "Finishes, or asks permission";
 "Never" = "Never";
-"Silent" = "Silent";
 "Until you're back" = "Until you're back";
 "%d s" = "%d s";
 "Every %d min" = "Every %d min";
@@ -71,11 +68,7 @@
 "On screen" = "On screen";
 "How long the alert stays" = "How long the alert stays";
 "While you're away, for up to 30 minutes" = "While you're away, for up to 30 minutes";
-"Try it" = "Try it";
 "Shows an alert with these settings" = "Shows an alert with these settings";
-"Active" = "Active";
-"Paused until %@" = "Paused until %@";
-"No alerts until then" = "No alerts until then";
 "Resume" = "Resume";
 "Silences every alert for a while" = "Silences every alert for a while";
 "Recent alerts" = "Recent alerts";
@@ -90,10 +83,8 @@
 "One alert per session" = "One alert per session";
 "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute";
 "%d h" = "%d h";
-"AI at work" = "AI at work";
 "Agents" = "Agents";
 "An AI is at work" = "An AI is at work";
-"Battery" = "Battery";
 "Battery Guard" = "Battery Guard";
 "Battery at %d%%" = "Battery at %d%%";
 "Battery at %d%%: Cocaine is off" = "Battery at %d%%: Cocaine is off";
@@ -114,7 +105,6 @@
 "Open the panel" = "Open the panel";
 "Pause or resume alerts" = "Pause or resume alerts";
 "Phone alerts" = "Phone alerts";
-"Ready" = "Ready";
 "Remote work" = "Remote work";
 "Remote work guide…" = "Remote work guide…";
 "Shortcut" = "Shortcut";
@@ -125,7 +115,6 @@
 "These programs are open" = "These programs are open";
 "Timer over: Cocaine is off" = "Timer over: Cocaine is off";
 "Turn Cocaine on or off" = "Turn Cocaine on or off";
-"Until I turn it off" = "Until I turn it off";
 "What Cocaine does at that level" = "What Cocaine does at that level";
 "When the battery reaches" = "When the battery reaches";
 "Work from any app" = "Work from any app";
@@ -147,7 +136,6 @@
 "Cancel" = "Cancel";
 "Status, on/off and projects" = "Status, on/off and projects";
 "Also start and steer AI agents" = "Also start and steer AI agents";
-"Set up" = "Set up";
 "Connected" = "Connected";
 "Connecting…" = "Connecting…";
 "paired" = "paired";
@@ -164,7 +152,6 @@
 "Couldn't turn on the wake-ups" = "Couldn't turn on the wake-ups";
 "Automation" = "Automation";
 "General" = "General";
-"Section" = "Section";
 "Shorter" = "Shorter";
 "Longer" = "Longer";
 "Any length, in steps of 15 minutes" = "Any length, in steps of 15 minutes";

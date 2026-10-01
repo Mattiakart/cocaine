@@ -1328,16 +1328,59 @@ private enum PowderLine {
 }
 
 private enum Layout {
-    static let width: CGFloat = 440                          // the panel's width
-    static let column: CGFloat = (440 - 28 - 10) / 2         // each of the two columns of a tab (14 pt padding, 10 pt gap)
-}     // the panel's width: one number, never taken from content
+    static let width: CGFloat = 440                          // the panel's width: one number, never taken from content
+    // Two vertical edges, everything on one of them: the frame edge (14 pt from the panel's sides) holds containers (cards,
+    // tabs, dividers); the content edge (10 pt further in) holds every text, icon and control. Controls end on the
+    // content edge, on the right; full-width controls span it.
+}
 
 private extension View {
-    /// The soft rounded card that holds a page's settings (and the home list).
+    /// The soft rounded card that holds a group of settings.
     func panelCard() -> some View {
-        self.padding(.horizontal, 0)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+        self.background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+    }
+}
+
+/// A segmented control whose segments are all the same width and that fills the width it is given (the native one in
+/// SwiftUI hugs its labels). A value that isn't in the list (a custom timer length) leaves no segment selected.
+private struct EqualSegments<T: Hashable>: NSViewRepresentable {
+    @Binding var selection: T
+    let values: [T]
+    let label: (T) -> String
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let c = NSSegmentedControl(labels: values.map(label), trackingMode: .selectOne,
+                                   target: context.coordinator, action: #selector(Coordinator.changed(_:)))
+        c.segmentDistribution = .fillEqually
+        c.controlSize = .small
+        c.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        c.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return c
+    }
+
+    func updateNSView(_ c: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        if c.segmentCount != values.count { c.segmentCount = values.count }
+        for (i, v) in values.enumerated() { c.setLabel(label(v), forSegment: i); c.setWidth(0, forSegment: i) }
+        c.selectedSegment = values.firstIndex(of: selection) ?? -1
+        c.isEnabled = context.environment.isEnabled
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView c: NSSegmentedControl, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? c.intrinsicContentSize.width, height: c.intrinsicContentSize.height)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject {
+        var parent: EqualSegments
+        init(_ parent: EqualSegments) { self.parent = parent }
+        @objc func changed(_ c: NSSegmentedControl) {
+            guard c.selectedSegment >= 0, c.selectedSegment < parent.values.count else { return }
+            parent.selection = parent.values[c.selectedSegment]
+        }
     }
 }
 
@@ -1347,90 +1390,66 @@ private struct PanelView: View {
     private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
     static func timeString(_ d: Date) -> String { time.string(from: d) }
 
-    // MARK: AI alerts section
+    // MARK: Building blocks
 
-    /// The closed section's summary: paused, nothing connected, or the first AI connected (+ how many more).
-    private var aiSummary: String {
-        if let until = m.alertsPausedUntil { return "⏸ " + String(format: L("until %@"), Self.time.string(from: until)) }
-        return m.ai.connected.isEmpty ? L("Choose") : connectedSummary
-    }
-
-    /// "Claude Code", or "Claude Code +2": never cut off, however many are connected.
-    private var connectedSummary: String {
-        let on = m.ai.connected
-        guard let first = on.first else { return L("None connected") }
-        return on.count == 1 ? first.name : "\(first.name) +\(on.count - 1)"
-    }
-
-    /// One titled part of a tab: an icon and a name over its options.
-    private func section<Content: View>(_ icon: String, _ title: String, warning: Bool = false,
-                                        @ViewBuilder _ content: () -> Content) -> some View {
+    /// A group of settings: an icon and a name (with an optional control on the right) over its rows, in a card.
+    private func card<Trailing: View, Content: View>(_ icon: String, _ title: String, warning: Bool = false,
+                                                     @ViewBuilder trailing: () -> Trailing,
+                                                     @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: icon).font(UI.icon).foregroundStyle(Color.accentColor).frame(width: 16)
                 Text(title).font(UI.groupTitle).lineLimit(1)
-                Spacer(minLength: 4)
                 if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
+                Spacer(minLength: 8)
+                trailing().fixedSize()
             }
-            VStack(alignment: .leading, spacing: 8) { content() }
+            .frame(minHeight: 22)
+            VStack(alignment: .leading, spacing: 6) { content() }
         }
-        .padding(.horizontal, 10).padding(.vertical, 9)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 9))      // whatever it holds is cut at the card's edge, never drawn outside
         .panelCard()
     }
 
-    /// A row of options: what it is and its control on the right. What it does is in its tooltip, so rows stay one line.
-    private func option<Control: View>(_ title: String, _ detail: String, warning: Bool = false, stacked: Bool = false,
-                                       @ViewBuilder _ control: () -> Control) -> some View {
-        optionRow(title, detail, showDetail: warning, warning: warning, stacked: stacked, control)
+    private func card<Content: View>(_ icon: String, _ title: String, warning: Bool = false,
+                                     @ViewBuilder _ content: () -> Content) -> some View {
+        card(icon, title, warning: warning, trailing: { EmptyView() }, content)
     }
 
-    /// Same, but the second line stays visible: for rows that report a state ("1 paired · Connected").
-    private func statusOption<Control: View>(_ title: String, _ detail: String, warning: Bool = false, stacked: Bool = false,
-                                             @ViewBuilder _ control: () -> Control) -> some View {
-        optionRow(title, detail, showDetail: true, warning: warning, stacked: stacked, control)
-    }
-
-    private func optionRow<Control: View>(_ title: String, _ detail: String, showDetail: Bool, warning: Bool, stacked: Bool,
-                                          @ViewBuilder _ control: () -> Control) -> some View {
-        let text = VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(UI.title).fixedSize(horizontal: false, vertical: true)
-            if showDetail {
-                Text(detail).font(UI.detail).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .help(detail)
-        // A wide control (a segmented picker, a long name) goes under its text instead of squeezing it.
-        let below = VStack(alignment: .leading, spacing: 6) { text; control() }
-        return Group {
-            if stacked {
-                below
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        text.layoutPriority(1)
-                        Spacer(minLength: 4)
-                        control().fixedSize()
-                    }
-                    below                                       // too wide beside it: drops under its text instead of overflowing
+    /// One row: its name on the left, its control on the right edge. Always one line for the control; the name wraps.
+    private func row<Control: View>(_ title: String, detail: String? = nil, tip: String? = nil, warning: Bool = false,
+                                    @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(UI.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail).font(UI.detail).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            control().fixedSize()
         }
+        .frame(minHeight: 22)
+        .help(tip ?? detail ?? title)
     }
 
-    /// A value you pick from a short list, shown as just the current value with a chevron (as wide as that value).
+    /// A value you pick from a short list: the current value and a chevron, flush with the right edge.
     private func choice<T: Hashable>(_ title: String, _ selection: Binding<T>, _ values: [T],
                                      _ name: @escaping (T) -> String) -> some View {
         Menu {
             Picker(title, selection: selection) { ForEach(values, id: \.self) { Text(name($0)).tag($0) } }
                 .pickerStyle(.inline).labelsHidden()
         } label: {
-            Text(name(selection.wrappedValue))
+            HStack(spacing: 4) {
+                Text(name(selection.wrappedValue)).font(UI.value).lineLimit(1)
+            }
+            .frame(maxWidth: 190, alignment: .trailing)
         }
         .menuStyle(.borderlessButton)
-        .font(UI.value)
+        .menuIndicator(.visible)
         .accessibilityLabel(title)
     }
 
@@ -1450,52 +1469,8 @@ private struct PanelView: View {
         }
     }
 
-    private var whenSummary: String {
-        let on = [m.alertDone ? L("Finishes") : nil, m.alertInput ? L("Needs you") : nil].compactMap { $0 }
-        return on.isEmpty ? L("Never") : on.joined(separator: ", ")
-    }
-
-    private var howSummary: String {
-        let on = [m.alertFlash ? L("Flash") : nil, m.alertSound.isEmpty ? nil : m.alertSound, m.alertSpeak ? L("Voice") : nil]
-        let text = on.compactMap { $0 }.joined(separator: ", ")
-        return text.isEmpty ? L("Silent") : text
-    }
-
     private func durationName(_ s: Double) -> String { s == 0 ? L("Until you're back") : String(format: L("%d s"), Int(s)) }
     private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
-
-    private var pauseSummary: String {
-        m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Active")
-    }
-
-    /// Not a setting, so it sits apart, under the card: the latest alerts, newest first.
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Text(L("Recent alerts")).font(UI.detail.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer(minLength: 6)
-                if !m.history.isEmpty {
-                    Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(UI.detail)
-                }
-            }
-            if m.history.isEmpty {
-                Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(.tertiary)
-            } else {
-                ForEach(m.history.prefix(3)) { r in
-                    HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        Text(Self.time.string(from: r.at)).font(UI.detail.monospacedDigit()).foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(r.from).font(UI.title).lineLimit(1)
-                            Text([r.message, r.project].compactMap { $0 }.joined(separator: " · "))
-                                .font(UI.detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: Automation section
 
     /// "∞" for no limit, else "45 min", "2 h" or "2 h 30 min": any length, not just the presets.
     private func durationLabel(_ minutes: Int) -> String {
@@ -1504,45 +1479,296 @@ private struct PanelView: View {
         let h = String(format: L("%d h"), minutes / 60)
         return minutes % 60 == 0 ? h : "\(h) \(String(format: L("%d min"), minutes % 60))"
     }
-    private func timerName(_ minutes: Int) -> String { minutes <= 0 ? L("Until I turn it off") : durationLabel(minutes) }
-    private func batteryName(_ pct: Int) -> String { pct == 0 ? L("Off") : "\(pct)%" }
 
-    private var timerSummary: String {
-        if m.on, let until = m.onUntil, until > Date() { return String(format: L("until %@"), Self.time.string(from: until)) }
-        return timerName(m.timerMinutes)
+    private var status: String {
+        if m.needsAuth { return L("Admin password needed") }
+        if m.on && m.holdMissing { return L("Keeping the screen on…") }
+        var parts = [m.on ? L("Your Mac stays awake") : L("Your Mac sleeps as usual")]
+        if m.on, let until = m.onUntil, until > Date() { parts.append(String(format: L("until %@"), Self.time.string(from: until))) }
+        if let paused = m.alertsPausedUntil { parts.append("⏸ " + String(format: L("until %@"), Self.time.string(from: paused))) }
+        return parts.joined(separator: " · ")
     }
-    private var triggersSummary: String {
-        var parts: [String] = []
-        if m.triggerAgents { parts.append(L("AI at work")) }
-        if let first = m.triggerApps.first { parts.append(m.triggerApps.count == 1 ? first : "\(first) +\(m.triggerApps.count - 1)") }
-        return parts.isEmpty ? L("Off") : parts.joined(separator: ", ")
+
+    // MARK: General
+
+    private func stepButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(UI.chevron).frame(width: 24, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
-    private var remoteSummary: String {
-        m.phoneCount == 0 ? L("Set up") : (m.phoneLinkUp ? L("Ready") : L("Connecting…"))
+
+    /// Any length you like, in steps of 15 minutes (up to 24 hours): one unit, its readout as wide as the longest value.
+    private var customTimer: some View {
+        HStack(spacing: 0) {
+            stepButton("minus", L("Shorter")) { m.timerMinutes = max(15, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) - 15) }
+            Divider().frame(height: 12)
+            ZStack {
+                Text(durationLabel(1425)).hidden()
+                Text(durationLabel(m.timerMinutes))
+            }
+            .font(UI.value.monospacedDigit()).lineLimit(1).padding(.horizontal, 8)
+            Divider().frame(height: 12)
+            stepButton("plus", L("Longer")) { m.timerMinutes = min(1440, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15) }
+        }
+        .frame(height: 20)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
+        .fixedSize()
+        .help(L("Any length, in steps of 15 minutes"))
     }
-    /// What each AI session is doing right now, from its hooks.
-    private var agentsSection: some View {
+
+    private var timerCard: some View {
+        card("timer", L("Stay on for"), trailing: { customTimer }) {
+            EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, label: durationLabel)
+                .frame(maxWidth: .infinity)
+        }
+        .help(L("Cocaine turns itself off when the time is up"))
+    }
+
+    private var screenCard: some View {
+        card("sun.min", L("Dim the screen when idle"), trailing: { toggle(L("Dim the screen when idle"), $m.dimEnabled) }) {
+            Group {
+                HStack(spacing: 8) {
+                    Image(systemName: "sun.min").font(UI.icon).foregroundStyle(.secondary).frame(width: 16)
+                    Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
+                    Text("\(Int(m.levelPercent))%").font(UI.value.monospacedDigit()).frame(width: 34, alignment: .trailing)
+                    Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
+                        .help(L("Shows the minimum brightness for 3 seconds"))
+                }
+                HStack(spacing: 8) {
+                    Text(L("After")).font(UI.title).fixedSize()
+                    EqualSegments(selection: $m.delayMinutes, values: Settings.delayChoices) { String(format: L("%d min"), $0) }
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .disabled(!m.dimEnabled)
+            .opacity(m.dimEnabled ? 1 : 0.45)
+        }
+        .help(L("Goes back to normal as soon as you touch anything"))
+    }
+
+    /// Who is doing what: the AI sessions at work, or, when none is, the latest alerts.
+    @ViewBuilder private var activityCard: some View {
         let now = Date().timeIntervalSince1970
-        let shown = m.board.filter { $0.isLive || now - $0.since < 600 }.prefix(4)
-        return VStack(alignment: .leading, spacing: 6) {
-            if !shown.isEmpty {
-                Text(L("Agents")).font(UI.detail.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(Array(shown)) { e in
-                    HStack(spacing: 8) {
-                        Image(systemName: Self.stateIcon(e.state)).font(UI.icon).foregroundStyle(Self.stateColor(e.state))
-                            .frame(width: 16)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(e.from).font(UI.title).lineLimit(1)
-                            Text([Self.stateName(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
-                                .font(UI.detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        }
-                        Spacer(minLength: 4)
-                        Text(Self.age(e.since)).font(UI.detail.monospacedDigit()).foregroundStyle(.secondary)
+        let shown = Array(m.board.filter { $0.isLive || now - $0.since < 600 }.prefix(4))
+        if !shown.isEmpty {
+            card("sparkles", L("Agents")) {
+                ForEach(shown) { e in
+                    activityRow(Self.stateIcon(e.state), Self.stateColor(e.state), e.from, Self.stateName(e.state), e.project, Self.age(e.since))
+                }
+            }
+        } else if m.ai.available {
+            card("bell", L("Recent alerts"), trailing: {
+                if !m.history.isEmpty { Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(UI.detail) }
+            }) {
+                if m.history.isEmpty {
+                    Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(.tertiary)
+                } else {
+                    ForEach(m.history.prefix(3)) { r in
+                        activityRow("bell.fill", Color.secondary, r.from, r.message, r.project, Self.time.string(from: r.at))
                     }
                 }
             }
         }
     }
+
+    /// An icon, who and what (the message gives way before the project), and when, on the right edge.
+    private func activityRow(_ icon: String, _ color: Color, _ title: String, _ message: String, _ project: String?, _ when: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: icon).font(UI.icon).foregroundStyle(color).frame(width: 16)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title).font(UI.title).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(message).lineLimit(1)
+                    if let project { Text("·"); Text(project).lineLimit(1).layoutPriority(1) }
+                }
+                .font(UI.detail).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(when).font(UI.detail.monospacedDigit()).foregroundStyle(.secondary).fixedSize()
+        }
+    }
+
+    private var appCard: some View {
+        card("gearshape", "Cocaine") {
+            row(L("Open at login")) {
+                CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
+            }
+            row(L("Language")) {
+                let code = m.language.isEmpty ? Language.system : m.language
+                Menu {
+                    Picker(L("Language"), selection: $m.language) {
+                        Text("\(L("Same as Mac"))  \(Language.flag(Language.system))").tag("")
+                        ForEach(Language.codes, id: \.self) { Text("\(Language.flag($0))  \(Language.nativeName($0))").tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(Language.flag(code))  \(Language.nativeName(code))").font(UI.value).lineLimit(1)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.visible)
+                .accessibilityLabel(L("Language"))
+            }
+        }
+    }
+
+    private var generalTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            timerCard
+            screenCard
+            activityCard
+            appCard
+        }
+    }
+
+    // MARK: AI alerts
+
+    private var aiTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            card("sparkles", L("Connected AIs"), warning: m.ai.codexNeedsTrust) {
+                ForEach(m.ai.tools.filter(\.installed)) { t in
+                    let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
+                    row(t.name, detail: untrusted ? L("Approve once in Settings → Hooks") : nil, tip: toolDetail(t.id), warning: untrusted) {
+                        toggle(t.name, Binding(get: { t.on }, set: { m.setAI(t.id, $0) })).disabled(m.settingAI)
+                    }
+                }
+                let others = m.ai.tools.filter { !$0.installed }.map(\.name)
+                Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
+                    .buttonStyle(.link).font(UI.detail)
+                    .help(others.isEmpty ? L("Other apps and scripts…") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
+            }
+            card("bell.badge", L("When")) {
+                row(L("Finishes"), tip: L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
+                row(L("Needs you"), tip: L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
+                row(L("Also at the Mac"), tip: L("Otherwise only when you've been away for 20 seconds")) { toggle(L("Also at the Mac"), $m.alertWhenPresent) }
+                row(L("One alert per session"),
+                    tip: L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
+                    toggle(L("One alert per session"), $m.alertPerSession)
+                }
+                row(L("Pause"), tip: L("Silences every alert for a while")) {
+                    Menu {
+                        if m.alertsPausedUntil != nil {
+                            Button(L("Resume")) { m.pauseAlerts(nil) }
+                            Divider()
+                        }
+                        Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }
+                        Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
+                        Button(L("Until tomorrow")) {
+                            let cal = Calendar.current
+                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Off")).font(UI.value).lineLimit(1)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.visible)
+                    .accessibilityLabel(L("Pause"))
+                }
+            }
+            card("rays", L("How"), trailing: {
+                Button(L("Test")) { m.testAlert() }.controlSize(.small).help(L("Shows an alert with these settings"))
+            }) {
+                row(L("Flash"), tip: L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
+                row(L("Sound"), tip: L("Plays when the alert arrives")) {
+                    choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
+                }
+                row(L("Voice"), tip: L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
+                if m.alertSpeak {                               // which voice, only when there's one to choose
+                    row(L("Voice type"), tip: L("The Mac's voices for your language; you hear it as you pick")) {
+                        choice(L("Voice type"), $m.alertVoice, [""] + Voices.available.map(\.identifier), Voices.name)
+                    }
+                }
+                row(L("On screen"), tip: L("How long the alert stays")) {
+                    choice(L("On screen"), $m.alertDuration, Settings.durationChoices, durationName)
+                }
+                row(L("Repeat"), tip: L("While you're away, for up to 30 minutes")) {
+                    choice(L("Repeat"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
+                }
+            }
+        }
+    }
+
+    // MARK: Automation
+
+    private var automationTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            card("bolt.badge.automatic", L("Smart Triggers")) {
+                row(L("An AI is at work"), tip: L("On while an AI works or waits for you; off 3 minutes after")) {
+                    toggle(L("An AI is at work"), $m.triggerAgents)
+                }
+                row(L("These programs are open"), tip: L("On while any is running; off 3 minutes after")) {
+                    Menu {
+                        ForEach(m.triggerApps, id: \.self) { app in
+                            Button { m.triggerApps.removeAll { $0 == app } } label: { Label(app, systemImage: "checkmark") }
+                        }
+                        if !m.triggerApps.isEmpty { Divider() }
+                        Section(L("Open now")) {
+                            ForEach(System.runningAppNames().filter { n in !m.triggerApps.contains(n) }, id: \.self) { app in
+                                Button(app) { m.triggerApps.append(app) }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(m.triggerApps.isEmpty ? L("Choose")
+                                 : (m.triggerApps.count == 1 ? m.triggerApps[0] : "\(m.triggerApps[0]) +\(m.triggerApps.count - 1)"))
+                                .font(UI.value).lineLimit(1)
+                        }
+                        .frame(maxWidth: 190, alignment: .trailing)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.visible)
+                }
+            }
+            card("battery.50", L("Battery Guard")) {
+                row(L("When the battery reaches"), detail: m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
+                    EmptyView()
+                }
+                EqualSegments(selection: $m.batteryThreshold, values: Settings.batteryChoices) { $0 == 0 ? L("Off") : "\($0)%" }
+                    .frame(maxWidth: .infinity)
+                row(L("Then"), tip: L("What Cocaine does at that level")) {
+                    choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
+                }
+                .disabled(m.batteryThreshold == 0).opacity(m.batteryThreshold == 0 ? 0.45 : 1)
+            }
+            card("iphone.gen3", L("Remote work")) {
+                row(L("iPhone"), detail: m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
+                    : "\(m.phoneCount) \(L("paired")) · \(m.phoneLinkUp ? L("Connected") : L("Connecting…"))") {
+                    HStack(spacing: 6) {
+                        Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
+                            .help(L("Send the Shortcut to your iPhone"))
+                        if m.phoneCount > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
+                    }
+                }
+                row(L("Wake for iPhone"), tip: L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
+                    toggle(L("Wake for iPhone"), $m.wakeForPhone)
+                }
+                row(L("Phone alerts"), detail: m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
+                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
+                }
+                Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
+                    .buttonStyle(.link).font(UI.detail)
+            }
+            card("keyboard", L("Shortcuts")) {
+                row(L("Global shortcuts"), tip: L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach([("C", L("Turn Cocaine on or off")), ("O", L("Open the panel")), ("P", L("Pause or resume alerts"))], id: \.0) { k in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(k.1).font(UI.detail).frame(maxWidth: .infinity, alignment: .leading)
+                            Text("⌃⌥⌘\(k.0)").font(UI.detail.monospaced()).foregroundStyle(.secondary).fixedSize()
+                        }
+                    }
+                }
+                .opacity(m.hotkeys ? 1 : 0.45)
+            }
+        }
+    }
+
+    // MARK: The panel
 
     private static func stateIcon(_ s: String) -> String {
         ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
@@ -1560,279 +1786,31 @@ private struct PanelView: View {
         return Date().timeIntervalSince1970 - since < 45 ? L("now") : f.localizedString(for: Date(timeIntervalSince1970: since), relativeTo: Date())
     }
 
-    private var status: String {
-        if m.needsAuth { return L("Admin password needed") }
-        if m.on && m.holdMissing { return L("Keeping the screen on…") }
-        return m.on ? L("Your Mac stays awake") : L("Your Mac sleeps as usual")
-    }
-
-    // MARK: Tabs
-
     private func tabTitle(_ id: String) -> String { id == "ai" ? L("AI alerts") : id == "auto" ? L("Automation") : L("General") }
 
     private var tabs: [String] { m.ai.available ? ["", "ai", "auto"] : ["", "auto"] }
 
-    /// Where the timer's end is, or how long it will be: always readable, never a menu.
-    private var timerBlock: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                Image(systemName: "timer").font(UI.icon).foregroundStyle(Color.accentColor).frame(width: 16)
-                Text(L("Stay on for")).font(UI.title).lineLimit(1)
-                    .help(L("Cocaine turns itself off when the time is up"))
-                Spacer(minLength: 6)
-                customTimer
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Picker(L("Stay on for"), selection: $m.timerMinutes) {
-                    ForEach(Settings.timerChoices, id: \.self) { Text($0 == 0 ? "∞" : durationLabel($0).replacingOccurrences(of: " min", with: "m").replacingOccurrences(of: " h", with: "h")).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().controlSize(.small)
-                .frame(maxWidth: .infinity)
-                if m.on, let until = m.onUntil, until > Date() {
-                    Text(String(format: L("until %@"), Self.time.string(from: until))).font(UI.detail).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    /// Any length you like, in steps of 15 minutes (up to 24 hours).
-    private var customTimer: some View {
-        HStack(spacing: 4) {
-            Button { m.timerMinutes = max(15, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) - 15) } label: { Image(systemName: "minus") }
-                .accessibilityLabel(L("Shorter"))
-            Text(durationLabel(m.timerMinutes)).font(UI.value.monospacedDigit()).lineLimit(1).frame(minWidth: 62)
-            Button { m.timerMinutes = min(1440, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15) } label: { Image(systemName: "plus") }
-                .accessibilityLabel(L("Longer"))
-        }
-        .controlSize(.small)
-        .fixedSize()
-        .help(L("Any length, in steps of 15 minutes"))
-    }
-
-    private var generalTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            timerBlock
-            if m.on {
-                Divider()
-
-                    HStack {
-                        Text(L("Dim the screen when idle")).lineLimit(1)
-                        Spacer(minLength: 6)
-                        CocaineSwitch($m.dimEnabled).accessibilityLabel(L("Dim the screen when idle"))
-                    }
-                    .help(L("Goes back to normal as soon as you touch anything"))
-                    VStack(spacing: 8) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sun.min").foregroundStyle(.secondary)
-                            Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
-                            Text("\(Int(m.levelPercent))%").monospacedDigit().frame(width: 32, alignment: .trailing)
-                            Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
-                                .help(L("Shows the minimum brightness for 3 seconds"))
-                        }
-                        HStack(spacing: 6) {
-                            Text(L("After")).fixedSize()
-                            Picker(L("After"), selection: $m.delayMinutes) {
-                                ForEach(Settings.delayChoices, id: \.self) { Text("\($0)").tag($0) }
-                            }
-                            .pickerStyle(.segmented).labelsHidden().controlSize(.small)
-                            Text(L("min")).fixedSize()
-                        }
-                    }
-                    .disabled(!m.dimEnabled)
-                    .opacity(m.dimEnabled ? 1 : 0.45)
-            }
-            if !m.board.isEmpty {
-                Divider()
-                agentsSection
-            }
-        }
-    }
-
-    private var aiTab: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 10) {
-            section("sparkles", L("Connected AIs"), warning: m.ai.codexNeedsTrust) {
-                ForEach(m.ai.tools.filter(\.installed)) { t in
-                    let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
-                    option(t.name, untrusted ? L("Approve once in Settings → Hooks") : toolDetail(t.id), warning: untrusted) {
-                        toggle(t.name, Binding(get: { t.on }, set: { m.setAI(t.id, $0) })).disabled(m.settingAI)
-                    }
-                }
-                let others = m.ai.tools.filter { !$0.installed }.map(\.name)
-                VStack(alignment: .leading, spacing: 2) {
-                    if !others.isEmpty {
-                        Text(String(format: L("Also supported: %@"), others.joined(separator: ", ")))
-                            .font(UI.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
-                        .buttonStyle(.link).font(UI.detail)
-                }
-            }
-            section("pause.circle", L("Pause")) {
-                if let until = m.alertsPausedUntil {
-                    option(String(format: L("Paused until %@"), Self.time.string(from: until)), L("No alerts until then")) {
-                        Button(L("Resume")) { m.pauseAlerts(nil) }.controlSize(.small)
-                    }
-                } else {
-                    Text(L("Silences every alert for a while")).font(UI.detail).foregroundStyle(.secondary)
-                    VStack(spacing: 5) {
-                        HStack(spacing: 5) {
-                            Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }.frame(maxWidth: .infinity)
-                            Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }.frame(maxWidth: .infinity)
-                        }
-                        Button(L("Until tomorrow")) {
-                            let cal = Calendar.current
-                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .controlSize(.small)
-                    .lineLimit(1)
-                }
-            }
-                recentSection
-            }
-            .frame(width: Layout.column, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 10) {
-            section("bell.badge", L("When")) {
-                option(L("Finishes"), L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
-                option(L("Needs you"), L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
-                option(L("Also at the Mac"), L("Otherwise only when you've been away for 20 seconds")) {
-                    toggle(L("Also at the Mac"), $m.alertWhenPresent)
-                }
-                option(L("One alert per session"),
-                       L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
-                    toggle(L("One alert per session"), $m.alertPerSession)
-                }
-            }
-            section("rays", L("How")) {
-                option(L("Flash"), L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
-                option(L("Sound"), L("Plays when the alert arrives")) {
-                    choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
-                }
-                option(L("Voice"), L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
-                if m.alertSpeak {                               // which voice, only when there's one to choose
-                    option(L("Voice type"), L("The Mac's voices for your language; you hear it as you pick"), stacked: true) {
-                        choice(L("Voice type"), $m.alertVoice, [""] + Voices.available.map(\.identifier), Voices.name)
-                    }
-                }
-                option(L("On screen"), L("How long the alert stays")) {
-                    choice(L("On screen"), $m.alertDuration, Settings.durationChoices, durationName)
-                }
-                option(L("Repeat"), L("While you're away, for up to 30 minutes")) {
-                    choice(L("Repeat"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
-                }
-                option(L("Try it"), L("Shows an alert with these settings")) {
-                    Button(L("Test")) { m.testAlert() }.controlSize(.small)
-                }
-            }
-            }
-            .frame(width: Layout.column, alignment: .topLeading)
-        }
-    }
-
-    private var automationTab: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 10) {
-            section("battery.50", L("Battery Guard")) {
-                statusOption(L("When the battery reaches"), m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only"), stacked: true) {
-                    Picker(L("Battery"), selection: $m.batteryThreshold) {
-                        ForEach(Settings.batteryChoices, id: \.self) { Text($0 == 0 ? "–" : "\($0)").tag($0).accessibilityLabel($0 == 0 ? L("Off") : "\($0)%") }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().controlSize(.small)
-                }
-                option(L("Then"), L("What Cocaine does at that level"), stacked: true) {
-                    choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
-                }
-                .disabled(m.batteryThreshold == 0).opacity(m.batteryThreshold == 0 ? 0.45 : 1)
-            }
-            section("bolt.badge.automatic", L("Smart Triggers")) {
-                option(L("An AI is at work"), L("On while an AI works or waits for you; off 3 minutes after")) {
-                    toggle(L("An AI is at work"), $m.triggerAgents)
-                }
-                option(L("These programs are open"), L("On while any is running; off 3 minutes after")) {
-                    Menu {
-                        ForEach(m.triggerApps, id: \.self) { app in
-                            Button { m.triggerApps.removeAll { $0 == app } } label: { Label(app, systemImage: "checkmark") }
-                        }
-                        if !m.triggerApps.isEmpty { Divider() }
-                        Section(L("Open now")) {
-                            ForEach(System.runningAppNames().filter { n in !m.triggerApps.contains(n) }, id: \.self) { app in
-                                Button(app) { m.triggerApps.append(app) }
-                            }
-                        }
-                    } label: {
-                        Text(m.triggerApps.isEmpty ? L("Choose") : "\(m.triggerApps.count)")
-                    }
-                    .menuStyle(.borderlessButton).font(UI.value)
-                }
-            }
-            section("keyboard", L("Shortcuts")) {
-                option(L("Global shortcuts"), L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach([("C", L("Turn Cocaine on or off")), ("O", L("Open the panel")), ("P", L("Pause or resume alerts"))], id: \.0) { k in
-                        HStack(spacing: 8) {
-                            Text("⌃⌥⌘\(k.0)").font(UI.detail.monospaced()).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
-                            Text(k.1).font(UI.detail).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .opacity(m.hotkeys ? 1 : 0.45)
-            }
-            }
-            .frame(width: Layout.column, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 10) {
-            section("iphone.gen3", L("Remote work")) {
-                statusOption(L("iPhone"), m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
-                       : "\(m.phoneCount) \(L("paired")) · \(m.phoneLinkUp ? L("Connected") : L("Connecting…"))", stacked: true) {
-                    HStack(spacing: 6) {
-                        Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
-                            .help(L("Send the Shortcut to your iPhone"))
-                        if m.phoneCount > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
-                    }
-                }
-                option(L("Wake for iPhone"), L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
-                    toggle(L("Wake for iPhone"), $m.wakeForPhone)
-                }
-                statusOption(L("Phone alerts"), m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
-                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
-                }
-                Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
-                    .buttonStyle(.link).font(UI.detail).multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            }
-            .frame(width: Layout.column, alignment: .topLeading)
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 10) {                                // header and footer sit on the content edge
                 Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text("Cocaine").font(.headline)
                         Text(appVersion).font(UI.detail).foregroundStyle(.tertiary)   // e.g. "1.7"
-                        Button { Feedback.compose() } label: {
-                            Image(systemName: "envelope").font(UI.detail).foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help(L("Feedback or help") + " — " + Feedback.address)
                     }
                     Text(status).font(UI.detail).lineLimit(1)
                         .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
                 }
-                Spacer(minLength: 6)
+                Spacer(minLength: 8)
                 CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
                     .help(m.on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
                     .accessibilityLabel("Cocaine")
             }
+            .padding(.horizontal, 10)
 
-            Picker(L("Section"), selection: $m.page) {
-                ForEach(tabs, id: \.self) { Text(tabTitle($0)).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+            EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
+                .frame(maxWidth: .infinity)
 
             switch m.page {
             case "ai": aiTab
@@ -1840,36 +1818,17 @@ private struct PanelView: View {
             default: generalTab
             }
 
-            Divider()
-
-            HStack(spacing: 0) {                       // two groups and one flexible gap, no wasted spacing
-                HStack(spacing: 6) {
-                    Text(L("Open at login")).lineLimit(1)
-                    CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }
-                        .accessibilityLabel(L("Open at login"))
+            HStack(spacing: 8) {
+                Button { Feedback.compose() } label: {
+                    Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
                 }
-                .layoutPriority(1)                     // text first, empty space last
-                Spacer(minLength: 6)
-                HStack(spacing: 6) {
-                    Menu {
-                        Picker(L("Language"), selection: $m.language) {
-                            Text("\(L("Same as Mac"))  \(Language.flag(Language.system))").tag("")
-                            ForEach(Language.codes, id: \.self) { Text("\(Language.flag($0))  \(Language.nativeName($0))").tag($0) }
-                        }
-                        .pickerStyle(.inline)
-                    } label: {
-                        Text(Language.flag(m.language.isEmpty ? Language.system : m.language))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .frame(width: 22)                  // just the flag, no invisible padding
-                    .help(L("Language"))
-                    Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
-                        .help(L("Turns Cocaine off and quits"))
-                }
-                .layoutPriority(2)                     // never truncated
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help(L("Feedback or help") + " — " + Feedback.address)
+                Spacer(minLength: 8)
+                Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
+                    .help(L("Turns Cocaine off and quits"))
             }
+            .padding(.horizontal, 10)
         }
         .padding(14)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways

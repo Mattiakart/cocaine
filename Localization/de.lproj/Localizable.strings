@@ -9,7 +9,6 @@
 "Preview" = "Testen";
 "Shows the minimum brightness for 3 seconds" = "Zeigt 3 Sekunden lang die minimale Helligkeit";
 "After" = "Nach";
-"min" = "Min.";
 "Open at login" = "Autostart";
 "Quit" = "Beenden";
 "Turns Cocaine off and quits" = "Schaltet Cocaine aus und beendet";
@@ -47,7 +46,6 @@
 "Until tomorrow" = "Bis morgen";
 "Test" = "Testen";
 "Connected AIs" = "Verbundene KIs";
-"None connected" = "Keine";
 "Approve once in Settings → Hooks" = "Einmal in Einstellungen → Hooks bestätigen";
 "Also supported: %@" = "Ebenfalls unterstützt: %@";
 "Finishes, or asks permission or a question" = "Wenn sie fertig ist, um Erlaubnis bittet oder etwas fragt";
@@ -57,7 +55,6 @@
 "After each reply" = "Nach jeder Antwort";
 "Finishes, or asks permission" = "Wenn sie fertig ist oder um Erlaubnis bittet";
 "Never" = "Nie";
-"Silent" = "Lautlos";
 "Until you're back" = "Bis du zurück bist";
 "%d s" = "%d s";
 "Every %d min" = "Alle %d Min.";
@@ -71,11 +68,7 @@
 "On screen" = "Auf dem Bildschirm";
 "How long the alert stays" = "Wie lange der Hinweis bleibt";
 "While you're away, for up to 30 minutes" = "Während du weg bist, höchstens 30 Minuten";
-"Try it" = "Ausprobieren";
 "Shows an alert with these settings" = "Zeigt einen Hinweis mit diesen Einstellungen";
-"Active" = "Aktiv";
-"Paused until %@" = "Pausiert bis %@";
-"No alerts until then" = "Bis dahin keine Hinweise";
 "Resume" = "Fortsetzen";
 "Silences every alert for a while" = "Schaltet alle Hinweise eine Weile stumm";
 "Recent alerts" = "Letzte Hinweise";
@@ -90,10 +83,8 @@
 "One alert per session" = "Ein Hinweis pro Sitzung";
 "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "Nicht für jeden Agenten oder jede Aufgabe: nur wenn die ganze Sitzung seit einer Minute ruht";
 "%d h" = "%d h";
-"AI at work" = "KI arbeitet";
 "Agents" = "Agenten";
 "An AI is at work" = "Eine KI arbeitet";
-"Battery" = "Akku";
 "Battery Guard" = "Akku-Wächter";
 "Battery at %d%%" = "Akku bei %d%%";
 "Battery at %d%%: Cocaine is off" = "Akku bei %d%%: Cocaine ist aus";
@@ -114,7 +105,6 @@
 "Open the panel" = "Panel öffnen";
 "Pause or resume alerts" = "Hinweise pausieren oder fortsetzen";
 "Phone alerts" = "Hinweise aufs Telefon";
-"Ready" = "Bereit";
 "Remote work" = "Fernarbeit";
 "Remote work guide…" = "Anleitung zur Fernarbeit …";
 "Shortcut" = "Kurzbefehl";
@@ -125,7 +115,6 @@
 "These programs are open" = "Diese Programme laufen";
 "Timer over: Cocaine is off" = "Timer abgelaufen: Cocaine ist aus";
 "Turn Cocaine on or off" = "Cocaine ein- oder ausschalten";
-"Until I turn it off" = "Bis ich es ausschalte";
 "What Cocaine does at that level" = "Was Cocaine bei diesem Stand tut";
 "When the battery reaches" = "Wenn der Akku erreicht";
 "Work from any app" = "Funktionieren in jeder App";
@@ -147,7 +136,6 @@
 "Cancel" = "Abbrechen";
 "Status, on/off and projects" = "Status, Ein/Aus und Projekte";
 "Also start and steer AI agents" = "Auch KI-Agenten starten und steuern";
-"Set up" = "Einrichten";
 "Connected" = "Verbunden";
 "Connecting…" = "Verbinde …";
 "paired" = "gekoppelt";
@@ -164,7 +152,6 @@
 "Couldn't turn on the wake-ups" = "Aufwecken konnte nicht aktiviert werden";
 "Automation" = "Automatisierung";
 "General" = "Allgemein";
-"Section" = "Bereich";
 "Shorter" = "Kürzer";
 "Longer" = "Länger";
 "Any length, in steps of 15 minutes" = "Beliebige Dauer, in 15-Minuten-Schritten";

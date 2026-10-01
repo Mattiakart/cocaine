@@ -9,7 +9,6 @@
 "Preview" = "預覽";
 "Shows the minimum brightness for 3 seconds" = "顯示最低亮度 3 秒";
 "After" = "閒置";
-"min" = "分鐘後";
 "Open at login" = "登入時開啟";
 "Quit" = "結束";
 "Turns Cocaine off and quits" = "關閉 Cocaine 並結束";
@@ -47,7 +46,6 @@
 "Until tomorrow" = "到明天";
 "Test" = "測試";
 "Connected AIs" = "已連接的 AI";
-"None connected" = "無";
 "Approve once in Settings → Hooks" = "請在「設定 → Hooks」中核准一次";
 "Also supported: %@" = "也支援：%@";
 "Finishes, or asks permission or a question" = "完成、請求權限或提問時";
@@ -57,7 +55,6 @@
 "After each reply" = "每次回覆後";
 "Finishes, or asks permission" = "完成或請求權限時";
 "Never" = "從不";
-"Silent" = "靜音";
 "Until you're back" = "直到我回來";
 "%d s" = "%d 秒";
 "Every %d min" = "每 %d 分鐘";
@@ -71,11 +68,7 @@
 "On screen" = "顯示時間";
 "How long the alert stays" = "提醒停留多久";
 "While you're away, for up to 30 minutes" = "離開期間，最多 30 分鐘";
-"Try it" = "試試看";
 "Shows an alert with these settings" = "以這些設定顯示一次提醒";
-"Active" = "已啟用";
-"Paused until %@" = "暫停至 %@";
-"No alerts until then" = "在此之前不提醒";
 "Resume" = "恢復";
 "Silences every alert for a while" = "暫時靜音所有提醒";
 "Recent alerts" = "最近的提醒";
@@ -90,10 +83,8 @@
 "One alert per session" = "每個工作階段提醒一次";
 "Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute" = "不為每個代理或任務提醒：僅在整個工作階段 1 分鐘沒有動靜後提醒";
 "%d h" = "%d 小時";
-"AI at work" = "AI 工作中";
 "Agents" = "代理";
 "An AI is at work" = "有 AI 在工作";
-"Battery" = "電池";
 "Battery Guard" = "電池保護";
 "Battery at %d%%" = "電量 %d%%";
 "Battery at %d%%: Cocaine is off" = "電量 %d%%：Cocaine 已關閉";
@@ -114,7 +105,6 @@
 "Open the panel" = "開啟面板";
 "Pause or resume alerts" = "暫停或恢復提醒";
 "Phone alerts" = "手機提醒";
-"Ready" = "就緒";
 "Remote work" = "遠端工作";
 "Remote work guide…" = "遠端工作指南…";
 "Shortcut" = "捷徑";
@@ -125,7 +115,6 @@
 "These programs are open" = "這些程式已開啟";
 "Timer over: Cocaine is off" = "計時結束：Cocaine 已關閉";
 "Turn Cocaine on or off" = "開啟或關閉 Cocaine";
-"Until I turn it off" = "直到我關閉";
 "What Cocaine does at that level" = "到該電量時 Cocaine 的動作";
 "When the battery reaches" = "電量降到";
 "Work from any app" = "在任何 App 中都可用";
@@ -147,7 +136,6 @@
 "Cancel" = "取消";
 "Status, on/off and projects" = "狀態、開/關和專案";
 "Also start and steer AI agents" = "還可啟動和操控 AI 代理";
-"Set up" = "待設定";
 "Connected" = "已連線";
 "Connecting…" = "連線中…";
 "paired" = "已配對";
@@ -164,7 +152,6 @@
 "Couldn't turn on the wake-ups" = "無法開啟定時喚醒";
 "Automation" = "自動化";
 "General" = "一般";
-"Section" = "分區";
 "Shorter" = "縮短";
 "Longer" = "延長";
 "Any length, in steps of 15 minutes" = "任意時長，以15分鐘為步長";
