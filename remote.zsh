@@ -16,6 +16,8 @@
 #   cocaine remote stop <run>
 #   cocaine remote wake-info            what a Wake-on-LAN app needs
 #   cocaine remote notify shortcut "Name" | ntfy https://ntfy.sh/topic | off | test
+#   cocaine remote authorize [--clipboard] [--agents]   let a phone's SSH key in (restricted to these commands)
+#   cocaine remote keys | revoke                        list or remove the keys authorized this way
 #
 # No network port is opened: this only runs commands for the user who runs it. Agents run inside `screen`
 # sessions (built into macOS), so they survive the SSH connection closing. Cocaine is turned on when work starts
@@ -242,7 +244,8 @@ cmd_start() {
   fi
   local typed=
   if [[ -n $prompt ]]; then
-    if (( ${PROMPT_ARG[(Ie)$agent]} )) && (( ! resume )); then argv+=("$prompt"); else typed=$prompt; fi
+    # A one-word prompt as an argument could be read as the agent's own subcommand (`codex logout`): type it instead.
+    if (( ${PROMPT_ARG[(Ie)$agent]} )) && (( ! resume )) && [[ $prompt == *[[:space:]]* ]]; then argv+=("$prompt"); else typed=$prompt; fi
   fi
 
   local base=$(safe_name "$agent-${ppath:t}"); base=${base[1,40]}; local id
@@ -295,6 +298,7 @@ cmd_runs() {
 
 cmd_log() {
   need_run ${1:-}
+  [[ ${2:-40} == <-> ]] && (( ${2:-40} >= 1 && ${2:-40} <= 500 )) || die "lines must be 1-500"
   local id=$1 lines=${2:-40} tmp=$(mktemp -t cocaine-log)
   if session_alive $id; then
     sx $id hardcopy -h "$tmp"; /bin/sleep 0.4
@@ -374,6 +378,168 @@ cmd_notify() {
   esac
 }
 
+# ---------------------------------------------------------------- remote access with an SSH key (no password)
+#
+# `authorize` adds a phone's public key to ~/.ssh/authorized_keys in a restricted form:
+#   restrict,from="<tailnet and loopback>",command="<cocaine> remote gate --tier=basic|agents" <key> cocaine-remote:<date>:<id>
+# so that key can only run `cocaine remote …` (never a shell), no port forwarding, no pty, and only from a Tailscale
+# address. The gate below enforces it. Tier "basic": status, on/off, projects, agents, runs. Tier "agents" adds starting
+# agents and typing into them, which amounts to running code as you: grant it knowingly.
+
+SSHDIR=${COCAINE_SSH_DIR:-$HOME/.ssh}
+AUTHKEYS=$SSHDIR/authorized_keys
+GATE_LOG=$SUPPORT/remote-ssh.log
+COCAINE_BIN=$HERE/cocaine; [[ -x $COCAINE_BIN ]] || COCAINE_BIN=$HERE/cocaine.zsh
+KEY_FROM='100.64.0.0/10,fd7a:115c:a1e0::/48,127.0.0.1,::1'      # Tailscale's addresses, and this Mac itself
+
+gate_log() { local m="$*"; print -r -- "$(date '+%F %T') ${m//[[:cntrl:]]/?}" >> "$GATE_LOG" 2>/dev/null; chmod 600 "$GATE_LOG" 2>/dev/null; }
+
+# Rewrites authorized_keys without lines for which `drop` (a function taking the line) succeeds, plus an optional new
+# line, under a lock, keeping every other line. Never writes if the file couldn't be read in full.
+rewrite_authkeys() {  # $1 = drop function, $2 = line to add (optional); sets REWRITTEN to the number dropped
+  /bin/mkdir -p -m 700 "$SSHDIR"; chmod 700 "$SSHDIR"
+  local lock=$SSHDIR/.cocaine.lock i got=0 out rc
+  for i in {1..50}; do
+    /bin/mkdir "$lock" 2>/dev/null && { got=1; break; }
+    [[ -n $(/usr/bin/find "$lock" -maxdepth 0 -mmin +1 2>/dev/null) ]] && /bin/rmdir "$lock" 2>/dev/null   # left by a killed run
+    /bin/sleep 0.1
+  done
+  (( got )) || die "another change to authorized_keys is in progress"
+  out=$(_rewrite_locked "$@"); rc=$?          # a subshell: its `die` ends it, and the lock is released below either way
+  /bin/rmdir "$lock" 2>/dev/null
+  (( rc == 0 )) || exit 1
+  REWRITTEN=$out
+}
+
+_rewrite_locked() {
+  local target=${AUTHKEYS:A} l n=0 tries
+  for tries in 1 2 3; do
+    local -a keep=(); local before=
+    if [[ -e $target ]]; then
+      [[ -r $target ]] || die "can't read $target; left untouched"
+      before=$(/usr/bin/stat -f '%z %m' "$target")
+      while IFS= read -r l || [[ -n $l ]]; do
+        if "$1" "$l"; then (( n++ )); else keep+=("$l"); fi
+      done < "$target"
+    fi
+    local tmp; tmp=$(mktemp "$SSHDIR/.ak.XXXXXX") || die "can't write in $SSHDIR"
+    chmod 600 "$tmp"
+    { (( $#keep )) && print -rl -- "${keep[@]}"; [[ -n ${2:-} ]] && print -r -- "$2"; } > "$tmp"
+    if [[ -e $target && $before != $(/usr/bin/stat -f '%z %m' "$target") ]]; then rm -f "$tmp"; n=0; continue; fi   # edited meanwhile: redo
+    /bin/mv "$tmp" "$target"; chmod 600 "$target"
+    print -r -- $n; return 0
+  done
+  die "authorized_keys keeps changing; try again"
+}
+
+cmd_gate() {
+  local tier=basic; [[ ${1:-} == --tier=agents ]] && tier=agents
+  local line=${SSH_ORIGINAL_COMMAND:-}
+  deny() { gate_log "DENIED ($tier) $*: ${line[1,200]}"; print -ru2 -- "cocaine: not allowed ($*)"; exit 126; }
+  [[ -n $line && ${#line} -le 4096 ]] || deny "empty or too long"
+  [[ $line == *[[:cntrl:]]* ]] && deny "control characters"
+  [[ $line == *'`'* || $line == *'$('* || $line == *'${'* ]] && deny "shell syntax"
+  local -a z=( ${(z)line} ) w
+  local t
+  for t in $z; do
+    case $t in ';'|'|'|'&'|'&&'|'||'|'<'|'>'|'>>'|'<<'|'<<<'|'('|')'|';;'|';&'|'&>'|'|&') deny "shell operator" ;; esac
+  done
+  w=( "${(@Q)z}" )
+  [[ ${(j: :)w} == *[[:cntrl:]]* ]] && deny "control characters"
+  [[ ${w[1]:t} == cocaine ]] && shift w            # the Shortcut may send the full path of cocaine…
+  [[ ${w[1]:-} == remote ]] && shift w             # …and the word "remote"
+  local sub=${w[1]:-} ; local -a a=( "${(@)w[2,-1]}" )
+  local ok=0
+  case $sub in
+    status) [[ $#a -eq 0 || ( $#a -eq 1 && $a[1] == --json ) ]] && ok=1 ;;
+    off|projects|agents|runs|wake-info) (( $#a == 0 )) && ok=1 ;;
+    on) if (( $#a == 0 )); then ok=1; elif (( $#a == 2 )) && [[ $a[1] == --for && $a[2] =~ '^[0-9]{1,4}[smhd]?$' ]] && dur_minutes "$a[2]" >/dev/null; then ok=1; fi ;;
+    log|send|key|stop|start|resume)
+      [[ $tier == agents ]] || deny "needs the agents level: $sub"
+      case $sub in
+        log) [[ $a[1] =~ '^[A-Za-z0-9][A-Za-z0-9._-]*$' && ( $#a -eq 1 || ( $#a -eq 2 && $a[2] =~ '^[0-9]{1,3}$' ) ) ]] && ok=1 ;;
+        stop) [[ $#a -eq 1 && $a[1] =~ '^[A-Za-z0-9][A-Za-z0-9._-]*$' ]] && ok=1 ;;
+        key) [[ $#a -eq 2 && $a[1] =~ '^[A-Za-z0-9][A-Za-z0-9._-]*$' ]] && ok=1 ;;
+        send) [[ $#a -ge 2 && $a[1] =~ '^[A-Za-z0-9][A-Za-z0-9._-]*$' ]] && ok=1 ;;
+        start|resume) [[ $#a -ge 2 && $a[1] =~ '^[A-Za-z0-9-]+$' && $a[2] =~ '^[A-Za-z0-9][A-Za-z0-9._ -]*$' ]] && ok=1 ;;   # names only, never paths
+      esac ;;
+    *) deny "unknown command" ;;
+  esac
+  (( ok )) || deny "bad arguments for $sub"
+  gate_log "ok ($tier): $sub ${a[1,2]}"
+  exec /bin/zsh "$HERE/remote.zsh" $sub "${a[@]}"
+}
+
+# The key's one-line form, checked: type, base64, a fingerprint from ssh-keygen, no options in front.
+key_check() {  # $1 = the pasted text → sets KTYPE KB64 KFP; returns 1 with a message when it isn't a good key
+  local k=$1
+  k=${k%$'\r'}; k=${k%$'\n'}
+  [[ $k != *$'\n'* && $k != *[[:cntrl:]]* && ${#k} -lt 8192 ]] || { print -ru2 -- "that isn't a single-line public key"; return 1; }
+  [[ $k =~ '^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa) ([A-Za-z0-9+/]+={0,3})( .*)?$' ]] || { print -ru2 -- "that isn't an ed25519, ECDSA or RSA public key (ssh-ed25519 AAAA…)"; return 1; }
+  KTYPE=${k%% *}; KB64=${${k#* }%% *}
+  local tmp; tmp=$(mktemp -t cocaine-key) || return 1
+  print -r -- "$KTYPE $KB64" > "$tmp"
+  local fp; fp=$(/usr/bin/ssh-keygen -l -f "$tmp" 2>/dev/null); rm -f "$tmp"
+  [[ -n $fp ]] || { print -ru2 -- "ssh-keygen doesn't accept that key"; return 1; }
+  if [[ $KTYPE == ssh-rsa && ${fp%% *} -lt 2048 ]]; then print -ru2 -- "RSA keys need at least 2048 bits"; return 1; fi
+  KFP=${${fp#* }%% *}
+}
+
+cmd_authorize() {
+  local tier=basic yes=0 dry=0 key=""
+  while (( $# )); do
+    case $1 in
+      --agents) tier=agents ;; --yes) yes=1 ;; --dry-run) dry=1 ;;
+      --clipboard) key=$(/usr/bin/pbpaste) ;;
+      *) die "usage: authorize [--clipboard] [--agents] [--yes] [--dry-run]   (or pipe the public key in)" ;;
+    esac; shift
+  done
+  [[ -z $key && ! -t 0 ]] && key=$(cat)
+  [[ -n $key ]] || die "no key: copy it from the Shortcut's SSH step and use --clipboard, or pipe it in"
+  KTYPE= KB64= KFP=
+  key_check "$key" || exit 1
+  if (( dry )); then print -r -- "$KFP (…${KB64[-8,-1]})"; return 0; fi
+  [[ $COCAINE_BIN =~ '^[A-Za-z0-9/._-]+$' && $COCAINE_BIN != *AppTranslocation* ]] || die "Cocaine must be moved to /Applications first (its path has odd characters or is temporary)"
+  if (( ! yes )) && [[ -t 0 && -t 1 ]]; then
+    print -r -- "Key $KFP ($tier level). Authorize it? [y/N] "; local r; read -r r; [[ $r == [yY]* ]] || die "cancelled"
+  elif (( ! yes )); then die "add --yes to confirm"; fi
+  local id=${${KFP#SHA256:}[1,8]}
+  local entry="restrict,from=\"$KEY_FROM\",command=\"$COCAINE_BIN remote gate --tier=$tier\" $KTYPE $KB64 cocaine-remote:$(date +%F):$id"
+  drop_same_key() {      # our own line for this key is replaced; the same key without our restrictions is refused
+    [[ $1 == *" $KB64 "* || $1 == *" $KB64" ]] || return 1
+    [[ $1 == *cocaine-remote:* ]] || die "that key is already in authorized_keys without restrictions; remove that line first"
+    return 0
+  }
+  rewrite_authkeys drop_same_key "$entry"
+  gate_log "authorized $KFP ($tier)"
+  print -r -- "Authorized $KFP at the $tier level."
+}
+
+cmd_keys() {
+  [[ -f $AUTHKEYS ]] || { print "No keys."; return 0; }
+  local l n=0 t tier fp tmp
+  while IFS= read -r l; do
+    [[ $l == *cocaine-remote:* && $l == *"remote gate"* ]] || continue
+    tier=basic; fp=; [[ $l == *--tier=agents* ]] && tier=agents
+    t=${${l##* }}
+    [[ $l =~ '(ssh-ed25519|ecdsa-sha2-nistp[0-9]+|ssh-rsa) ([A-Za-z0-9+/=]+)' ]] && {
+      tmp=$(mktemp -t cocaine-key); print -r -- "$match[1] $match[2]" > "$tmp"
+      fp=$(/usr/bin/ssh-keygen -l -f "$tmp" 2>/dev/null | /usr/bin/awk '{print $2}'); rm -f "$tmp"; }
+    print -r -- "$t  $tier  $fp"; (( n++ ))
+  done < "$AUTHKEYS"
+  (( n )) || print "No keys."
+}
+
+cmd_revoke() {
+  [[ -f $AUTHKEYS ]] || { print "Nothing to revoke."; return 0; }
+  local id=${1:-}
+  [[ -z $id || $id =~ '^[A-Za-z0-9]{4,16}$' ]] || die "usage: revoke [<id from 'keys'>]"
+  is_ours() { [[ $1 == *cocaine-remote:* && $1 == *"remote gate"* && ( -z $id || $1 == *"cocaine-remote:"*":$id" ) ]]; }
+  rewrite_authkeys is_ours
+  gate_log "revoked $REWRITTEN key(s)"
+  print "Revoked $REWRITTEN key(s)."
+}
+
 sub=${1:-help}; (( $# )) && shift
 case $sub in
   status) cmd_status "$@" ;;
@@ -392,6 +558,10 @@ case $sub in
   stop) cmd_stop "$@" ;;
   wake-info) cmd_wake_info ;;
   notify) cmd_notify "$@" ;;
-  help|-h|--help) /usr/bin/sed -n '2,25p' "${0:A}" | /usr/bin/sed 's/^# \{0,1\}//' ;;
+  gate) cmd_gate "$@" ;;
+  authorize) cmd_authorize "$@" ;;
+  keys) cmd_keys ;;
+  revoke) cmd_revoke "$@" ;;
+  help|-h|--help) /usr/bin/sed -n '2,27p' "${0:A}" | /usr/bin/sed 's/^# \{0,1\}//' ;;
   *) die "unknown command '$sub' (try: cocaine remote help)" ;;
 esac

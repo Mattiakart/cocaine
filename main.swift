@@ -538,11 +538,62 @@ private final class Hotkeys {
     }
 }
 
+// MARK: - Reaching this Mac from anywhere: Tailscale's private network plus a restricted SSH key per phone
+
+private enum RemoteAccess {
+    static let download = URL(string: "https://tailscale.com/download")!
+    private static let cliPaths = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
+    static var installed: Bool { FileManager.default.fileExists(atPath: "/Applications/Tailscale.app") || cliPaths.contains { FileManager.default.isExecutableFile(atPath: $0) } }
+
+    /// Runs `cocaine remote …` and returns its status and output (`input` goes to its stdin).
+    @discardableResult
+    static func remote(_ args: [String], input: String? = nil) -> (status: Int32, text: String) {
+        capture("/bin/zsh", [scriptPath, "remote"] + args, input: input)
+    }
+
+    static func capture(_ path: String, _ args: [String], input: String? = nil) -> (status: Int32, text: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        let out = Pipe(), inp = Pipe()
+        p.standardOutput = out
+        p.standardError = out
+        p.standardInput = inp
+        do { try p.run() } catch { return (-1, "") }
+        if let input { inp.fileHandleForWriting.write(Data(input.utf8)) }
+        try? inp.fileHandleForWriting.close()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (p.terminationStatus, String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// This Mac's name on the tailnet (`my-mac.tail1234.ts.net`), or nil when Tailscale isn't installed or connected.
+    static var tailnetName: String? {
+        guard let cli = cliPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return nil }
+        let r = capture(cli, ["status", "--json"])
+        guard r.status == 0, let json = try? JSONSerialization.jsonObject(with: Data(r.text.utf8)) as? [String: Any],
+              json["BackendState"] as? String == "Running", let me = json["Self"] as? [String: Any] else { return nil }
+        var name = (me["DNSName"] as? String ?? "")
+        while name.hasSuffix(".") { name.removeLast() }
+        if name.isEmpty { name = (me["TailscaleIPs"] as? [String])?.first ?? "" }
+        return name.isEmpty ? nil : name
+    }
+
+    /// How many phone keys Cocaine has authorized.
+    static var keyCount: Int {
+        let r = remote(["keys"])
+        return r.status == 0 ? r.text.split(separator: "\n").filter { $0.hasPrefix("cocaine-remote:") }.count : 0
+    }
+}
+
 // MARK: - The iPhone Shortcut: a menu that runs Cocaine's remote commands over SSH
 
+
 private enum PhoneShortcut {
-    /// `MacBook-Pro-di-Mattia.local`: the name an iPhone on the same network (or VPN) reaches this Mac by.
-    static var host: String {
+    /// The tailnet name when Tailscale is connected (works from anywhere), else `MacBook-Pro-di-Mattia.local` (same network only).
+    static var host: String { RemoteAccess.tailnetName ?? localHost }
+
+    static var localHost: String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/scutil")
         p.arguments = ["--get", "LocalHostName"]
@@ -559,7 +610,7 @@ private enum PhoneShortcut {
     }
 
     /// The shortcut as an (unsigned) property list. Sign it before sharing: an iPhone refuses unsigned files.
-    static func build(user: String, host: String, command: String) -> Data? {
+    static func build(user: String, host: String) -> Data? {
         func uuid() -> String { UUID().uuidString }
         func action(_ id: String, _ params: [String: Any]) -> [String: Any] {
             ["WFWorkflowActionIdentifier": "is.workflow.actions.\(id)", "WFWorkflowActionParameters": params]
@@ -571,9 +622,8 @@ private enum PhoneShortcut {
         let items: [(title: String, args: String)] = [
             (L("Status"), "status"), (L("Turn on"), "on"), (L("Turn off"), "off"), (L("Projects"), "projects"),
         ]
-        let group = uuid(), ask = uuid()
+        let group = uuid()
         var actions: [[String: Any]] = [
-            action("ask", ["UUID": ask, "WFAskActionPrompt": L("Your Mac password"), "WFInputType": "Text"]),   // asked at each run
             action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine",
                                       "WFMenuItems": items.map(\.title)]),
         ]
@@ -581,8 +631,8 @@ private enum PhoneShortcut {
             let ssh = uuid()
             actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": item.title]))
             actions.append(action("runsshscript", [
-                "UUID": ssh, "WFSSHHost": host, "WFSSHPort": "22", "WFSSHUser": user, "WFSSHAuthenticationType": "Password",
-                "WFSSHPassword": token(ask, "Provided Input"), "WFSSHScript": "\(command) remote \(item.args)",
+                "UUID": ssh, "WFSSHHost": host, "WFSSHPort": "22", "WFSSHUser": user, "WFSSHAuthenticationType": "SSH Key",
+                "WFSSHScript": "remote \(item.args)",   // the key's forced command only accepts these
             ]))
             actions.append(action("showresult", ["Text": token(ssh, "Shell Script Result")]))
         }
@@ -602,7 +652,7 @@ private enum PhoneShortcut {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-shortcut-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let raw = dir.appendingPathComponent("raw.shortcut"), out = dir.appendingPathComponent("Cocaine.shortcut")
-        guard let data = build(user: NSUserName(), host: host, command: scriptPath), (try? data.write(to: raw)) != nil,
+        guard let data = build(user: NSUserName(), host: host), (try? data.write(to: raw)) != nil,
               run("/usr/bin/shortcuts", ["sign", "--mode", "people-who-know-me", "--input", raw.path, "--output", out.path]) == 0,
               FileManager.default.fileExists(atPath: out.path) else { return nil }
         try? FileManager.default.removeItem(at: raw)
@@ -874,6 +924,9 @@ private final class PanelModel: ObservableObject {
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var sshOn = false
     @Published var makingShortcut = false
+    @Published var tailnet: String?                  // this Mac's Tailscale name; nil = not connected
+    @Published var tailscaleInstalled = false
+    @Published var phoneKeys = 0                     // phone SSH keys authorized
     @Published var phone = ""                        // "" = not set up; else what alerts go to
     @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
@@ -912,6 +965,8 @@ private final class PanelModel: ObservableObject {
     var copyRemoteCommand: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
+    var authorizeKey: () -> Void = {}
+    var revokeKeys: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -1334,16 +1389,32 @@ private struct PanelView: View {
                 .opacity(m.hotkeys ? 1 : 0.45)
             }
             Divider().padding(.vertical, 8)
-            group("remote", "iphone.gen3", L("Remote work"), m.sshOn ? L("Ready") : L("SSH off"),
+            group("remote", "iphone.gen3", L("Remote work"),
+                  !m.sshOn ? L("SSH off") : (m.tailnet != nil && m.phoneKeys > 0 ? L("Ready") : L("Set up")),
                   warning: !m.sshOn, key: \.autoGroup) {
                 option(L("Remote Login"), m.sshOn ? L("On: you can reach this Mac over SSH") : L("Off: turn it on to reach this Mac"),
                        warning: !m.sshOn) {
                     Button(L("Open")) { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")!) }
                         .controlSize(.small)
                 }
+                option(L("Anywhere"), m.tailnet.map { "\(L("Tailscale on")): \($0)" }
+                       ?? (m.tailscaleInstalled ? L("Tailscale installed: open it and sign in") : L("Needs Tailscale (free) on this Mac and your iPhone"))) {
+                    if m.tailnet == nil {
+                        Button(m.tailscaleInstalled ? L("Open") : L("Get")) {
+                            if m.tailscaleInstalled { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Tailscale.app")) }
+                            else { NSWorkspace.shared.open(RemoteAccess.download) }
+                        }.controlSize(.small)
+                    }
+                }
                 option(L("iPhone"), L("Sends you a ready Shortcut: AirDrop, Messages…")) {
                     Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
                         .help(L("Send the Shortcut to your iPhone"))
+                }
+                option(L("iPhone key"), m.phoneKeys > 0 ? "\(m.phoneKeys) \(L("authorized"))" : L("None: no password needed once authorized")) {
+                    HStack(spacing: 6) {
+                        Button(L("Authorize")) { m.authorizeKey() }.controlSize(.small).help(L("Authorize the key copied from your iPhone"))
+                        if m.phoneKeys > 0 { Button(L("Revoke")) { m.revokeKeys() }.controlSize(.small) }
+                    }
                 }
                 option(L("Command"), L("Copies the SSH command to run from your phone")) {
                     Button(L("Copy")) { m.copyRemoteCommand() }.controlSize(.small).help(L("Copy the SSH command"))
@@ -2262,6 +2333,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
         model.copyRemoteCommand = { [weak self] in self?.copyRemoteCommand() }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
+        model.authorizeKey = { [weak self] in self?.authorizePhoneKey() }
+        model.revokeKeys = { [weak self] in self?.revokePhoneKeys() }
         model.testPhone = { Phone.send(L("This is a test")) }
         model.quit = { NSApp.terminate(nil) }
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
@@ -2615,6 +2688,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             let missing = on && !System.displayHeld
             let ai = AIHooks.status()
             let ssh = System.sshOn
+            let tailnet = RemoteAccess.tailnetName, installed = RemoteAccess.installed, keys = RemoteAccess.keyCount
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
@@ -2622,6 +2696,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 let paused = self.settings.alertsPausedUntil   // a pause ends by itself
                 if self.model.alertsPausedUntil != paused { self.model.alertsPausedUntil = paused }
                 if self.model.sshOn != ssh { self.model.sshOn = ssh }
+                if self.model.tailnet != tailnet { self.model.tailnet = tailnet }
+                if self.model.tailscaleInstalled != installed { self.model.tailscaleInstalled = installed }
+                if self.model.phoneKeys != keys { self.model.phoneKeys = keys }
                 let phone = Phone.configured ? Phone.summary : ""
                 if self.model.phone != phone { self.model.phone = phone }
                 self.model.battery = System.battery.map { "\($0.percent)%" }
@@ -2786,11 +2863,46 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
+    /// Authorizes the public key the iPhone's Shortcut showed (copied to the clipboard by "Copy Public Key"). Shows its
+    /// fingerprint first, and what it will be allowed to do.
+    private func authorizePhoneKey() {
+        hidePanel(); NSApp.activate()
+        let clip = NSPasteboard.general.string(forType: .string) ?? ""
+        let check = RemoteAccess.remote(["authorize", "--dry-run"], input: clip)
+        let a = NSAlert()
+        guard check.status == 0 else {
+            a.messageText = L("Copy the key from your iPhone first")
+            a.informativeText = L("In the Shortcut's SSH step, tap “Copy Public Key”, then come back here. It reaches this Mac through the clipboard.")
+            a.runModal(); return
+        }
+        a.messageText = L("Authorize this iPhone?")
+        a.informativeText = "\(L("Fingerprint")): \(check.text)\n\n" + L("The key can only run Cocaine's remote commands, only from Tailscale, never a shell. Check that it is the one your iPhone just showed.")
+        let level = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26))
+        level.addItems(withTitles: [L("Status, on/off and projects"), L("Also start and steer AI agents")])
+        a.accessoryView = level
+        a.addButton(withTitle: L("Authorize"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let done = RemoteAccess.remote(["authorize", "--yes"] + (level.indexOfSelectedItem == 1 ? ["--agents"] : []), input: clip)
+        if done.status == 0 { model.phoneKeys = RemoteAccess.keyCount }
+        else { let e = NSAlert(); e.messageText = L("Couldn't authorize the key"); e.informativeText = done.text; e.runModal() }
+    }
+
+    private func revokePhoneKeys() {
+        hidePanel(); NSApp.activate()
+        let a = NSAlert()
+        a.messageText = L("Remove every iPhone key?")
+        a.informativeText = L("Your iPhone will need a new key to reach this Mac again.")
+        a.addButton(withTitle: L("Revoke"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        RemoteAccess.remote(["revoke"])
+        model.phoneKeys = RemoteAccess.keyCount
+    }
+
     /// The command to run from a phone (a terminal or Shortcuts' "Run Script Over SSH").
     private func copyRemoteCommand() {
-        let host = (Host.current().localizedName ?? ProcessInfo.processInfo.hostName)
-        let local = ProcessInfo.processInfo.hostName.hasSuffix(".local") ? ProcessInfo.processInfo.hostName : "\(host.replacingOccurrences(of: " ", with: "-")).local"
-        let text = "ssh \(NSUserName())@\(local) '\(scriptPath) remote status'"
+        let text = "ssh \(NSUserName())@\(PhoneShortcut.host) 'remote status'"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

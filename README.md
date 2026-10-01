@@ -104,15 +104,28 @@ in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattia
 Leave the Mac, keep working from your phone. Cocaine keeps the Mac awake (the lid can stay closed), and a small
 command lets you start, follow and steer AI agents from anywhere you can run a command.
 
-**Set up once, on the Mac:** System Settings → General → Sharing → **Remote Login** on (better with key-only login), and
-reach the Mac from your phone over your home network or a VPN you already use (for example Tailscale). Cocaine opens no
-network port of its own: everything goes through macOS's own SSH.
+**Set up once, from anywhere in the world, no password.** Cocaine opens no network port of its own: everything goes
+through macOS's own SSH, reached over [Tailscale](https://tailscale.com/download) (free: a private network between your
+own devices, so the Mac is never exposed to the internet), with one restricted key per phone instead of a password.
 
-**From the iPhone**, the panel's *Automation → Remote work → iPhone → Send* builds a ready Shortcut (a menu: Status, Turn on,
-Turn off, Projects, with your Mac's name and user filled in), signs it, and opens the share sheet: AirDrop it, or send it by
-Messages. Open it on the iPhone: it asks for your Mac's password each time it runs (for a key instead of a password, edit its SSH step). It needs
-an internet connection and iCloud on the Mac, to sign it. Or use any SSH app or the **Run Script Over SSH** action yourself:
-*Copy* puts the command on the clipboard; the parts are:
+1. On the Mac: System Settings → General → Sharing → **Remote Login** on. Install Tailscale on the Mac and the iPhone and
+   sign in to the same account on both.
+2. In the panel: *Automation → Remote work → iPhone → Send* builds a ready Shortcut (a menu: Status, Turn on, Turn off,
+   Projects, with your Mac's Tailscale name and your user filled in), signs it (needs internet and iCloud on the Mac) and
+   opens the share sheet: AirDrop it or send it by Messages.
+3. On the iPhone, open the Shortcut and run it once: in its SSH step, the key is created on the phone. Tap **Copy Public
+   Key** there, then on the Mac press *iPhone key → Authorize*: Cocaine shows the key's fingerprint and the level to
+   grant, and adds it. From then on the Shortcut never asks for a password.
+
+What that key can do is deliberately small: it can only run `cocaine remote …` (never a shell), no port forwarding, and
+only from Tailscale's addresses. The default level allows status, on/off and listing projects; the *Also start and steer AI
+agents* level adds starting agents and typing into them, which amounts to running code as you, so grant it knowingly.
+Every allowed or refused request is logged in `~/Library/Application Support/Cocaine/remote-ssh.log`. *Revoke* (or
+`cocaine remote revoke`) removes every key Cocaine added; `cocaine remote keys` lists them. Cocaine only touches its own
+lines in `~/.ssh/authorized_keys`. The Mac has to be awake to answer: that's what Cocaine on is for.
+
+You can also use any SSH app or the **Run Script Over SSH** action yourself: *Copy* puts the command on the clipboard
+(authorize your own key with `cocaine remote authorize --clipboard`). The parts are:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine

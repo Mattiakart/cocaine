@@ -104,15 +104,29 @@ Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattia
 Lasci il Mac e continui a lavorare dal telefono. Cocaine tiene sveglio il Mac (il coperchio può restare chiuso) e un
 piccolo comando ti permette di avviare, seguire e guidare gli agent AI da qualsiasi posto in cui puoi eseguire un comando.
 
-**Da fare una volta, sul Mac:** Impostazioni di Sistema → Generali → Condivisione → **Login remoto** attivo (meglio con
-accesso solo a chiave), e raggiungi il Mac dal telefono dalla rete di casa o da una VPN che già usi (per esempio
-Tailscale). Cocaine non apre nessuna porta di rete: passa tutto dall'SSH di macOS.
+**Da fare una volta, da qualsiasi parte del mondo, senza password.** Cocaine non apre nessuna porta di rete: passa tutto
+dall'SSH di macOS, raggiunto tramite [Tailscale](https://tailscale.com/download) (gratis: una rete privata tra i tuoi
+dispositivi, quindi il Mac non è mai esposto a internet), con una chiave limitata per ogni telefono al posto della password.
 
-**Dall'iPhone**, in *Automazioni → Lavoro da remoto → iPhone → Invia* nel pannello Cocaine crea un Comando Rapido pronto
-(un menu: Stato, Attiva, Spegni, Progetti, con già il nome del tuo Mac e il tuo utente), lo firma e apre la condivisione:
-lo mandi con AirDrop o con Messaggi. Sull'iPhone lo apri: a ogni avvio ti chiede la password del tuo Mac (per usare una chiave invece
-della password, modifica il suo passo SSH). Per firmarlo servono una connessione a internet e iCloud sul Mac. Oppure usa una qualsiasi app SSH o
-l'azione **Esegui script tramite SSH**: *Copia* mette il comando sugli appunti; le parti sono:
+1. Sul Mac: Impostazioni di Sistema → Generali → Condivisione → **Login remoto** attivo. Installa Tailscale su Mac e iPhone
+   e accedi con lo stesso account su entrambi.
+2. Nel pannello: *Automazioni → Lavoro da remoto → iPhone → Invia* crea un Comando Rapido pronto (un menu: Stato, Attiva,
+   Spegni, Progetti, con già il nome Tailscale del Mac e il tuo utente), lo firma (servono internet e iCloud sul Mac) e apre
+   la condivisione: lo mandi con AirDrop o con Messaggi.
+3. Sull'iPhone apri il Comando Rapido ed eseguilo una volta: nel suo passo SSH la chiave viene creata sul telefono. Tocca
+   **Copia chiave pubblica**, poi sul Mac premi *Chiave iPhone → Autorizza*: Cocaine mostra l'impronta della chiave e il
+   livello da concedere, e la aggiunge. Da quel momento il Comando Rapido non chiede più la password.
+
+Quello che la chiave può fare è volutamente poco: può solo eseguire `cocaine remote …` (mai una shell), niente
+inoltro di porte, e solo dagli indirizzi di Tailscale. Il livello di base permette stato, attiva/spegni ed elenco dei
+progetti; il livello *Anche avviare e guidare gli agenti AI* aggiunge l'avvio degli agent e la possibilità di scrivere
+loro, il che equivale a eseguire codice come te: concedilo consapevolmente. Ogni richiesta, permessa o rifiutata, è
+registrata in `~/Library/Application Support/Cocaine/remote-ssh.log`. *Revoca* (o `cocaine remote revoke`) toglie tutte le
+chiavi aggiunte da Cocaine; `cocaine remote keys` le elenca. Cocaine tocca solo le sue righe in `~/.ssh/authorized_keys`. Il Mac
+deve essere sveglio per rispondere: a questo serve Cocaine acceso.
+
+Puoi anche usare una qualsiasi app SSH o l'azione **Esegui script tramite SSH**: *Copia* mette il comando sugli appunti
+(autorizza una tua chiave con `cocaine remote authorize --clipboard`). Le parti sono:
 
 ```
 C=/Applications/Cocaine.app/Contents/Resources/cocaine
