@@ -224,7 +224,8 @@
 "on/off" = "on/off";
 "panel" = "panel";
 "pause alerts" = "pause alerts";
-"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen.";
 "Drag files onto the notch, then drop them here" = "Drag files onto the notch, then drop them here";
-"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission.";
 "Microphone in use" = "Microphone in use";
+"Volume and brightness bars appear in the island, not on screen." = "Volume and brightness bars appear in the island, not on screen.";
+"While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away.";
+"Needs the Accessibility permission" = "Needs the Accessibility permission";

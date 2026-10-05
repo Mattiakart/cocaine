@@ -1182,6 +1182,7 @@ private final class PanelModel: ObservableObject {
     @Published var stayActiveApps: [String] { didSet { settings.stayActiveApps = stayActiveApps } }
     @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
     @Published var presenceAccess = Presence.hasAccess
+    @Published var hudAccess = AXIsProcessTrusted()
     @Published var presenceActive = false
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
@@ -1227,6 +1228,7 @@ private final class PanelModel: ObservableObject {
     var presenceChanged: () -> Void = {}
     var hudReplaceChanged: () -> Void = {}
     var requestPresence: () -> Void = {}
+    var requestHUDAccess: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1364,6 +1366,7 @@ private enum PowderLine {
 
 private enum Layout {
     static let width: CGFloat = 440                          // the panel's width: one number, never taken from content
+    static let overscan: CGFloat = 6                         // windows hanging from the notch start this far above the screen's top edge
     // Two vertical edges, everything on one of them: the frame edge (14 pt from the panel's sides) holds containers (cards,
     // tabs, dividers); the content edge (10 pt further in) holds every text, icon and control. Controls end on the
     // content edge, on the right; full-width controls span it.
@@ -1461,7 +1464,7 @@ private struct PanelView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(UI.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 if let detail {
-                    Text(detail).font(UI.detail).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+                    Text(detail).font(UI.detail).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(Color.white.opacity(0.7)))
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1551,13 +1554,22 @@ private struct PanelView: View {
         .frame(height: 20)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
         .fixedSize()
+        .onScrollSteps(every: 10) { m.timerMinutes = min(1440, max(15, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15 * $0)) }
         .help(L("Any length, in steps of 15 minutes"))
+    }
+
+    /// Scrolling over the presets moves through them (∞ · 30 min … 8 h).
+    private func stepTimerPreset(_ n: Int) {
+        let c = Settings.timerChoices
+        let i = c.firstIndex(of: m.timerMinutes) ?? c.firstIndex { $0 >= m.timerMinutes } ?? 0
+        m.timerMinutes = c[min(c.count - 1, max(0, i + n))]
     }
 
     private var timerCard: some View {
         card("timer", L("Stay on for"), trailing: { customTimer }) {
             EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, label: durationLabel)
                 .frame(maxWidth: .infinity)
+                .onScrollSteps(every: 24) { n in stepTimerPreset(n) }
         }
         .help(L("Cocaine turns itself off when the time is up"))
     }
@@ -1632,8 +1644,11 @@ private struct PanelView: View {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
             row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
-            row(L("Replace system HUD"), detail: L("Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission.")) {
+            row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
                 toggle(L("Replace system HUD"), $m.replaceHUD)
+            }
+            if m.replaceHUD && !m.hudAccess {
+                row(L("Needs the Accessibility permission"), warning: true) { Button(L("Allow")) { m.requestHUDAccess() }.controlSize(.small) }
             }
             row(L("Language")) {
                 let code = m.language.isEmpty ? Language.system : m.language
@@ -1765,7 +1780,7 @@ private struct PanelView: View {
                 }
             }
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
-                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen.")) {
+                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
                 }
                 row(L("When"), tip: L("Only while one of the chosen apps is open, or all the time")) {
@@ -1860,11 +1875,12 @@ private struct PanelView: View {
 
     private func stripButton(_ icon: String, _ title: String, selected: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 13, weight: .medium))
-                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
-                .frame(width: 32, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)))
-                .contentShape(Rectangle())
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
+                Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
+            }
+            .frame(width: 38, height: NotchGeometry.current()?.height ?? 32)              // the whole cell around the icon
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(title).accessibilityLabel(title)
     }
@@ -1874,10 +1890,10 @@ private struct PanelView: View {
     /// The panel's top strip, like the island's: the tabs left of the notch, Feedback and Quit right of it.
     private func strip(_ g: NotchGeometry) -> some View {
         HStack(spacing: 0) {
-            HStack(spacing: 2) { ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } } }
+            HStack(spacing: 0) { ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } } }
                 .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 stripButton("envelope", L("Feedback or help") + " — " + Feedback.address) { Feedback.compose() }
                 stripButton("power", L("Turns Cocaine off and quits")) { m.quit() }
             }
@@ -1936,7 +1952,7 @@ private struct PanelView: View {
                 .padding(.horizontal, 10)
             }
         }
-        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, g == nil ? 14 : 0)
+        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, g == nil ? 14 : Layout.overscan)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
@@ -2553,6 +2569,7 @@ private final class PanelHostingView: NSHostingView<PanelView> {
 /// resizes while open, and closes only when you click elsewhere, press Esc or click the icon again.
 private final class MenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
     /// The content scrolls when it is taller than the screen allows (the app sizes the window; see fitPanel).
     let scroll = NSScrollView()
 
@@ -2634,6 +2651,7 @@ private final class ClosureItem: NSMenuItem {
 
 private enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
+    static let overscan = Layout.overscan
     static let openSize = CGSize(width: 640, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
@@ -3765,12 +3783,14 @@ private final class IslandModel: ObservableObject {
     /// A short message in the closed island: "Downloaded", "Copied"…
     func flashNotice(_ icon: String, _ text: String, level: Double? = nil) {
         flash = (icon, text, level)
+        relayoutNow()                                  // widen the island right now, not at the next tick
         flashWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.flash = nil }
+        let w = DispatchWorkItem { [weak self] in self?.flash = nil; self?.relayoutNow() }
         flashWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + (level == nil ? 3.2 : 1.6), execute: w)
     }
     var wing: CGFloat { flash != nil ? 130 : Island.wing }
+    var relayoutNow: () -> Void = {}
     /// Is anything live (so the closed island shows wings beside the notch)?
     var live: Bool {
         flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.fillLevel ?? 0) > 0.02 || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
@@ -3783,6 +3803,7 @@ private final class IslandModel: ObservableObject {
 private final class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
 }
 
 private final class IslandController {
@@ -3800,6 +3821,7 @@ private final class IslandController {
         model.showSettings = showSettings
         model.hover = { [weak self] inside in self?.hover(inside) }
         model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
+        model.relayoutNow = { [weak self] in self?.relayout() }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
         model.mic.start()
         startPointerMonitors()
@@ -3821,7 +3843,8 @@ private final class IslandController {
     func setEnabled(_ on: Bool) {
         enabled = on
         guard on else { panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop(); return }
-        model.files.start(); model.clipboard.start(); model.music.start(); model.hud.start()
+        model.files.start(); model.clipboard.start(); model.music.start()
+        syncHUD(panelModel?.replaceHUD ?? false)
         if panel == nil, let pm = panelModel {
             let p = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
@@ -3847,7 +3870,7 @@ private final class IslandController {
         let closedW = g.notchWidth + (model.live ? 2 * model.wing : 0)
         let full = model.open ? Island.openSize : CGSize(width: closedW, height: g.height)
         model.panelSize = full
-        panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height), display: true)
+        panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height + Island.overscan), display: true)
     }
 
     func setOpen(_ open: Bool) {
@@ -3858,7 +3881,7 @@ private final class IslandController {
             relayout()
         } else {
             model.open = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in if self?.model.open == false { self?.relayout() } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in if self?.model.open == false { self?.relayout() } }
         }
     }
 
@@ -3875,6 +3898,9 @@ private final class IslandController {
     }
 
     /// The settings panel hangs from the same notch: while it is open the island is out of the way (not opening behind it).
+    /// The island's own volume/brightness bars only run while *Replace system HUD* is on.
+    func syncHUD(_ on: Bool) { if enabled && on { model.hud.start() } else { model.hud.stop() } }
+
     func setSuspended(_ s: Bool) {
         suspended = s
         if s {
@@ -3900,12 +3926,7 @@ private final class IslandController {
 
     private func hover(_ inside: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
-        if inside {
-            guard !model.open else { return }
-            openTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: false) { [weak self] _ in self?.setOpen(true) }
-        } else if model.open {
-            closeTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in self?.setOpen(false) }
-        }
+        setOpen(inside)                                    // no delay either way: as fast out as in
     }
 
     /// Once a second: hide during full-screen video and games, follow the screen, keep the closed width in step.
@@ -3951,10 +3972,13 @@ private struct IslandView: View {
     var body: some View {
         let size = model.open ? Island.openSize : CGSize(width: closedWidth, height: g.height)
         ZStack(alignment: .top) {
-            NotchShape(radius: model.open ? 28 : 11).fill(Color.black)
-            if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.14).delay(0.03))) } else { closedContent }
+            NotchShape(radius: model.open ? 28 : 11).fill(Color.black).frame(height: size.height + Island.overscan)    // reaches above the screen's edge
+            Group {
+                if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.1))) } else { closedContent }
+            }
+            .padding(.top, Island.overscan)
         }
-        .frame(width: size.width, height: size.height, alignment: .top)
+        .frame(width: size.width, height: size.height + Island.overscan, alignment: .top)
         .clipShape(NotchShape(radius: model.open ? 28 : 11))
         .contentShape(Rectangle())
         .onTapGesture { if !model.open { model.toggleOpen() } }
@@ -3966,9 +3990,9 @@ private struct IslandView: View {
             }
             return true
         }
-        .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height), alignment: .top)
-        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: model.open)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: live)
+        .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height) + Island.overscan, alignment: .top)
+        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: model.open)
+        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: live)
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
@@ -4050,10 +4074,13 @@ private struct IslandView: View {
 
     private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
         Button { model.tab = t.id } label: {
-            Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
-                .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
-                .frame(width: 32, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)))
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: 30, height: 26)
+                Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
+            }
+            .frame(width: 34, height: g.height)            // the whole cell, the full height of the strip
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
     }
@@ -4061,16 +4088,17 @@ private struct IslandView: View {
     private var topStrip: some View {
         let tabs = Island.tabs(external: !DDCDisplays.externalNames.isEmpty), half = (tabs.count + 1) / 2
         return HStack(spacing: 0) {
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 ForEach(tabs.prefix(half), id: \.id) { tabButton($0) }
-                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).frame(width: 24, height: 28).help(L("Microphone in use")) }
+                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).frame(width: 24, height: g.height).help(L("Microphone in use")) }
             }
                 .padding(.leading, 16).frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
                 Button { model.showSettings() } label: {
-                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 32, height: 28)
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 34, height: g.height).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
             }
@@ -4101,6 +4129,11 @@ private struct IslandView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L("Stay on for")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                     EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices) { $0 == 0 ? "∞" : ($0 < 60 ? "\($0)m" : "\($0 / 60)h") }
+                        .onScrollSteps(every: 24) { n in
+                            let c = Settings.timerChoices
+                            let i = c.firstIndex(of: m.timerMinutes) ?? c.firstIndex { $0 >= m.timerMinutes } ?? 0
+                            m.timerMinutes = c[min(c.count - 1, max(0, i + n))]
+                        }
                 }
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 12)).foregroundStyle(m.presenceActive ? Island.accent : .white.opacity(0.5))
@@ -4108,7 +4141,7 @@ private struct IslandView: View {
                     Spacer(minLength: 4)
                     CocaineSwitch($m.stayActive)
                 }
-                .help(L("While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen."))
+                .help(L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away."))
             }
             .frame(width: 250)
             VStack(alignment: .leading, spacing: 8) {
@@ -4264,6 +4297,51 @@ private struct IslandView: View {
 
 private final class RulerDrag: ObservableObject { var start: Int? }
 
+/// Two-finger scrolling (or the mouse wheel) over a control: calls `perform` with whole steps, positive = more (swipe left or up).
+private struct ScrollSteps: NSViewRepresentable {
+    let threshold: CGFloat
+    let perform: (Int) -> Void
+    func makeNSView(context: Context) -> NSView { let v = Catcher(); v.threshold = threshold; v.perform = perform; return v }
+    func updateNSView(_ v: NSView, context: Context) { (v as? Catcher)?.threshold = threshold; (v as? Catcher)?.perform = perform }
+
+    final class Catcher: NSView {
+        var threshold: CGFloat = 10
+        var perform: (Int) -> Void = { _ in }
+        private var acc: CGFloat = 0
+        private var monitor: Any?
+
+        /// Looks at every scroll event of the app and takes those that land on this view (SwiftUI's own hit testing would
+        /// never hand them to a background view).
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+                guard let self, let w = self.window, e.window === w else { return e }
+                let p = self.convert(e.locationInWindow, from: nil)
+                guard self.bounds.contains(p) else { return e }
+                self.handle(e)
+                return nil                                       // used here: the panel behind doesn't scroll as well
+            }
+        }
+
+        deinit { if let m = monitor { NSEvent.removeMonitor(m) } }
+
+        private func handle(_ e: NSEvent) {
+            if e.phase == .began || e.phase == .mayBegin { acc = 0 }
+            let k: CGFloat = e.hasPreciseScrollingDeltas ? 1 : 10
+            let dx = e.scrollingDeltaX * k, dy = e.scrollingDeltaY * k
+            acc += abs(dx) > abs(dy) ? -dx : -dy
+            let n = Int(acc / threshold)
+            if n != 0 { acc -= CGFloat(n) * threshold; perform(n) }
+        }
+    }
+}
+
+private extension View {
+    func onScrollSteps(every points: CGFloat = 12, _ perform: @escaping (Int) -> Void) -> some View { background(ScrollSteps(threshold: points, perform: perform)) }
+}
+
 /// A horizontal ruler of minutes: drag it to set a length from 5 to 120 minutes.
 private struct MinuteRuler: View {
     @Binding var minutes: Int
@@ -4292,6 +4370,7 @@ private struct MinuteRuler: View {
             if drag.start == nil { drag.start = minutes }
             minutes = min(120, max(5, (drag.start ?? minutes) - Int((v.translation.width / step).rounded())))
         }.onEnded { _ in drag.start = nil })
+        .onScrollSteps(every: 5) { minutes = min(120, max(5, minutes + $0)) }
         .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
     }
 }
@@ -4380,6 +4459,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self.presenceTick()
         }
         model.requestPresence = { Presence.requestAccess() }
+        model.requestHUDAccess = {
+            if !AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        }
         model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
         mediaKeys.onStep = { [weak self] key, fine in self?.handleMediaKey(key, fine: fine) ?? false }
         applyHUDReplacement()
@@ -4662,6 +4746,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
+        mediaKeys.stop()                         // the volume and brightness keys go back to macOS
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
@@ -4730,9 +4815,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let test = UserDefaults.standard.double(forKey: "testMaxHeight")        // tests: pretend the screen is small
         if test > 0 { limit = test }
         let size = NSSize(width: Layout.width, height: min(natural.height, limit))
-        var frame = NSRect(x: panel.frame.minX, y: panelTop - size.height, width: size.width, height: size.height)
+        let top = panelTop + (settings.island ? Layout.overscan : 0)        // hanging from the notch: starts above the screen's top edge
+        var frame = NSRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height)
         if let midX {
-            frame = Self.panelFrame(size: size, anchorX: midX, top: panelTop,
+            frame = Self.panelFrame(size: size, anchorX: midX, top: top,
                                     visible: (screen ?? NSScreen.main)?.visibleFrame ?? .zero)
         }
         guard frame != panel.frame else { return }
@@ -4834,6 +4920,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func presenceTick() {
         let access = Presence.hasAccess
         if model.presenceAccess != access { model.presenceAccess = access }
+        let ax = AXIsProcessTrusted()
+        if model.hudAccess != ax { model.hudAccess = ax }
         if settings.replaceHUD && !mediaKeys.running { mediaKeys.start() }
         let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
         if want != model.presenceActive { model.presenceActive = want }
@@ -4858,6 +4946,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyHUDReplacement() {
+        island.syncHUD(settings.replaceHUD)
         if settings.replaceHUD {
             if !AXIsProcessTrusted() && !settings.hudAsked {
                 settings.hudAsked = true

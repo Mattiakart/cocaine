@@ -224,7 +224,8 @@
 "on/off" = "on/off";
 "panel" = "panel";
 "pause alerts" = "pausar avisos";
-"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "Mientras estás inactivo envía un evento de ratón invisible, para que Teams, Slack y apps similares no te marquen como ausente. Nada se mueve en pantalla.";
 "Drag files onto the notch, then drop them here" = "Arrastra los archivos al notch y suéltalos aquí";
-"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "Muestra las barras de volumen y brillo en la isla, en lugar de las que macOS dibuja en pantalla. Requiere el permiso de Accesibilidad.";
 "Microphone in use" = "Micrófono en uso";
+"Volume and brightness bars appear in the island, not on screen." = "Las barras de volumen y brillo aparecen en la isla, no en pantalla.";
+"While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "Mientras estás inactivo envía un evento de ratón invisible para que Teams y similares no te marquen como ausente.";
+"Needs the Accessibility permission" = "Necesita el permiso de Accesibilidad";

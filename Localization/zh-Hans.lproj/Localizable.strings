@@ -224,7 +224,8 @@
 "on/off" = "开/关";
 "panel" = "面板";
 "pause alerts" = "暂停提醒";
-"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "空闲时发送一个不可见的鼠标事件，让 Teams、Slack 等应用不会把你显示为离开。屏幕上不会有任何移动。";
 "Drag files onto the notch, then drop them here" = "把文件拖到刘海上，再放到这里";
-"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "在灵动岛中显示音量和亮度条，取代 macOS 在屏幕上绘制的那种。需要辅助功能权限。";
 "Microphone in use" = "麦克风使用中";
+"Volume and brightness bars appear in the island, not on screen." = "音量和亮度条显示在灵动岛中，而不是屏幕上。";
+"While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "空闲时发送不可见的鼠标事件，让 Teams 等不会把你显示为离开。";
+"Needs the Accessibility permission" = "需要辅助功能权限";
