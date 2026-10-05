@@ -212,12 +212,10 @@
 "Apps" = "Apps";
 "Charging" = "Charging";
 "On battery" = "On battery";
-"Drop files here" = "Drop files here";
 "Needs permission to send input" = "Needs permission to send input";
 "Only while one of the chosen apps is open, or all the time" = "Only while one of the chosen apps is open, or all the time";
 "Remove" = "Remove";
 "Replace system HUD" = "Replace system HUD";
-"Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission." = "Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission.";
 "Shelf" = "Shelf";
 "Stay active" = "Stay active";
 "Stay available in chat apps" = "Stay available in chat apps";
@@ -227,3 +225,6 @@
 "panel" = "panel";
 "pause alerts" = "pause alerts";
 "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen.";
+"Drag files onto the notch, then drop them here" = "Drag files onto the notch, then drop them here";
+"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission.";
+"Microphone in use" = "Microphone in use";

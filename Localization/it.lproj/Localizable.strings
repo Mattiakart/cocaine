@@ -212,12 +212,10 @@
 "Apps" = "App";
 "Charging" = "In carica";
 "On battery" = "A batteria";
-"Drop files here" = "Rilascia qui i file";
 "Needs permission to send input" = "Serve il permesso di inviare input";
 "Only while one of the chosen apps is open, or all the time" = "Solo mentre una delle app scelte è aperta, oppure sempre";
 "Remove" = "Rimuovi";
 "Replace system HUD" = "Sostituisci l'HUD di sistema";
-"Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission." = "Mostra le barre di volume e luminosità nell'isola al posto di quelle di macOS. Serve il permesso Accessibilità.";
 "Shelf" = "Scaffale";
 "Stay active" = "Resta attivo";
 "Stay available in chat apps" = "Resta disponibile nelle app di chat";
@@ -227,3 +225,6 @@
 "panel" = "pannello";
 "pause alerts" = "pausa avvisi";
 "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "Mentre sei inattivo invia un evento di mouse invisibile, così Teams, Slack e app simili non ti segnano assente. Sullo schermo non si muove nulla.";
+"Drag files onto the notch, then drop them here" = "Trascina i file sul notch, poi rilasciali qui";
+"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "Mostra le barre di volume e luminosità nell'isola, al posto di quelle che macOS disegna sullo schermo. Serve il permesso Accessibilità.";
+"Microphone in use" = "Microfono in uso";

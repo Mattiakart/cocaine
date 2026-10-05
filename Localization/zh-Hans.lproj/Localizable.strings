@@ -212,12 +212,10 @@
 "Apps" = "App";
 "Charging" = "正在充电";
 "On battery" = "使用电池";
-"Drop files here" = "将文件拖到这里";
 "Needs permission to send input" = "需要发送输入的权限";
 "Only while one of the chosen apps is open, or all the time" = "仅在所选 App 之一打开时，或始终";
 "Remove" = "移除";
 "Replace system HUD" = "替换系统 HUD";
-"Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission." = "在灵动岛中显示音量和亮度条，取代 macOS 自带的。需要辅助功能权限。";
 "Shelf" = "暂存架";
 "Stay active" = "保持在线";
 "Stay available in chat apps" = "在聊天 App 中保持在线";
@@ -227,3 +225,6 @@
 "panel" = "面板";
 "pause alerts" = "暂停提醒";
 "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "空闲时发送一个不可见的鼠标事件，让 Teams、Slack 等应用不会把你显示为离开。屏幕上不会有任何移动。";
+"Drag files onto the notch, then drop them here" = "把文件拖到刘海上，再放到这里";
+"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "在灵动岛中显示音量和亮度条，取代 macOS 在屏幕上绘制的那种。需要辅助功能权限。";
+"Microphone in use" = "麦克风使用中";

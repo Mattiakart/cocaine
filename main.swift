@@ -1632,7 +1632,7 @@ private struct PanelView: View {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
             row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
-            row(L("Replace system HUD"), tip: L("Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission.")) {
+            row(L("Replace system HUD"), detail: L("Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission.")) {
                 toggle(L("Replace system HUD"), $m.replaceHUD)
             }
             row(L("Language")) {
@@ -1862,7 +1862,7 @@ private struct PanelView: View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 13, weight: .medium))
                 .foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
-                .frame(width: 28, height: 24)
+                .frame(width: 32, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)))
                 .contentShape(Rectangle())
         }
@@ -2634,7 +2634,7 @@ private final class ClosureItem: NSMenuItem {
 
 private enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
-    static let openSize = CGSize(width: 620, height: 214)
+    static let openSize = CGSize(width: 640, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
     static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
@@ -3043,7 +3043,7 @@ extension IslandView {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L("Downloads")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                 if files.downloads.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-                ForEach(files.downloads.prefix(4)) { it in
+                ScrollView(.vertical, showsIndicators: false) { VStack(alignment: .leading, spacing: 8) { ForEach(files.downloads) { it in
                     Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
                         HStack(spacing: 8) {
                             Image(nsImage: NSWorkspace.shared.icon(forFile: it.url.path)).resizable().frame(width: 20, height: 20)
@@ -3055,21 +3055,22 @@ extension IslandView {
                     }
                     .buttonStyle(.plain)
                     .onDrag { NSItemProvider(object: it.url as NSURL) }
-                }
+                } } }.frame(maxHeight: 112)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .leading, spacing: 8) {
                 Text(L("Screenshots")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                 if files.shots.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-                HStack(spacing: 8) {
-                    ForEach(files.shots.prefix(3)) { it in
+                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+                    ForEach(files.shots) { it in
                         FileThumb(url: it.url, side: 62)
                             .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([it.url]) }
                             .onDrag { NSItemProvider(object: it.url as NSURL) }
                             .help(it.name)
                     }
-                }
+                } }
+                .mask(HStack(spacing: 0) { Rectangle(); LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 22) })
                 Text(L("Drag a file out to drop it anywhere")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
                 Spacer(minLength: 0)
             }
@@ -3082,8 +3083,8 @@ extension IslandView {
     fileprivate var clipboardTab: some View {
         VStack(alignment: .leading, spacing: 8) {
             if clipboard.items.isEmpty { Text(L("What you copy will show up here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
-                ForEach(clipboard.items.prefix(8)) { c in
+            ScrollView(.vertical, showsIndicators: false) { LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
+                ForEach(clipboard.items) { c in
                     Button { clipboard.copy(c); model.flashNotice("doc.on.clipboard.fill", L("Copied")) } label: {
                         HStack(spacing: 8) {
                             Text(c.text.replacingOccurrences(of: "\n", with: " ")).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
@@ -3095,7 +3096,7 @@ extension IslandView {
                     }
                     .buttonStyle(.plain)
                 }
-            }
+            } }
             Spacer(minLength: 0)
             Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
         }
@@ -3125,7 +3126,7 @@ extension IslandView {
                 } else if calendar.events.isEmpty {
                     Text(L("No events in the next two weeks")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
                 } else {
-                    ForEach(calendar.events.prefix(4)) { e in
+                    ScrollView(.vertical, showsIndicators: false) { VStack(alignment: .leading, spacing: 8) { ForEach(calendar.events) { e in
                         HStack(spacing: 9) {
                             Capsule().fill(e.color).frame(width: 3, height: 28)
                             VStack(alignment: .leading, spacing: 1) {
@@ -3136,7 +3137,7 @@ extension IslandView {
                             }
                             Spacer(minLength: 0)
                         }
-                    }
+                    } } }.frame(maxHeight: 124)
                 }
                 Spacer(minLength: 0)
             }
@@ -3690,11 +3691,11 @@ extension IslandView {
                 Text(L("Shelf")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                 if model.shelf.urls.isEmpty {
                     RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])).foregroundStyle(.white.opacity(0.25))
-                        .overlay(Text(L("Drop files here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)))
+                        .overlay(Text(L("Drag files onto the notch, then drop them here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center).padding(.horizontal, 12))
                         .frame(height: 96)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 10), count: 5), alignment: .leading, spacing: 8) {
-                        ForEach(model.shelf.urls.prefix(10), id: \.self) { u in
+                    ScrollView(.vertical, showsIndicators: false) { LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 10), count: 5), alignment: .leading, spacing: 8) {
+                        ForEach(model.shelf.urls, id: \.self) { u in
                             VStack(spacing: 3) {
                                 Image(nsImage: NSWorkspace.shared.icon(forFile: u.path)).resizable().frame(width: 40, height: 40)
                                 Text(u.lastPathComponent).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundStyle(.white.opacity(0.75))
@@ -3707,7 +3708,7 @@ extension IslandView {
                             .onDrag { NSItemProvider(object: u as NSURL) }
                             .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([u]) }
                         }
-                    }
+                    } }.frame(maxHeight: 118)
                 }
                 Spacer(minLength: 0)
             }
@@ -3862,22 +3863,39 @@ private final class IslandController {
     }
 
     private var hovering = false
+    private var suspended = false
     private var pointerMonitors: [Any] = []
 
     /// Watches the pointer itself (in every app, and over the island), so it opens as soon as you touch the notch.
     private func startPointerMonitors() {
         guard pointerMonitors.isEmpty else { return }
-        let handler: (NSEvent) -> Void = { [weak self] _ in self?.pointerMoved() }
+        let handler: (NSEvent) -> Void = { [weak self] e in self?.pointerMoved(e) }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: handler) { pointerMonitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { e in handler(e); return e }) { pointerMonitors.append(l) }
     }
 
-    private func pointerMoved() {
-        guard enabled, let panel, panel.isVisible else { return }
+    /// The settings panel hangs from the same notch: while it is open the island is out of the way (not opening behind it).
+    func setSuspended(_ s: Bool) {
+        suspended = s
+        if s {
+            setOpen(false); hovering = false
+            panel?.orderOut(nil)
+        } else if enabled {
+            panel?.orderFrontRegardless()
+        }
+    }
+
+    private func pointerMoved(_ e: NSEvent) {
+        guard enabled, !suspended, let panel, panel.isVisible else { return }
         let p = NSEvent.mouseLocation, f = panel.frame
         let margin: CGFloat = model.open ? 8 : 4                      // a little slack around it, and the very top edge of the screen
         let inside = p.x >= f.minX - margin && p.x <= f.maxX + margin && p.y >= f.minY - (model.open ? margin : 0) && p.y <= f.maxY + 2
-        if inside != hovering { hovering = inside; hover(inside) }
+        if inside != hovering {
+            hovering = inside
+            // Dragging files over the notch: open straight on the shelf.
+            if inside, e.type == .leftMouseDragged, NSPasteboard(name: .drag).types?.contains(.fileURL) == true { model.tab = "shelf" }
+            hover(inside)
+        }
     }
 
     private func hover(_ inside: Bool) {
@@ -3896,7 +3914,7 @@ private final class IslandController {
         ticks += 1
         if ticks % 4 == 0 {
             let covered = NotchGeometry.current().map { Self.fullScreenCovers($0.frame) } ?? false
-            if covered && panel.isVisible { panel.orderOut(nil) } else if !covered && !panel.isVisible { panel.orderFrontRegardless() }
+            if covered && panel.isVisible { panel.orderOut(nil) } else if !covered && !panel.isVisible && !suspended { panel.orderFrontRegardless() }
         }
         if !model.open { relayout() }
     }
@@ -4034,7 +4052,7 @@ private struct IslandView: View {
         Button { model.tab = t.id } label: {
             Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
                 .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
-                .frame(width: 28, height: 24)
+                .frame(width: 32, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)))
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
@@ -4043,14 +4061,16 @@ private struct IslandView: View {
     private var topStrip: some View {
         let tabs = Island.tabs(external: !DDCDisplays.externalNames.isEmpty), half = (tabs.count + 1) / 2
         return HStack(spacing: 0) {
-            HStack(spacing: 2) { ForEach(tabs.prefix(half), id: \.id) { tabButton($0) } }
+            HStack(spacing: 2) {
+                ForEach(tabs.prefix(half), id: \.id) { tabButton($0) }
+                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).frame(width: 24, height: 28).help(L("Microphone in use")) }
+            }
                 .padding(.leading, 16).frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
             HStack(spacing: 2) {
                 ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
-                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 4) }
                 Button { model.showSettings() } label: {
-                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 28, height: 24)
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 32, height: 28)
                 }
                 .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
             }
@@ -4682,6 +4702,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.page = ""                                              // always opens on the home
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.makeKeyAndOrderFront(nil)
+        if settings.island { island.setSuspended(true) }
         statusItem.button?.highlight(true)
         // Clicks elsewhere close it; a click on the icon itself (which also arrives here on macOS 27) toggles instead.
         let iconZone = NSRect(x: anchorX - 18, y: screen.frame.maxY - 44, width: 36, height: 44)
@@ -4732,6 +4753,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hidePanel() {
+        island.setSuspended(false)
         panelMonitors.forEach(NSEvent.removeMonitor)
         panelMonitors.removeAll()
         panel.orderOut(nil)
@@ -5470,7 +5492,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     im.usage.codex = [UsageWatch.Limit(id: "w", name: L("Week"), percent: 5, resets: Date().addingTimeInterval(86400 * 5))]
     im.files.downloads = [FileShelf.Item(url: URL(fileURLWithPath: "/Applications/Cocaine.app"), date: Date(), size: 5_200_000),
                           FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), date: Date(), size: 120_000_000)]
-    im.files.shots = []
+    im.files.shots = (0..<5).map { FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/Desktop Pictures/Sonoma.heic").deletingLastPathComponent().appendingPathComponent("shot\($0).png"), date: Date(), size: 1) }
     im.clipboard.items = [ClipboardWatch.Clip(text: "brew upgrade --cask cocaine", date: Date()), ClipboardWatch.Clip(text: "https://github.com/Mattiakart/cocaine", date: Date()),
                           ClipboardWatch.Clip(text: "Ciao Mario, ti mando il file domani mattina", date: Date())]
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")

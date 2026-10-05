@@ -212,12 +212,10 @@
 "Apps" = "アプリ";
 "Charging" = "充電中";
 "On battery" = "バッテリー駆動";
-"Drop files here" = "ここにファイルをドロップ";
 "Needs permission to send input" = "入力を送信する許可が必要です";
 "Only while one of the chosen apps is open, or all the time" = "選んだアプリのどれかが開いている間のみ、または常時";
 "Remove" = "削除";
 "Replace system HUD" = "システムHUDを置き換える";
-"Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission." = "macOS 標準の代わりに、音量と輝度のバーをアイランドに表示します。アクセシビリティの許可が必要です。";
 "Shelf" = "シェルフ";
 "Stay active" = "アクティブを維持";
 "Stay available in chat apps" = "チャットアプリで在席を維持";
@@ -227,3 +225,6 @@
 "panel" = "パネル";
 "pause alerts" = "通知を停止";
 "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "操作がない間、見えないマウスイベントを送り、Teams や Slack などで「退席中」にならないようにします。画面上は何も動きません。";
+"Drag files onto the notch, then drop them here" = "ファイルをノッチにドラッグし、ここにドロップ";
+"Shows the volume and brightness bars in the island, in place of the ones macOS draws on screen. Needs the Accessibility permission." = "macOS が画面に表示する代わりに、音量と輝度のバーをアイランドに表示します。アクセシビリティの許可が必要です。";
+"Microphone in use" = "マイク使用中";
