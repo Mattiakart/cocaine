@@ -34,6 +34,16 @@ final class FakePasteboard: ClipPasteboard {
     }
 }
 
+/// UserDefaults that live in memory only: tests never write a preferences file.
+final class MemoryDefaults: UserDefaults {
+    private var values: [String: Any] = [:]
+    init() { super.init(suiteName: nil)! }
+    override func object(forKey k: String) -> Any? { values[k] }
+    override func data(forKey k: String) -> Data? { values[k] as? Data }
+    override func set(_ v: Any?, forKey k: String) { values[k] = v }
+    override func removeObject(forKey k: String) { values[k] = nil }
+}
+
 enum ClipboardTests {
     /// Runs every clipboard check (temporary folders, a fake Keychain, a fake or uniquely named pasteboard: never the user's
     /// clipboard, files or Keychain). Prints PASS/FAIL lines; returns the number of failures.
@@ -44,15 +54,7 @@ enum ClipboardTests {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cocaine-clip-\(getpid())-\(UUID().uuidString.prefix(6))")
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
-        var suites: [String] = []
-        defer { suites.forEach { UserDefaults.standard.removePersistentDomain(forName: $0) } }
-        func defaults() -> UserDefaults {
-            let name = "local.cocaine.cliptest.\(getpid()).\(suites.count)"
-            suites.append(name)
-            let d = UserDefaults(suiteName: name)!
-            d.removePersistentDomain(forName: name)
-            return d
-        }
+        func defaults() -> UserDefaults { MemoryDefaults() }
         func text(_ t: String, types: [String] = ["public.utf8-plain-text"], source: String? = nil) -> ClipSnapshot {
             ClipSnapshot(types: types, source: source, text: t)
         }
