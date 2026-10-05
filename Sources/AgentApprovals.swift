@@ -172,13 +172,19 @@ struct ApprovalRequest: Equatable, Identifiable {
             let name = clean(input["tool_name"] as? String ?? "", 60)
             let args = input["tool_input"] as? [String: Any] ?? [:]
             r.title = name.isEmpty ? "?" : name
-            let main = ["command", "file_path", "notebook_path", "url", "path", "pattern", "query", "description", "prompt"].lazy
-                .compactMap { args[$0] as? String }.first
+            let key = ["command", "file_path", "notebook_path", "url", "path", "pattern", "query", "description", "prompt"].first { args[$0] is String }
+            let main = key.flatMap { args[$0] as? String }
             let fallback = (try? JSONSerialization.data(withJSONObject: args, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? ""
-            r.summary = clean(main ?? fallback, 300)
+            // Line breaks stay visible (in a command they start another command); the other control characters go.
+            let shown = (main ?? fallback).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+                .replacingOccurrences(of: "\n", with: " ⏎ ")
+            r.summary = clean(shown, 300)
             r.choices = [ApprovalChoice(label: "allow", decision: "allow"), ApprovalChoice(label: "deny", decision: "deny")]
             // A question to the user (AskUserQuestion) has no documented hook answer: show it, leave it to the terminal.
             if name == "AskUserQuestion" { r.answerable = false; r.choices = [] }
+            // Allowed from the notch only what the notch shows in full: one field, not cut, and nothing else that matters
+            // (a Write's content, an Edit's new text, an MCP call's arguments next to a harmless description).
+            if !fullyShown(key: key, text: shown, args: args) { r.answerable = false; r.choices = [] }
         case "Elicitation" where tool == "claude":
             r.title = clean(input["mcp_server_name"] as? String ?? input["server"] as? String ?? "MCP", 60)
             r.summary = clean(input["message"] as? String ?? "", 300)
@@ -187,6 +193,18 @@ struct ApprovalRequest: Equatable, Identifiable {
             return nil
         }
         return r
+    }
+
+    /// The longest text the notch shows whole (it wraps over a few lines, never cut).
+    static let shownLimit = 180
+    /// Fields that only describe or tune a call (a Bash command's label and timeout, a Read's range).
+    static let incidental: Set<String> = ["description", "timeout", "run_in_background", "offset", "limit"]
+
+    /// Everything the request would allow is in the one field shown, and that field fits whole.
+    static func fullyShown(key: String?, text: String, args: [String: Any]) -> Bool {
+        guard let key, !incidental.contains(key) || args.count == 1 else { return false }
+        guard clean(text, shownLimit + 1).count <= shownLimit else { return false }
+        return args.keys.allSatisfy { $0 == key || incidental.contains($0) }
     }
 
     /// An MCP question that one click can answer: a form with a single choice (enum) or yes/no (boolean) field. Anything

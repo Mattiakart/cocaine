@@ -88,7 +88,7 @@ struct AgentListView: View {
                             .font(detailFont).foregroundStyle(secondary).lineLimit(1)
                         if !r.summary.isEmpty {
                             Text(r.summary).font(.system(size: 11, design: r.event == "Elicitation" ? .default : .monospaced))
-                                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(r.answerable ? nil : 3).fixedSize(horizontal: false, vertical: true)   // answerable: shown whole
                         }
                     }
                     Spacer(minLength: 0)

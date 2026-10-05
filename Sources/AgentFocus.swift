@@ -128,6 +128,17 @@ enum AgentFocus {
         return (r?.stringValue == "ok", false)
     }
 
+    /// A plain folder, safe to open: not an app, bundle or package (anything can send a `cwd`: opening
+    /// /Applications/X.app or a downloaded .prefPane "as a folder" would launch or install it).
+    static func isPlainFolder(_ path: String) -> Bool {
+        let real = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: real, isDirectory: &isDir), isDir.boolValue else { return false }
+        if NSWorkspace.shared.isFilePackage(atPath: real) { return false }
+        let ext = (real as NSString).pathExtension.lowercased()
+        return !["app", "bundle", "prefpane", "saver", "plugin", "kext", "pkg", "mpkg", "framework", "appex", "qlgenerator", "mdimporter", "workflow", "action"].contains(ext)
+    }
+
     private static func onMain<T>(_ f: () -> T) -> T { Thread.isMainThread ? f() : DispatchQueue.main.sync(execute: f) }
 
     private static func activate(_ id: String) -> Bool {
@@ -220,9 +231,7 @@ enum AgentFocus {
                 }
                 note = .tabNotFound
             case .openFolder(let app, let path):
-                var isDir: ObjCBool = false
-                guard let a = running(app), let appURL = a.bundleURL,
-                      FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { if running(app) == nil { note = .appNotRunning }; continue }
+                guard let a = running(app), let appURL = a.bundleURL, isPlainFolder(path) else { if running(app) == nil { note = .appNotRunning }; continue }
                 let sem = DispatchSemaphore(value: 0)
                 var ok = false
                 let cfg = NSWorkspace.OpenConfiguration()
@@ -236,8 +245,7 @@ enum AgentFocus {
                 if activate(app) { return Result(level: tmuxDone ? .exact : .app, appName: name, note: tmuxDone ? .none : (note == .none ? .tabNotFound : note)) }
                 note = .appNotRunning
             case .revealFolder(let path):
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { continue }
+                guard isPlainFolder(path) else { continue }
                 if onMain({ NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true)) }) {
                     return Result(level: .folder, appName: name, note: note == .none ? .appNotRunning : note)
                 }
