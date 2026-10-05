@@ -101,6 +101,15 @@ enum DistCLI {
 /// Every key of every string table exists in all languages, every table parses, and every literal key used in the code
 /// (string literals passed to L or updatesText) is in some table of every language.
 enum L10nCheck {
+    /// A Swift string literal's escapes (\\ \" \n \t), read left to right so `\\n` stays a backslash and an n.
+    static func unescape(_ raw: String) -> String {
+        var out = "", it = raw.makeIterator()
+        while let c = it.next() {
+            guard c == "\\", let n = it.next() else { out.append(c); continue }
+            switch n { case "n": out.append("\n"); case "t": out.append("\t"); default: out.append(n) }
+        }
+        return out
+    }
     static func run(dir: String, sources: [String]) -> Int32 {
         let fm = FileManager.default
         let base = URL(fileURLWithPath: dir)
@@ -136,7 +145,7 @@ enum L10nCheck {
                 guard let r = Range(m.range(at: 1), in: text) else { continue }
                 let raw = String(text[r])
                 if raw.contains("\\(") { continue }                  // interpolated: not a fixed key
-                used.insert(raw.replacingOccurrences(of: "\\\"", with: "\"").replacingOccurrences(of: "\\n", with: "\n"))
+                used.insert(unescape(raw))
             }
         }
         for k in used.sorted() {
