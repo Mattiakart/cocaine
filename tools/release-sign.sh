@@ -43,8 +43,12 @@ BUILDNO=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Inf
 [ "${DMG:t}" = "Cocaine-$VERSION.dmg" ] || die "the DMG must be named Cocaine-$VERSION.dmg"
 
 OUT="$DMG.manifest.json"
-# The app in the DMG signs with its own embedded public key check: a key that doesn't match it is refused.
-"$BIN" --update-sign "$KEY" "$DMG" "$VERSION" "$BUILDNO" "$TIER" "$OUT" || die "signing the manifest failed"
-"$BIN" --update-verify "$OUT" "$DMG" >/dev/null || die "the manifest doesn't verify"
+# The private key only ever goes to this tree's own build, never to a binary taken from the DMG being signed (a swapped
+# DMG would get the key). That build refuses a key that doesn't match its embedded public key; then the app in the DMG
+# must accept the manifest with ITS embedded key (verifying needs no secret).
+SIGNER="$ROOT/build/Cocaine.app/Contents/MacOS/Cocaine"
+[ -x "$SIGNER" ] || die "build the app first (./build.sh): the manifest is signed by this tree's build, not by the DMG's app"
+"$SIGNER" --update-sign "$KEY" "$DMG" "$VERSION" "$BUILDNO" "$TIER" "$OUT" || die "signing the manifest failed"
+"$BIN" --update-verify "$OUT" "$DMG" >/dev/null || { rm -f "$OUT"; die "the manifest doesn't verify with the key embedded in the DMG's app"; }
 print -- "made $OUT (tier $TIER, version $VERSION, build $BUILDNO)."
 print -- "Upload BOTH $DMG:t and $OUT:t to the GitHub release v$VERSION. Nothing was published."
