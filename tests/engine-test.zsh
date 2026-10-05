@@ -83,4 +83,21 @@ check "the caffeinate stand-in is gone too" 'waitfor "! /usr/bin/pgrep -qf $T/bi
 check "OFF from elsewhere ends the helper by itself" '$E on && print 0 > $T/state && waitfor "! /usr/bin/pgrep -qf \"/bin/zsh $T/cocaine hold\"" 2>/dev/null || { /bin/sleep 11; ! /usr/bin/pgrep -qf "/bin/zsh $T/cocaine hold"; }'
 check "not authorized: exit 2, nothing changed" 'COCAINE_SUDO=/usr/bin/false $E on 2>/dev/null; [[ $? == 2 && $(<$T/state) == 0 ]]'
 check "bad status option refused" '$E status --xml 2>/dev/null; [[ $? == 64 ]]'
+
+# remote.zsh on top of this engine (stubbed system, temporary HOME, support folder and settings plist)
+cp "${ENGINE_SRC:h}/remote.zsh" $T/remote.zsh
+chmod +x $T/cocaine
+mkdir -p $T/home
+R=(env HOME=$T/home COCAINE_ENGINE=$T/cocaine COCAINE_SCREENDIR=$T/home/s /bin/zsh $T/remote.zsh)
+$E off >/dev/null 2>&1
+check "remote: status reads OFF from the engine" '[[ "$($R status)" == "Cocaine: OFF"* ]]'
+check "remote: on --for 90m turns it on" '$R on --for 90m >/dev/null && [[ $(<$T/state) == 1 && "$($E status | /usr/bin/head -1)" == ON ]]'
+check "remote: the deadline is written as an integer (exact)" '[[ "$(/usr/bin/defaults read-type $T/prefs onUntil)" == *integer* ]]'
+check "remote: …90 minutes from now" 'u=$(/usr/bin/defaults read $T/prefs onUntil) && [[ $u == <-> ]] && (( u - EPOCHSECONDS >= 5395 && u - EPOCHSECONDS <= 5400 ))'
+check "remote: status --json shows it" '[[ "$($R status --json)" == *"\"cocaine\":\"ON\",\"until\":$(/usr/bin/defaults read $T/prefs onUntil),"* ]]'
+check "remote: the engine reads the same deadline" '[[ "$($E status --json)" == *"\"until\":$(/usr/bin/defaults read $T/prefs onUntil),"* ]]'
+check "remote: an old float deadline is still read" '/usr/bin/defaults write $T/prefs onUntil -float $(( EPOCHSECONDS + 600 )) && [[ "$($R status --json)" == *"\"until\":1"[0-9]*","* ]]'
+check "remote: on without --for drops the deadline" '$R on >/dev/null && ! /usr/bin/defaults read $T/prefs onUntil >/dev/null 2>&1'
+check "remote: off turns it off" '$R off >/dev/null && [[ $(<$T/state) == 0 && "$($R status)" == "Cocaine: OFF"* ]]'
+check "remote: a bad duration changes nothing" '$R on --for 3d 2>/dev/null; [[ $? != 0 && $(<$T/state) == 0 ]]'
 exit $(( failed > 0 ))

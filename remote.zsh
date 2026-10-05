@@ -168,7 +168,8 @@ cmd_on() {
     esac
   done
   "$ENGINE" on || die "could not turn Cocaine on (is it set up? open Cocaine.app once)"
-  if [[ -n $mins ]]; then /usr/bin/defaults write "$DOMAIN" onUntil -float $(( $(date +%s) + mins * 60 ))
+  # -int, like the engine: a -float is 32-bit (off by up to a minute at today's epoch); the app reads either as a number
+  if [[ -n $mins ]]; then /usr/bin/defaults write "$DOMAIN" onUntil -int $(( $(date +%s) + mins * 60 ))
   else /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null; fi
   print "Cocaine ON${mins:+ for $mins min}"
 }
