@@ -1039,6 +1039,14 @@ private enum Baggie {
                       powder: .white, powderEdge: NSColor.black.withAlphaComponent(0.38))
     }
 
+    /// The same bag in its light-on-dark colors, for the black island and panel.
+    static func imageOnDark(level: CGFloat, pouring: Bool = false, size: CGFloat = 18) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            draw(in: rect, level: level, pouring: pouring, palette: palette(dark: true))
+            return true
+        }
+    }
+
     /// Menu-bar glyph; it redraws for the bar's current (light/dark) appearance.
     static func image(level: CGFloat, pouring: Bool = false, size: CGFloat = 18) -> NSImage {
         NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
@@ -1304,7 +1312,7 @@ private struct CocaineSwitch: View {
         let w = UI.switchSize.width, h = UI.switchSize.height
         Button(action: action) {
             ZStack {
-                Capsule().fill(on ? Color.accentColor : Color.primary.opacity(0.16))
+                Capsule().fill(on ? Island.accent : Color.white.opacity(0.18))
                 if let powder { Canvas { g, size in PowderLine.draw(g, size, level: powder) } }
                 Circle().fill(.white)
                     .shadow(color: .black.opacity(0.28), radius: 1.1, y: 0.6)
@@ -1364,8 +1372,8 @@ private enum Layout {
 private extension View {
     /// The soft rounded card that holds a group of settings.
     func panelCard() -> some View {
-        self.background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+        self.background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5))
     }
 }
 
@@ -1380,6 +1388,7 @@ private struct EqualSegments<T: Hashable>: NSViewRepresentable {
         let c = NSSegmentedControl(labels: values.map(label), trackingMode: .selectOne,
                                    target: context.coordinator, action: #selector(Coordinator.changed(_:)))
         c.segmentDistribution = .fillEqually
+        c.selectedSegmentBezelColor = NSColor(red: 0.40, green: 0.64, blue: 1.0, alpha: 1)      // the island's accent
         c.controlSize = .small
         c.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         c.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -1425,7 +1434,7 @@ private struct PanelView: View {
                                                      @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: icon).font(UI.icon).foregroundStyle(Color.accentColor).frame(width: 16)
+                Image(systemName: icon).font(UI.icon).foregroundStyle(Island.accent).frame(width: 16)
                 Text(title).font(UI.groupTitle).lineLimit(1)
                 if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
                 Spacer(minLength: 8)
@@ -1436,7 +1445,7 @@ private struct PanelView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 9))      // whatever it holds is cut at the card's edge, never drawn outside
+        .clipShape(RoundedRectangle(cornerRadius: 12))     // whatever it holds is cut at the card's edge, never drawn outside
         .panelCard()
     }
 
@@ -1833,7 +1842,7 @@ private struct PanelView: View {
         ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
     }
     private static func stateColor(_ s: String) -> Color {
-        s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Color.accentColor
+        s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Island.accent
     }
     private static func stateName(_ s: String) -> String {
         ["working": L("Working"), "waiting": L("Needs you"), "done": L("Done"), "error": L("Error")][s] ?? s
@@ -1849,27 +1858,63 @@ private struct PanelView: View {
 
     private var tabs: [String] { m.ai.available ? ["", "ai", "auto"] : ["", "auto"] }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {                                // header and footer sit on the content edge
-                Image(nsImage: Baggie.image(level: m.fillLevel, pouring: m.pouring, size: 28))
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text("Cocaine").font(.headline)
-                        Text(appVersion).font(UI.detail).foregroundStyle(.tertiary)   // e.g. "1.7"
-                    }
-                    Text(status).font(UI.detail).lineLimit(1)
-                        .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
-                }
-                Spacer(minLength: 8)
-                CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
-                    .help(m.on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
-                    .accessibilityLabel("Cocaine")
-            }
-            .padding(.horizontal, 10)
+    private func stripButton(_ icon: String, _ title: String, selected: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 13, weight: .medium))
+                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
+                .frame(width: 28, height: 24)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+    }
 
-            EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
-                .frame(maxWidth: .infinity)
+    private func tabIcon(_ id: String) -> String { id == "ai" ? "sparkles" : id == "auto" ? "bolt.badge.automatic" : "house.fill" }
+
+    /// The panel's top strip, like the island's: the tabs left of the notch, Feedback and Quit right of it.
+    private func strip(_ g: NotchGeometry) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 2) { ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } } }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: g.notchWidth)
+            HStack(spacing: 2) {
+                stripButton("envelope", L("Feedback or help") + " — " + Feedback.address) { Feedback.compose() }
+                stripButton("power", L("Turns Cocaine off and quits")) { m.quit() }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, 4)
+        .frame(height: g.height)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {                                // header and footer sit on the content edge
+            Image(nsImage: Baggie.imageOnDark(level: m.fillLevel, pouring: m.pouring, size: 28))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text("Cocaine").font(.headline)
+                    Text(appVersion).font(UI.detail).foregroundStyle(.tertiary)   // e.g. "1.7"
+                }
+                Text(status).font(UI.detail).lineLimit(1)
+                    .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+            }
+            Spacer(minLength: 8)
+            CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
+                .help(m.on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
+                .accessibilityLabel("Cocaine")
+        }
+        .padding(.horizontal, 10)
+    }
+
+    var body: some View {
+        let g = m.island ? NotchGeometry.current() : nil
+        return VStack(alignment: .leading, spacing: 10) {
+            if let g { strip(g) }
+            header
+            if g == nil {
+                EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
+                    .frame(maxWidth: .infinity)
+            }
 
             switch m.page {
             case "ai": aiTab
@@ -1877,23 +1922,26 @@ private struct PanelView: View {
             default: generalTab
             }
 
-            HStack(spacing: 8) {
-                Button { Feedback.compose() } label: {
-                    Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
+            if g == nil {
+                HStack(spacing: 8) {
+                    Button { Feedback.compose() } label: {
+                        Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(L("Feedback or help") + " — " + Feedback.address)
+                    Spacer(minLength: 8)
+                    Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
+                        .help(L("Turns Cocaine off and quits"))
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help(L("Feedback or help") + " — " + Feedback.address)
-                Spacer(minLength: 8)
-                Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
-                    .help(L("Turns Cocaine off and quits"))
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
         }
-        .padding(14)
+        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, g == nil ? 14 : 0)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
         .focusEffectDisabled()
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -2518,11 +2566,11 @@ private final class MenuPanel: NSPanel {
         hidesOnDeactivate = false
         isMovable = false
 
-        let fx = NSVisualEffectView()
-        fx.material = .menu
-        fx.blendingMode = .behindWindow
-        fx.state = .active
-        fx.maskImage = MenuPanel.roundedMask(radius: 12)
+        let fx = NSView()
+        fx.wantsLayer = true
+        fx.layer?.backgroundColor = NSColor.black.cgColor
+        fx.layer?.cornerRadius = 12
+        appearance = NSAppearance(named: .darkAqua)
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
         scroll.hasVerticalScroller = true
@@ -2545,9 +2593,15 @@ private final class MenuPanel: NSPanel {
             content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
             content.widthAnchor.constraint(equalToConstant: Layout.width),     // required: the content is exactly as wide as the box
         ])
-        fx.wantsLayer = true
         fx.layer?.masksToBounds = true
         contentView = fx
+    }
+
+    /// Hanging from the top of the screen under the notch (flat top, round bottom, like the open island), or a floating menu.
+    func attach(toTop: Bool) {
+        guard let l = contentView?.layer else { return }
+        l.cornerRadius = toTop ? 28 : 12
+        l.maskedCorners = toTop ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     }
 
     private static func roundedMask(radius r: CGFloat) -> NSImage {
@@ -4623,7 +4677,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if clicked == nil || clicked == bar.screen { screen = bar.screen ?? screen; anchorX = icon.midX }
         }
         guard let screen else { return }
-        panelTop = (screen.visibleFrame.maxY - 6).rounded()          // just under that screen's menu bar
+        panelTop = settings.island ? screen.frame.maxY : (screen.visibleFrame.maxY - 6).rounded()   // from the notch, or under the menu bar
+        panel.attach(toTop: settings.island)
         model.page = ""                                              // always opens on the home
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.makeKeyAndOrderFront(nil)
@@ -5480,7 +5535,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
     let checkOverflow = CommandLine.arguments.contains("--overflow-check")
     let host = checkOverflow ? NSHostingView(rootView: PanelView(m: model).frame(width: Layout.width + 260, alignment: .topLeading))
-                             : NSHostingView(rootView: PanelView(m: model).background(Color(nsColor: .windowBackgroundColor)))
+                             : NSHostingView(rootView: PanelView(m: model).background(Color.black))
     let size = host.fittingSize
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
     if CommandLine.arguments.contains("--dark") { window.appearance = NSAppearance(named: .darkAqua) }
