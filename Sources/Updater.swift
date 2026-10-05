@@ -160,6 +160,7 @@ final class Updater: ObservableObject {
             prepareForUpdateHandover()
             let relauncher = Installer.launchRelauncher(pid: getpid(), app: installed, backup: backup)
             if relauncher == nil {
+                RecoverySession.shared.cancelUpdateHandover()        // no new version starts by itself: quitting releases sleep
                 failedText(updatesText("Installed. Quit and reopen Cocaine to start the new version."))
                 return
             }

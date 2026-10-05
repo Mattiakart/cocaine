@@ -56,13 +56,21 @@ func runTool(_ path: String, _ args: [String], timeout: TimeInterval = 120, outp
     let pipe = Pipe()
     p.standardOutput = output == nil ? FileHandle.nullDevice : pipe
     p.standardError = FileHandle.nullDevice
+    p.standardInput = FileHandle.nullDevice
     do { try p.run() } catch { return -1 }
     let done = DispatchSemaphore(value: 0)
     var data = Data()
     if output != nil { DispatchQueue.global().async { data = pipe.fileHandleForReading.readDataToEndOfFile(); done.signal() } } else { done.signal() }
     let deadline = Date().addingTimeInterval(timeout)
     while p.isRunning && Date() < deadline { usleep(20_000) }
-    if p.isRunning { p.terminate(); p.waitUntilExit(); return -2 }
+    if p.isRunning {                                         // past the deadline: TERM, then KILL, never an endless wait
+        p.terminate()
+        let killAt = Date().addingTimeInterval(5)
+        while p.isRunning && Date() < killAt { usleep(20_000) }
+        if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+        p.waitUntilExit()
+        return -2
+    }
     p.waitUntilExit()
     done.wait()
     output?.pointee = String(decoding: data, as: UTF8.self)
@@ -105,7 +113,10 @@ enum Installer {
         let work = parent.appendingPathComponent(workPrefix + UUID().uuidString)
         do { try UpdateFiles.makePrivate(work) } catch { return .failure(.notWritable(parent.path)) }
         let mount = UpdateFiles.directory.appendingPathComponent("mnt-" + UUID().uuidString)
-        if case .failure(let e) = DiskImage.attach(dmg, at: mount) { try? FileManager.default.removeItem(at: work); return .failure(e) }
+        if case .failure(let e) = DiskImage.attach(dmg, at: mount) {
+            DiskImage.detach(mount)                                  // hdiutil stopped at its deadline may have mounted it already
+            try? FileManager.default.removeItem(at: work); return .failure(e)
+        }
         defer { DiskImage.detach(mount) }
         let r = copyAndCheck(from: mount.appendingPathComponent("Cocaine.app"), to: work.appendingPathComponent("Cocaine.app"),
                              manifest: manifest, requirement: requirement)

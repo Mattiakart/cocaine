@@ -57,6 +57,10 @@ enum Recovery {
         return .recover(undo(s), adoptSleep: s.ownsSleep)
     }
 
+    /// An instance started only to show an alert quits after a few seconds; one that adopted a session (an update's
+    /// hand-over, a crash) runs on as the app instead, or quitting would end that session with nothing to take it over.
+    static func alertOnly(launchedForAlert: Bool, adoptedSession: Bool) -> Bool { launchedForAlert && !adoptedSession }
+
     enum AfterExit: Equatable { case nothing, wait, recover(Undo, releaseSleep: Bool) }
     /// What the watchdog does once app `pid` is gone.
     static func afterExit(lease: RecoveryLease?, pid: Int32, ownerAlive: Bool, now: Double) -> AfterExit {
@@ -344,6 +348,9 @@ final class RecoverySession {
         return true
     }
 
+    /// The update won't restart the app after all: a later quit releases sleep as usual.
+    func cancelUpdateHandover() { if active { mutate { $0.handoverUntil = nil } } }
+
     /// At quit, after the HUD, dimming and wake have been undone (and noted). Releases sleep, or keeps it for an update.
     func end() {
         guard active, let mine = lease else { return }
@@ -429,6 +436,17 @@ final class RecoverySession {
 @discardableResult
 func prepareForUpdateHandover() -> Bool { RecoverySession.shared.prepareForUpdateHandover() }
 
+/// The COCAINE_* variables point the engine, the recovery and the updater at stand-ins for tests. A normal launch of the
+/// app removes them from its own environment (so also from everything it starts), whoever set them.
+enum TestOverrides {
+    @discardableResult
+    static func scrub(prefix: String = "COCAINE_") -> [String] {
+        let names = ProcessInfo.processInfo.environment.keys.filter { $0.hasPrefix(prefix) }.sorted()
+        names.forEach { unsetenv($0) }
+        return names
+    }
+}
+
 // MARK: - Command line (used by the watchdog and by Homebrew)
 
 enum RecoveryCLI {
@@ -488,6 +506,8 @@ enum RecoveryCLI {
 
     /// `brew uninstall`, after the app has been quit and before the sudo rule goes: nothing of Cocaine may stay behind.
     static func uninstallCleanup() -> Int32 {
+        // Never under a running Cocaine (it would lose its watchdog, lease and lock): 75 = quit it first, then again.
+        guard Recovery.claimSingleInstance(wait: Double(Recovery.env["COCAINE_INSTANCE_WAIT"] ?? "") ?? 10, runningApps: false) else { return 75 }
         let literal = Recovery.enginePath.replacingOccurrences(of: "([\\[\\]\\\\.^$*+?(){}|])", with: "\\\\$1", options: .regularExpression)
         Recovery.runQuiet("/usr/bin/pkill", ["-KILL", "-U", String(getuid()), "-xf", "/bin/zsh \(literal) watch [0-9]+ .*"])
         Recovery.locked {

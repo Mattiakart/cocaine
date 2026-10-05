@@ -279,6 +279,10 @@ enum RemoteTests {
         check("remote: …and once the allowed period is over, nothing", eval("status", legacy, store: s1, at: now.addingTimeInterval(700), legacyUntil: now) == .notice("NOTICE"))
         check("remote: …an old message from the relay doesn't run", eval("status", legacy, store: s1, legacyUntil: allowed, time: Int(now.timeIntervalSince1970) - 600) == .drop(.stale))
         check("remote: a v2 message on an old pairing is refused", eval(fresh, legacy, store: s1) == .drop(.unauthenticated))
+        var broken = p
+        broken.key = "zz"
+        check("remote: a v2 pairing with a damaged key never falls back to plain text (even with old Shortcuts allowed)",
+              !broken.isLegacy && eval("status", broken, store: store(), legacyUntil: allowed, id: "b1") == .drop(.malformed))
 
         // Concurrency: threads and two store objects on one file (as two processes would)
         do {
@@ -297,6 +301,19 @@ enum RemoteTests {
             check("remote: 40 different commands at once are all recorded", s.snapshot()?.seen[p.id]?.count == 41)
             s.forget(keeping: [], now: now.timeIntervalSince1970)
             check("remote: revoking forgets the pairing's state", s.snapshot()?.seen.isEmpty == true)
+            check("remote: …and what it sent before can't run if the pairing comes back (phones.json read again)",
+                  s.claim(pairing: p.id, nonce: nonce(), sentAt: now.timeIntervalSince1970 - 1, now: now.timeIntervalSince1970 + 2) == .duplicate)
+            let kept = store()
+            _ = kept.claim(pairing: p.id, nonce: nonce(), sentAt: now.timeIntervalSince1970 - 5, now: now.timeIntervalSince1970)
+            kept.forget(keeping: [p.id], now: now.timeIntervalSince1970)
+            check("remote: a sync that drops nothing sets no floor", (kept.snapshot()?.floor ?? -1) == 0)
+        }
+        do {   // a state file that is there but can't be read is damaged too, not a first use
+            let s = store()
+            let c = RemoteProtocol.sealCommand("on", pairingID: p.id, keys: k, nonce: nonce(), ts: RemoteProtocol.timestamp(now.addingTimeInterval(-20)))
+            _ = eval(c, store: s)
+            chmod(s.url.path, 0)
+            check("remote: an unreadable state file refuses everything sent before it was noticed", eval(c, store: RemoteReplayStore(url: s.url)) == .drop(.replay))
         }
 
         // Timestamps as the Shortcut may write them

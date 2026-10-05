@@ -34,7 +34,8 @@ struct Pairing: Codable, Equatable {
     var expires: Double? = nil
 
     /// Made before v2: its Shortcut sends plain, unauthenticated text.
-    var isLegacy: Bool { (v ?? 1) < 2 || keys == nil }
+    /// (A v2 pairing whose key can't be read is not legacy: it is broken and answers nothing.)
+    var isLegacy: Bool { (v ?? 1) < 2 }
     var keys: RemoteKeys? { key.flatMap(RemoteKeys.init(masterHex:)) }
     func expired(at now: Date) -> Bool { expires.map { now.timeIntervalSince1970 >= $0 } ?? false }
 
@@ -333,6 +334,9 @@ final class RemoteReplayStore {
                 state = State(floor: now)                    // damaged: refuse anything sent before now
                 dirty = true
             }
+        } else if access(url.path, F_OK) == 0 || errno != ENOENT {
+            state = State(floor: now)                        // there but unreadable (permissions, I/O): same as damaged
+            dirty = true
         } else {
             state = State()                                  // first use
         }
@@ -398,13 +402,15 @@ final class RemoteReplayStore {
         }
     }
 
-    /// Drops everything kept for pairings no longer in `ids` (after a revoke).
+    /// Drops everything kept for pairings no longer in `ids` (after a revoke). Their nonces are gone, so a floor at "now"
+    /// keeps what they sent before from running if the pairing comes back (a phones.json read again after a failed read).
     func forget(keeping ids: Set<String>, now: Double) {
         _ = update(now: now) { s -> (Bool, Bool) in
             let before = s
             s.seen = s.seen.filter { ids.contains($0.key) }
             s.legacy = s.legacy.filter { ids.contains($0.key) }
             s.cursor = s.cursor.filter { ids.contains($0.key) }
+            if s != before { s.floor = max(s.floor, now) }
             return (true, s != before)
         }
     }
@@ -460,6 +466,7 @@ enum RemoteGatekeeper {
             if pairing.expired(at: now) { return .answer(expiredText, nonce: opened.nonce) }
             return .run(command: opened.text, tier: pairing.tier == "agents" ? "agents" : "basic", nonce: opened.nonce)
         }
+        guard pairing.isLegacy else { return .drop(.malformed) }   // v2 with a damaged key: never falls back to plain text
         // An old Shortcut: plain text, no key. Never anything that runs code, and only while the user allows it.
         if RemoteProtocol.isV2Command(text) { return .drop(.unauthenticated) }
         if t - Double(eventTime) > maxAge || Double(eventTime) - t > RemoteProtocol.skew { return .drop(.stale) }

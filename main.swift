@@ -750,15 +750,38 @@ private enum PhoneLink {
         set { if let n = newValue { UserDefaults.standard.set(n.timeIntervalSince1970, forKey: "remoteLegacyUntil") } else { UserDefaults.standard.removeObject(forKey: "remoteLegacyUntil") } }
     }
 
-    static func load() -> [Pairing] {
-        (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Pairing].self, from: $0) } ?? []
+    static func load(_ at: URL = file) -> [Pairing] { loadChecked(at) ?? [] }
+
+    /// nil: the file is there but can't be read or decoded (damaged, a newer format, no permission).
+    static func loadChecked(_ at: URL = file) -> [Pairing]? {
+        guard let data = try? Data(contentsOf: at) else { return access(at.path, F_OK) == 0 || errno != ENOENT ? nil : [] }
+        return try? JSONDecoder().decode([Pairing].self, from: data)
     }
 
+    /// The list to change and save back. One that can't be read is never written over: it's set aside (kept, for the
+    /// user or a newer Cocaine) and the change starts from an empty list. nil: it couldn't even be set aside.
+    static func loadForChange(_ at: URL = file) -> [Pairing]? {
+        if let list = loadChecked(at) { return list }
+        let aside = at.deletingPathExtension().appendingPathExtension("unreadable-\(Int(Date().timeIntervalSince1970)).json")
+        guard rename(at.path, aside.path) == 0 else { return nil }
+        log.error("phones.json unreadable: kept as \(aside.lastPathComponent, privacy: .public)")
+        return []
+    }
+
+    /// Atomic and private from the first byte (it holds the pairings' keys): 0600 temporary file, fsync, rename.
     @discardableResult
-    static func save(_ list: [Pairing]) -> Bool {
-        try? FileManager.default.createDirectory(at: AgentBoard.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        guard let data = try? JSONEncoder().encode(list), (try? data.write(to: file, options: .atomic)) != nil else { return false }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    static func save(_ list: [Pairing], to at: URL = file) -> Bool {
+        let dir = at.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        chmod(dir.path, 0o700)
+        guard let data = try? JSONEncoder().encode(list) else { return false }
+        let tmp = at.path + ".\(getpid()).tmp"
+        unlink(tmp)
+        let fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { return false }
+        let ok = data.withUnsafeBytes { write(fd, $0.baseAddress, data.count) } == data.count && fsync(fd) == 0
+        close(fd)
+        guard ok, rename(tmp, at.path) == 0 else { unlink(tmp); return false }
         return true
     }
 
@@ -5459,7 +5482,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // First: undo what a crashed session left (adopting its sleep), then start this session's lease and watchdog.
-        if RecoverySession.shared.start(ownsSleep: !launchedForAlert) { log.notice("recovered a previous session; its sleep setting goes on") }
+        let adopted = RecoverySession.shared.start(ownsSleep: !launchedForAlert)
+        if adopted { log.notice("recovered a previous session; its sleep setting goes on") }
+        // A link that started us during an update's hand-over (or after a crash) must not end that session 6 s later.
+        launchedForAlert = Recovery.alertOnly(launchedForAlert: launchedForAlert, adoptedSession: adopted)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
@@ -5565,7 +5591,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.removeOldPhones = { [weak self] in
             let now = Date()
-            if PhoneLink.save(PhoneLink.load().filter { !$0.isLegacy && !$0.expired(at: now) }) { PhoneLink.legacyUntil = nil }
+            if let list = PhoneLink.loadForChange(), PhoneLink.save(list.filter { !$0.isLegacy && !$0.expired(at: now) }) { PhoneLink.legacyUntil = nil }
             self?.syncPhones()
         }
         model.testPhone = { Phone.send(L("This is a test")) }
@@ -5755,6 +5781,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         a.informativeText = String(format: L("Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts."), shown)
         a.addButton(withTitle: L("Allow"))
         a.addButton(withTitle: L("Don't Allow"))
+        // Return must not say yes: the question takes the focus while you may be typing (a page can open the link at any time).
+        a.buttons[0].keyEquivalent = ""
+        a.buttons[1].keyEquivalent = "\r"
         guard a.runModal() == .alertFirstButtonReturn else {
             linksRefusedUntil = Date().addingTimeInterval(600)
             return false
@@ -6509,7 +6538,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                     e.runModal()
                     return
                 }
-                guard PhoneLink.save(PhoneLink.load() + [pairing]) else {
+                guard let list = PhoneLink.loadForChange(), PhoneLink.save(list + [pairing]) else {
                     NSApp.activate()
                     let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
                     return
@@ -7187,6 +7216,28 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
     var failed = 0
     func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    check("launch: an alert-only launch that adopted a session (update hand-over, crash) runs on as the app",
+          !Recovery.alertOnly(launchedForAlert: true, adoptedSession: true) && Recovery.alertOnly(launchedForAlert: true, adoptedSession: false)
+          && !Recovery.alertOnly(launchedForAlert: false, adoptedSession: false))
+    setenv("COCAINE_PROBE_SUDO", "/tmp/evil", 1)
+    check("launch: test overrides are dropped from the app's environment (and its children's)",
+          TestOverrides.scrub(prefix: "COCAINE_PROBE") == ["COCAINE_PROBE_SUDO"] && Recovery.env["COCAINE_PROBE_SUDO"] == nil && getenv("COCAINE_PROBE_SUDO") == nil)
+    do {   // phones.json: never written over when it can't be read; private from the first byte
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-phones-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = dir.appendingPathComponent("phones.json")
+        let p1 = Pairing.make(tier: "basic", relay: "https://relay.test")!
+        check("phones: missing file = no pairings", PhoneLink.loadChecked(f) == [] && PhoneLink.loadForChange(f) == [])
+        check("phones: saved 0600 in a 0700 folder and read back", PhoneLink.save([p1], to: f) && PhoneLink.load(f) == [p1]
+              && (try? FileManager.default.attributesOfItem(atPath: f.path)[.posixPermissions] as? Int) == 0o600
+              && (try? FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? Int) == 0o700)
+        try? Data("{ not json".utf8).write(to: f)
+        check("phones: a damaged file reads as 'unknown', not as no pairings", PhoneLink.loadChecked(f) == nil)
+        let changed = PhoneLink.loadForChange(f)
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.filter { $0.hasPrefix("phones.unreadable-") } ?? []
+        check("phones: …a change starts empty but the damaged file is kept aside, never overwritten",
+              changed == [] && kept.count == 1 && (try? String(contentsOf: dir.appendingPathComponent(kept[0]), encoding: .utf8)) == "{ not json")
+    }
     var g = BatteryGuard()
     check("battery: off threshold never fires", !g.check(percent: 5, onAC: false, threshold: 0))
     check("battery: above threshold is quiet", !g.check(percent: 40, onAC: false, threshold: 20))
@@ -7631,6 +7682,9 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-asset
     Assets.render(to: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)
 }
+// The app itself never takes the test overrides (COCAINE_SUDO, COCAINE_PMSET, COCAINE_SUPPORT…): set with `launchctl setenv`
+// they would have Cocaine, its engine and its watchdog run another program with Cocaine's permissions, or use other folders.
+TestOverrides.scrub()
 // One Cocaine at a time (another may still be quitting, e.g. during an update): this one leaves without touching anything.
 guard Recovery.claimSingleInstance() else { exit(0) }
 let app = NSApplication.shared

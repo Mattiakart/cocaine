@@ -367,6 +367,8 @@ enum RecoveryTest {
             check("both killed: the next launch adopts sleep (the session goes on)", flag() == "1" && lease()?.owner == o2.processIdentifier && lease()?.ownsSleep == true)
             check("one at a time: a second instance gives up", owner([], env: ["COCAINE_INSTANCE_WAIT": "1"], ready: false).waitUntilExitStatus(8) == 3
                   && lease()?.owner == o2.processIdentifier)
+            check("uninstall: refused (75) while Cocaine runs; its lease and sleep untouched",
+                  sh([bin, "--uninstall-cleanup"], env: ["COCAINE_INSTANCE_WAIT": "1"]) == 75 && lease()?.owner == o2.processIdentifier && flag() == "1")
             let s2 = standIn()
             RecoveryTestHelpers.markHUD(support)                // as if o2 had frozen it
             for w in watchdogs(o2.processIdentifier) { sig(w, SIGKILL) }

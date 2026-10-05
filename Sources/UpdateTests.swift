@@ -426,7 +426,8 @@ enum UpdateTests {
 
         dir = tempDir("dl")
         var c = cfg("/ok", dir: dir)
-        c.writeHook = { off, _ in if off >= 100_000 { throw POSIXError(.ENOSPC) } }
+        // The write that would pass 100 KB fails (not "a write starting past it": one big chunk would never fail, a flaky test).
+        c.writeHook = { off, count in if off + Int64(count) > 100_000 { throw POSIXError(.ENOSPC) } }
         (r, d) = fetch(c)
         check("download: disk full while writing → reported, partial file deleted",
               r.map { $0 == .failure(.diskFull) } == true && !fm.fileExists(atPath: d.partialURL.path))
