@@ -46,7 +46,17 @@ on Touch ID for sudo, it's a fingerprint instead. That's all: no pop-ups, no "Op
    That's expected.
 
 Either way, that authorization installs a sudo rule that allows exactly `pmset -a disablesleep 1`,
-`pmset -a disablesleep 0`, and deleting the rule itself. Nothing else. [See the code](cocaine.zsh).
+`pmset -a disablesleep 0`, and deleting the rule itself (plus `pmset schedule wake`/`cancel wake`, tagged `cocaine`, if you turn on
+*Wake for iPhone*). Nothing else. [See the code](cocaine.zsh).
+
+**Signature.** Current releases are signed with Cocaine's own self-signed certificate ("local" tier): free, but not verified
+by Apple and not notarized, hence "Open Anyway". The panel shows your copy's tier under *Permissions*. macOS keeps the
+permissions you grant across updates signed with the same certificate, but Apple promises nothing for self-signed ones: if a
+switch turns off after an update, turn it on once. Developer ID signing and notarization are supported by the build scripts but
+not used by releases yet. **In-app updates** (panel → Updates) verify an Ed25519-signed manifest, the DMG hash and the new
+app's signature before an atomic swap, but they stay inactive until a release ships a signed manifest and its public key is
+built into the app; until then use `brew upgrade --cask cocaine` or the DMG. Homebrew installs are never self-replaced. Details:
+[Signature and updates](docs/signing-and-updates.en.md).
 
 ## Alerts when an AI finishes
 
@@ -56,9 +66,25 @@ the baggie in the menu bar just refills.
 
 Open **AI alerts** in the panel. Its four groups each show a one-line summary and open one at a time:
 **Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at
-the Mac, or just once per session, when nothing is left running, instead of for every agent or task that finishes), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
+the Mac, or just once per session, when nothing is left running, instead of for every agent or task that finishes; and
+**Answer from the notch**, off by default), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
 you're away, and a test) and **Pause** (30 minutes, an hour, or until tomorrow). Below them, apart from the settings,
-**Recent alerts** lists the last three, with the project each came from.
+**Recent alerts** lists the latest ones, with the project each came from.
+
+**Every session, in the notch.** The island's Home tab and the panel list all your AI sessions (scrolling when there are many;
+up to 100), the ones that need you first. The list is saved and comes back after a restart (marked ↺ with its age); a session
+whose process has ended is dropped. **Click a session or an alert** to go back to where it runs: the exact Terminal or iTerm2
+tab (needs the *Automation* permission for that app, asked the first time), the tmux or WezTerm pane, or the VS Code, Cursor
+or Windsurf window of its folder; when it can't get that far it brings the app forward or opens the folder, and always tells
+you what it did. An IDE's built-in terminal, JetBrains, Ghostty, kitty and Warp can only be brought forward as an app, and
+sessions started before this version don't say where they run.
+
+**Allow or deny from the notch** (off by default; Claude Code 2.0.45+ and Codex): permission requests, and Claude Code's MCP
+questions with simple answers, appear with **Allow** / **Deny** / **In the terminal**. It uses only the tools' documented hooks
+(`PermissionRequest`, `Elicitation`) over a private socket, with answers signed and tied to one request. Nothing is approved on
+its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Claude Code's
+`AskUserQuestion` has no hook for answers, so it is only announced. Other tools in the table only alert. Details:
+[AI sessions](docs/ai-sessions.en.md).
 
 | AI | Finishes | Needs you | Cocaine's hook goes in |
 |---|---|---|---|
@@ -113,7 +139,9 @@ opens, with these pages:
 - **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake.
 - **Shelf**: drop files on the island (it opens by itself) and keep them there, then drag them out or send them all by AirDrop.
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
-- **Clipboard**: what you copied lately, kept in memory only and never from password managers; click to copy again.
+- **Clipboard**: what you copied lately (text, images, file references), with search and favorites; click to copy again. Kept in
+  memory only unless you turn on *Save on this Mac* (encrypted, with retention limits, exclusions and *Delete everything*);
+  never from password managers. [Details and limits](docs/clipboard.en.md).
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices, and the usage of Codex (its limits) and Claude Code (tokens), read from their own local files.
 - **Media**: Apple Music, Spotify, YouTube Music, Netflix, Prime Video, YouTube, Disney+, Apple TV, Twitch, DAZN: a tap opens the app if it
   is installed, else the website in your default browser.
@@ -126,7 +154,10 @@ Plugging the charger in or out is announced too. The island replaces the menu-ba
 pink powder: Cocaine is off but *Stay active* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
 lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; *Cocaine → Haptic feedback* turns it off). The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. With *Cocaine →
 Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
-returns as soon as you turn the option off or quit Cocaine. No special permission is needed.
+returns as soon as you turn the option off or quit Cocaine; if Cocaine crashes or is killed, a small watchdog gives it back within a
+couple of seconds ([details](docs/recovery.en.md)). Silencing it needs no permission, but for Cocaine to handle the volume and
+brightness *keys* itself (fine steps with ⌥⇧) it needs the **Accessibility** permission, which it asks for when you turn the option
+on. Without it, macOS still changes the volume and brightness and the island shows them.
 
 ## Remote work
 
@@ -146,20 +177,29 @@ phone alerts can use) and your iPhone's Shortcut talks to the app through it.
 claude-my-project 30`, `send claude-my-project Yes, go ahead` (the last three need the agents level). The Shortcut waits a
 few seconds and shows the answer; *Last reply* shows it again.
 
-How it's kept safe: each paired iPhone gets two random 192-bit topic names on the relay, one for commands and one for
-answers; only whoever has the Shortcut knows them. Every command goes through a fixed allow-list (the same for any tier):
-the default level allows status, on/off and listing projects; *Also start and steer AI agents* adds starting agents and
-typing into them, which amounts to running code as you, so grant it knowingly. Commands older than two minutes are
-never run (a Mac that was asleep doesn't replay them), at most 20 a minute are, and every one is logged in
-`~/Library/Application Support/Cocaine/remote-phone.log`. *Revoke* forgets every paired iPhone at once: their Shortcuts stop
-working. Treat the Shortcut like a key: send it only to your own devices.
+How it's kept safe: each paired iPhone gets two random topic names on the relay and its own random 256-bit key. Commands and
+answers are **authenticated and end-to-end encrypted** with it, so the relay only sees ciphertext (not the command, status,
+project names or agent output); a command without the right key is ignored, and a reply is bound to the request it answers.
+**Replays are refused for good**: what the Mac has run is saved on disk before it runs, so duplicates delivered again after a
+reconnection, a wake-up or a restart are dropped, and commands older than two minutes (20 with *Wake for iPhone*) or from the
+future are refused. *Revoke* forgets every paired iPhone at once (a command already running gets no answer); a pairing expires
+after 180 days. Every command goes through a fixed allow-list: the default level allows status, on/off and listing projects;
+*Also start and steer AI agents* adds starting agents and typing into them, which amounts to running code as you, so grant it
+knowingly. At most 20 commands a minute run, and every one is logged in
+`~/Library/Application Support/Cocaine/remote-phone.log`. Treat the Shortcut like a key: it holds the key, syncs through iCloud
+like any Shortcut, and anyone who gets it can use it.
 
-What the relay sees: the traffic is HTTPS, but the commands and answers are plain text on that server (a project name, a
-battery level), protected only by the unguessable topic names, and it keeps them for about 12 hours. Cocaine asks it not to
-forward them to Google's push service. The Shortcut itself syncs through iCloud to your other Apple devices (end-to-end
-encrypted only with Advanced Data Protection), and anyone who learns the topics could also post fake answers. If that isn't acceptable, run your own ntfy server and point
-Cocaine at it: `defaults write local.cocaine.toggle relayURL https://ntfy.example.com` (https only), then pair again. The Mac
-has to be awake to answer: that's what Cocaine on is for.
+**Shortcuts made before this version** (plain text, unauthenticated) are refused after the update; the panel shows an orange
+*Old Shortcuts* row: send a new Shortcut, then *Remove*, or *Allow 14 days* to let old ones run the basic commands meanwhile
+(never starting agents), unprotected. 
+
+Limits, honestly: the Shortcuts app has no encryption action, so the Shortcut does it with hashes and regular expressions
+(standard constructions, checked against the Mac's code). It is large (about 650 actions), a command takes a few seconds on the
+iPhone, and replies over about 2,800 bytes are cut. The relay still sees when and how often you send commands and can delay or
+drop them. A command the Mac crashes on right after accepting is not run (never twice). **The new Shortcut has been verified in
+a simulator of its actions, not yet on a real iPhone.** The Mac has to be awake to answer: that's what Cocaine on is for. To avoid
+a third-party relay, run your own ntfy server: `defaults write local.cocaine.toggle relayURL https://ntfy.example.com` (https
+only), then pair again. Full description: [Remote control security](docs/remote-security.en.md).
 
 The same commands run in Terminal:
 
@@ -198,8 +238,12 @@ Cocaine's sudo rule with `pmset schedule wake`/`cancel wake`, tagged `cocaine`, 
 paused on battery at 20% or less, and is cancelled when you quit Cocaine. If it matters that the answer is immediate, keep
 Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app needs, for use on your home network.)
 
-**Also from Shortcuts on the Mac**, links: `cocaine://on`, `cocaine://off`, `cocaine://toggle`, `cocaine://timer?minutes=90`,
-`cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.
+**Also from Shortcuts and scripts on the Mac.** Cocaine has no native Shortcuts actions: they need metadata that only Xcode's build
+tools produce, and the app is built with the Command Line Tools. Instead: links (`cocaine://on?minutes=90`, `off`, `toggle`, `timer`,
+`status` with an x-callback answer; also `pause`, `resume`, `panel`) and the bundled command (`cocaine on 90m`, `off`,
+`status --json`, usable from *Run Shell Script*). Links that change something work only after you allow it (a one-time question, or
+Automation → Shortcuts → *Shortcuts app and links*), because any app or web page can open a link. See
+[Power and triggers](docs/power-and-triggers.en.md).
 
 ### Automation
 
@@ -208,19 +252,33 @@ idle, with one of the chosen apps open (or always), Cocaine sends an invisible m
 clock, and keeps the display awake. It needs the Accessibility permission; check that your workplace allows it.
 
 The panel has three tabs: *General* (the **Timer** right under the switch: ∞, 30 minutes … 8 hours, or any length you set in steps of 15 minutes up to 24 hours, then it turns off; plus dimming and the agents at work), *AI alerts* and *Automation*: **Battery Guard** (on battery, at
-10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, or while chosen programs
-run; off 3 minutes after; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
+10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, while chosen programs
+run, on the charger or on battery, with an external display connected or not, or in a weekly time window; any or all must hold;
+off again after a short grace period; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
+
+**Screen off, Mac awake** (General → dimming → *Turn the screen off instead*): the displays go fully off after the idle time while
+the Mac keeps running. Nothing is bypassed: the lock follows *System Settings → Lock Screen* (in this mode the display is no longer
+held awake, so macOS may also turn it off sooner). With the lid closed and on battery, if macOS reports a serious thermal state,
+Cocaine turns itself off. *Stay active* pauses while the screens are off, AirPlay/Sidecar/DisplayLink screens may ignore display
+sleep, and external-monitor and clamshell behaviour is documented but was not tested on real hardware. See
+[Power and triggers](docs/power-and-triggers.en.md).
 
 ## Good to know
 
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.
 - On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
-- Opening the app turns Cocaine on, and quitting it turns Cocaine off. That covers **Quit**, ⌘Q, logging out and shutting down.
+- Opening the app turns Cocaine on, and quitting it puts things back as they were. That covers **Quit**, ⌘Q, logging out,
+  shutting down, `kill` and crashes (a small watchdog notices when Cocaine is gone). If sleep was already disabled before Cocaine
+  turned it on, or you changed it meanwhile, that is respected. Limits: after a power cut or forced restart sleep stays disabled
+  until Cocaine opens again (or run `cocaine off`), and if Cocaine and its watchdog are killed together nothing can act until
+  the next launch. [Details](docs/recovery.en.md).
+- Only one Cocaine runs at a time: a second copy opened while one is running steps aside.
 
 ## Uninstall
 
 With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app, its sudo rule and the AI alerts
-hooks, without asking. (`--zap` also deletes the settings.)
+hooks, without asking. (`--zap` also deletes the settings, the clipboard history and other saved state.) The cask changes that
+make uninstall and upgrades fully respect the recovery rules ship with the next release: [notes](docs/maintainers/cask-changes.md).
 
 Without Homebrew: untick your AIs under AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 
@@ -232,11 +290,12 @@ sudo rm /etc/sudoers.d/cocaine
 
 - `pmset -a disablesleep 1` is the only setting that keeps a Mac awake with the lid closed. `caffeinate` doesn't
   survive a lid close, and changing this setting needs root, hence the narrow sudo rule.
-- While Cocaine is on, a small helper holds `caffeinate -d` so the display doesn't idle-sleep.
-- The app itself is a Swift/SwiftUI menu bar app ([`main.swift`](main.swift)). The engine is a short zsh script
+- While Cocaine is on, a small helper holds `caffeinate -d` so the display doesn't idle-sleep (`-i` in screen-off mode).
+- The app itself is a Swift/SwiftUI menu bar app ([`main.swift`](main.swift) and [`Sources/`](Sources)). The engine is a zsh script
   ([`cocaine.zsh`](cocaine.zsh)). Screen dimming uses macOS's DisplayServices.
 
-Build it yourself with `./build.sh --dmg`.
+Build it yourself with `./build.sh --dmg` (`--sign local|developer-id|adhoc` picks the signing tier and never falls back to another;
+`--release` refuses ad hoc). `./verify.sh` builds and runs every automatic check; the same runs on GitHub Actions.
 
 ## License
 
