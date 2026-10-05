@@ -57,3 +57,4 @@
 "Couldn't save the history." = "無法儲存歷史記錄。";
 "File" = "檔案";
 "The saved history couldn't be read and was set aside." = "已儲存的歷史記錄無法讀取,已被移到一旁。";
+"The saved history can't be read: nothing is saved until it can." = "無法讀取已儲存的歷史記錄:在可以讀取之前不會儲存任何內容。";

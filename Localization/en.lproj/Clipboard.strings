@@ -57,3 +57,4 @@
 "Couldn't save the history." = "Couldn't save the history.";
 "File" = "File";
 "The saved history couldn't be read and was set aside." = "The saved history couldn't be read and was set aside.";
+"The saved history can't be read: nothing is saved until it can." = "The saved history can't be read: nothing is saved until it can.";

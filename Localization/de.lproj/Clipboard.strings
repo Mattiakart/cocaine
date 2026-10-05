@@ -57,3 +57,4 @@
 "Couldn't save the history." = "Der Verlauf konnte nicht gesichert werden.";
 "File" = "Datei";
 "The saved history couldn't be read and was set aside." = "Der gesicherte Verlauf konnte nicht gelesen werden und wurde beiseitegelegt.";
+"The saved history can't be read: nothing is saved until it can." = "Der gesicherte Verlauf ist nicht lesbar: Bis dahin wird nichts gesichert.";

@@ -393,20 +393,21 @@ final class ClipStore {
         }
     }
 
-    enum LoadProblem: Equatable { case none, unreadableIndex, droppedItems(Int) }
+    enum LoadProblem: Equatable { case none, unreadableIndex, unusable, droppedItems(Int) }
 
     /// The saved items (images not read yet), and whether something had to be dropped.
     func load() -> (items: [ClipItem], problem: LoadProblem) {
         guard let key else { return ([], .none) }
-        guard let raw = try? Data(contentsOf: index) else { removeOrphans(keeping: []); return ([], .none) }
+        guard let raw = try? Data(contentsOf: index) else {
+            // No history yet: leftovers of one go. There but unreadable (permissions, I/O): kept, like a damaged one.
+            if access(index.path, F_OK) != 0 && errno == ENOENT { removeOrphans(keeping: []); return ([], .none) }
+            return setAside() ? ([], .unreadableIndex) : ([], .unusable)
+        }
         guard let plain = try? ClipCrypto.open(raw, key: key, context: "index"),
               let idx = try? JSONDecoder().decode(Index.self, from: plain), idx.v == Self.schema else {
-            // Damaged, from another key (the Keychain item was deleted), or from a newer version: set aside, start empty.
-            let aside = dir.appendingPathComponent("index.unreadable")
-            try? FileManager.default.removeItem(at: aside)
-            try? FileManager.default.moveItem(at: index, to: aside)
-            removeOrphans(keeping: [])
-            return ([], .unreadableIndex)
+            // Damaged, from another key (the Keychain item was deleted, another Mac), or from a newer version: set it aside
+            // with its images (nothing deleted: the right key or version can still read them), start empty.
+            return setAside() ? ([], .unreadableIndex) : ([], .unusable)
         }
         var items: [ClipItem] = []
         var dropped = idx.items.filter { $0.item == nil }.count
@@ -449,6 +450,19 @@ final class ClipStore {
     }
 
     func blob(_ id: UUID) -> URL { dir.appendingPathComponent(id.uuidString + ".img") }
+
+    /// Moves the index and every image into a new `unreadable-<time>` folder (each one kept). False: it couldn't.
+    private func setAside() -> Bool {
+        let fm = FileManager.default
+        var aside = dir.appendingPathComponent("unreadable-\(Int(Date().timeIntervalSince1970))")
+        if fm.fileExists(atPath: aside.path) { aside = dir.appendingPathComponent("unreadable-" + UUID().uuidString) }
+        guard (try? fm.createDirectory(at: aside, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])) != nil,
+              (try? fm.moveItem(at: index, to: aside.appendingPathComponent(index.lastPathComponent))) != nil else { return false }
+        for n in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where n.hasSuffix(".img") {
+            try? fm.moveItem(at: dir.appendingPathComponent(n), to: aside.appendingPathComponent(n))
+        }
+        return true
+    }
 
     private func removeOrphans(keeping ids: Set<UUID>) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
@@ -620,7 +634,7 @@ final class ClipboardHistory: ObservableObject {
     func start() {
         guard timer == nil else { return }
         seen = board.changeCount
-        if settings.persist && !saving { openStore() }
+        if settings.persist && !saving { openStore(atLaunch: true) }
         let t = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in self?.poll() }   // changeCount is cheap; the tolerance lets macOS batch wake-ups
         t.tolerance = 0.3
         RunLoop.main.add(t, forMode: .common)
@@ -802,20 +816,28 @@ final class ClipboardHistory: ObservableObject {
         publish()
     }
 
-    private func openStore() {
+    /// `atLaunch`: a Keychain that says no now (locked, a prompt refused) leaves the choice on for the next launch; turning
+    /// it on by hand and failing turns it back off.
+    private func openStore(atLaunch: Bool = false) {
         do {
             try io.sync { [store] in try store.unlock() }
         } catch {
             // Never a silent fallback to plain files: without the key nothing is written.
             saving = false
-            settings.persist = false
-            settings.save(defaults)
+            if !atLaunch {
+                settings.persist = false
+                settings.save(defaults)
+            }
             problem = keychainProblem(error)
             return
         }
         let loaded = io.sync { [store] in store.load() }
         switch loaded.problem {
         case .none: problem = nil
+        case .unusable:                                                // can't be read nor set aside: never written over
+            saving = false
+            problem = clipboardL("The saved history can't be read: nothing is saved until it can.")
+            return
         case .unreadableIndex: problem = clipboardL("The saved history couldn't be read and was set aside.")
         case .droppedItems(let n): problem = String(format: clipboardL("%d saved items couldn't be read."), n)
         }

@@ -57,3 +57,4 @@
 "Couldn't save the history." = "Impossible d'enregistrer l'historique.";
 "File" = "Fichier";
 "The saved history couldn't be read and was set aside." = "L'historique enregistré n'a pas pu être lu et a été mis de côté.";
+"The saved history can't be read: nothing is saved until it can." = "L'historique enregistré est illisible : rien n'est enregistré tant qu'il ne peut pas être lu.";

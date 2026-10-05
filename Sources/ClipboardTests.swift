@@ -196,8 +196,24 @@ enum ClipboardTests {
         let wrongKey = ClipStore(dir: dir, keys: MemoryKeyStore())
         try? wrongKey.unlock()
         let wrongLoad = wrongKey.load()
-        check("store: another key can't read it (set aside, starts empty)", wrongLoad.items.isEmpty && wrongLoad.problem == .unreadableIndex
-              && fm.fileExists(atPath: dir.appendingPathComponent("index.unreadable").path) && !fm.fileExists(atPath: store.blob(img.id).path))
+        let asides = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasPrefix("unreadable-") }
+        let aside = asides.first.map { dir.appendingPathComponent($0) }
+        check("store: another key can't read it (set aside with its images, nothing deleted; starts empty)", wrongLoad.items.isEmpty
+              && wrongLoad.problem == .unreadableIndex && asides.count == 1 && !fm.fileExists(atPath: store.blob(img.id).path)
+              && aside.map { fm.fileExists(atPath: $0.appendingPathComponent(store.index.lastPathComponent).path)
+                             && fm.fileExists(atPath: $0.appendingPathComponent(store.blob(img.id).lastPathComponent).path) } == true)
+        do {   // there, but unreadable (permissions, I/O): not "no history" (which would delete the images)
+            let d3 = root.appendingPathComponent("store3"), k3 = MemoryKeyStore(), s3 = ClipStore(dir: d3, keys: k3)
+            try? s3.unlock()
+            let i3 = ClipItem.image(png: png, width: 4, height: 3)
+            try? s3.writeImage(i3.id, png); try? s3.saveIndex([i3])
+            chmod(s3.index.path, 0)
+            let r3 = s3.load()
+            let kept = ((try? fm.contentsOfDirectory(atPath: d3.path)) ?? []).filter { $0.hasPrefix("unreadable-") }
+            check("store: an index that can't be read keeps its images (set aside, never removed as orphans)", r3.problem == .unreadableIndex
+                  && kept.count == 1 && fm.fileExists(atPath: d3.appendingPathComponent(kept[0]).appendingPathComponent(s3.blob(i3.id).lastPathComponent).path))
+            try? fm.removeItem(at: d3)
+        }
 
         let dir2 = root.appendingPathComponent("store2")
         let keys2 = MemoryKeyStore()
@@ -343,6 +359,19 @@ enum ClipboardTests {
         fh.setPersist(true)
         check("persistence: no Keychain, no saving (memory only, said plainly)", !fh.saving && !fh.settings.persist && fh.problem != nil
               && !fm.fileExists(atPath: root.appendingPathComponent("f").path) && fh.items.count == 1)
+        do {   // a Keychain that says no at launch (locked, a prompt refused) doesn't turn the choice off for good
+            let lk = MemoryKeyStore(), ld = defaults()
+            let lh = history("l", keys: lk, d: ld)
+            lh.setPersist(true); lh.add(.text("saved")); lh.flush()
+            lk.failing = true
+            let locked = history("l", keys: lk, d: ld)
+            locked.start(); locked.stop()
+            lk.failing = false
+            let next = history("l", keys: lk, d: ld)
+            next.start(); next.stop()
+            check("persistence: a Keychain refusal at launch keeps the choice; the next launch saves again",
+                  !locked.saving && locked.problem != nil && ClipSettings.load(ld).persist && next.saving && next.items.map(\.text) == ["saved"])
+        }
 
         let wk = MemoryKeyStore(), wb = FakePasteboard()
         let wh = history("w", keys: wk, board: wb)

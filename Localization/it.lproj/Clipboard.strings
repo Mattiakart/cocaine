@@ -57,3 +57,4 @@
 "Couldn't save the history." = "Impossibile salvare la cronologia.";
 "File" = "File";
 "The saved history couldn't be read and was set aside." = "La cronologia salvata non si è potuta leggere ed è stata messa da parte.";
+"The saved history can't be read: nothing is saved until it can." = "La cronologia salvata non si può leggere: non si salva nulla finché non sarà possibile.";
