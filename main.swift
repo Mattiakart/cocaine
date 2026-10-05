@@ -259,6 +259,114 @@ private struct DimPlan {
     var displays: Set<CGDirectDisplayID> { Set(backlit.map(\.id) + gamma.map(\.id)) }
 }
 
+// MARK: - Permissions
+
+/// Everything macOS makes Cocaine ask for. Each one is checked, and asked for only when it is missing.
+private enum Permission: String, CaseIterable, Identifiable {
+    case accessibility, camera, calendar, automation, files
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .accessibility: return L("Accessibility")
+        case .camera: return L("Camera")
+        case .calendar: return L("Calendar")
+        case .automation: return L("Music and Spotify")
+        case .files: return L("Files and folders")
+        }
+    }
+    var reason: String {
+        switch self {
+        case .accessibility: return L("Stay active and the system HUD need it.")
+        case .camera: return L("The Mirror page can't show the camera.")
+        case .calendar: return L("The Calendar page can't show your events.")
+        case .automation: return L("Music and Spotify can't be controlled.")
+        case .files: return L("Downloads and screenshots can't be read.")
+        }
+    }
+    var pane: String {
+        switch self {
+        case .accessibility: return "Privacy_Accessibility"
+        case .camera: return "Privacy_Camera"
+        case .calendar: return "Privacy_Calendars"
+        case .automation: return "Privacy_Automation"
+        case .files: return "Privacy_FilesAndFolders"
+        }
+    }
+}
+
+private enum Permissions {
+    enum State { case granted, denied, notAsked }
+    static let musicApps = ["com.apple.Music", "com.spotify.client"]
+
+    static func state(_ p: Permission) -> State {
+        switch p {
+        case .accessibility: return AXIsProcessTrusted() ? .granted : .denied
+        case .camera:
+            switch AVCaptureDevice.authorizationStatus(for: .video) { case .authorized: return .granted; case .notDetermined: return .notAsked; default: return .denied }
+        case .calendar:
+            switch EKEventStore.authorizationStatus(for: .event) { case .fullAccess: return .granted; case .notDetermined: return .notAsked; default: return .denied }
+        case .automation:
+            var worst = State.granted
+            for b in runningMusicApps() {
+                switch automation(b, ask: false) {
+                case 0: break
+                case -1744: if worst == .granted { worst = .notAsked }
+                case -1743: worst = .denied
+                default: break
+                }
+            }
+            return worst
+        case .files:
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            for dir in ["Downloads", "Desktop"] {
+                do { _ = try FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(dir).path) } catch { return .denied }
+            }
+            return .granted
+        }
+    }
+
+    static func runningMusicApps() -> [String] {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return musicApps.filter { running.contains($0) }
+    }
+
+    /// 0 allowed, -1743 refused, -1744 not asked yet, -600 the app isn't running.
+    static func automation(_ bundle: String, ask: Bool) -> OSStatus {
+        guard let desc = NSAppleEventDescriptor(bundleIdentifier: bundle).aeDesc else { return -600 }
+        return AEDeterminePermissionToAutomateTarget(desc, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
+    }
+
+    static func openPane(_ p: Permission) {
+        if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(p.pane)") { NSWorkspace.shared.open(u) }
+    }
+
+    /// Asks for it the right way: the system's own question when it was never asked, the Settings pane when it was refused.
+    /// `done` is called on the main queue once the answer is known (when it is asked now).
+    static func request(_ p: Permission, done: (() -> Void)? = nil) {
+        NSApp.activate()
+        let st = state(p)
+        guard st != .granted else { done?(); return }
+        switch p {
+        case .accessibility:
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)          // the system's dialog, with its button to Settings
+        case .camera:
+            if st == .notAsked { AVCaptureDevice.requestAccess(for: .video) { _ in DispatchQueue.main.async { done?() } } } else { openPane(p) }
+        case .calendar:
+            if st == .notAsked { EKEventStore().requestFullAccessToEvents { _, _ in DispatchQueue.main.async { done?() } } } else { openPane(p) }
+        case .automation:
+            if st == .notAsked {
+                DispatchQueue.global().async {
+                    for b in runningMusicApps() { _ = automation(b, ask: true) }
+                    DispatchQueue.main.async { done?() }
+                }
+            } else { openPane(p) }
+        case .files:
+            _ = try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path)
+            openPane(p)
+        }
+    }
+}
+
 // MARK: - Haptic feedback
 
 /// A light tap on the trackpad (Force Touch) when you change something; nothing on a mouse. Can be turned off in the panel.
@@ -373,8 +481,6 @@ private extension Settings {
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
     var haptics: Bool { get { flag("haptics", true) } nonmutating set { d.set(newValue, forKey: "haptics") } }
-    var presenceAsked: Bool { get { flag("presenceAsked", false) } nonmutating set { d.set(newValue, forKey: "presenceAsked") } }
-    var hudAsked: Bool { get { flag("hudAsked", false) } nonmutating set { d.set(newValue, forKey: "hudAsked") } }
     var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
     var stayActiveAlways: Bool { get { flag("stayActiveAlways", false) } nonmutating set { d.set(newValue, forKey: "stayActiveAlways") } }
     var stayActiveApps: [String] { get { d.stringArray(forKey: "stayActiveApps") ?? Presence.defaultApps } nonmutating set { d.set(newValue, forKey: "stayActiveApps") } }
@@ -1201,6 +1307,7 @@ private final class PanelModel: ObservableObject {
     @Published var stayActiveApps: [String] { didSet { settings.stayActiveApps = stayActiveApps } }
     @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
     @Published var presenceAccess = Presence.hasAccess
+    @Published var permissionProblems: [Permission] = []
     /// Cocaine is off but Stay active is working: the bag is full of pink powder.
     var bagPink: Bool { !on && presenceActive && fillLevel < 0.05 }
     @Published var presenceActive = false
@@ -1248,6 +1355,7 @@ private final class PanelModel: ObservableObject {
     var presenceChanged: () -> Void = {}
     var hudReplaceChanged: () -> Void = {}
     var requestPresence: () -> Void = {}
+    var requestPermission: (Permission) -> Void = { _ in }
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1689,11 +1797,25 @@ private struct PanelView: View {
         }
     }
 
+    /// Only what is missing, with a button; one calm line when everything is in place.
+    private var permissionsCard: some View {
+        card("lock.shield", L("Permissions")) {
+            if m.permissionProblems.isEmpty {
+                row(L("Everything Cocaine needs is allowed")) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+            } else {
+                ForEach(m.permissionProblems) { p in
+                    row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.controlSize(.small) }
+                }
+            }
+        }
+    }
+
     private var generalTab: some View {
         VStack(alignment: .leading, spacing: 10) {
             timerCard
             screenCard
             activityCard
+            permissionsCard
             appCard
         }
     }
@@ -2673,6 +2795,21 @@ private enum Island {
     static let overscan = Layout.overscan
     static let openSize = CGSize(width: 640, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
+    static let slack: CGFloat = 8                              // room around the open island for the spring's overshoot
+    /// Opening: quick off the mark, with a touch of give at the end. Closing: a bit quicker, settling without a bounce.
+    static let openSpring = Animation.spring(response: 0.4, dampingFraction: 0.78)
+    static let closeSpring = Animation.spring(response: 0.32, dampingFraction: 0.9)
+    static var forceExternal = false                           // the render tool: show the Monitors tab
+    static var external: Bool { forceExternal || !DDCDisplays.externalNames.isEmpty }
+
+    static func clamp(_ x: CGFloat) -> CGFloat { min(1, max(0, x)) }
+    static func mix(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    static func smooth(_ x: CGFloat) -> CGFloat { let t = clamp(x); return t * t * (3 - 2 * t) }
+    /// The morph's progress for an item that starts a little later: still 1 at p = 1, and it keeps the spring's overshoot.
+    static func delayed(_ p: CGFloat, by d: CGFloat) -> CGFloat { p < 0 ? p : max(0, (p - d) / (1 - d)) }
+    /// Cross-morph timing: what the closed island shows is gone by p 0.5, what replaces it arrives over p 0.15…0.6.
+    static func meltOut(_ p: CGFloat) -> CGFloat { smooth(p / 0.5) }
+    static func meltIn(_ p: CGFloat) -> CGFloat { smooth((p - 0.15) / 0.45) }
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
     static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
         var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("media", "play.rectangle.fill", L("Media")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
@@ -2702,32 +2839,159 @@ private struct NotchGeometry: Equatable {
     }
 }
 
-/// The notch's outline: concave "ears" where it meets the screen's top edge, vertical sides, rounded bottom corners. Everything
-/// animates, so opening and closing morph one into the other along the same lines. `inset` is a solid strip above the screen's edge.
-private struct NotchShape: Shape {
-    var topRadius: CGFloat
-    var bottomRadius: CGFloat
-    var inset: CGFloat = 0
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(topRadius, bottomRadius) }
-        set { topRadius = newValue.first; bottomRadius = newValue.second }
+/// One moment of the open/close morph. p runs from 0 (closed) to 1 (open) and a spring overshoots it a little past either end;
+/// leftW/rightW are the closed island's wings. Everything that moves is a function of this, so the outline, the clip and every
+/// icon stay in step whatever the spring does (and the render tool can draw any moment of it).
+private struct IslandPose {
+    var p: CGFloat
+    var leftW: CGFloat
+    var rightW: CGFloat
+    var data: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
+        get { AnimatablePair(p, AnimatablePair(leftW, rightW)) }
+        set { p = newValue.first; leftW = newValue.second.first; rightW = newValue.second.second }
     }
-    func path(in rect: CGRect) -> Path {
-        let y0 = rect.minY + inset
-        let tr = max(0, min(topRadius, rect.width / 4)), br = max(0, min(bottomRadius, (rect.maxY - y0 - tr) / 2, (rect.width - 2 * tr) / 2))
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: y0))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - tr, y: y0 + tr), control: CGPoint(x: rect.maxX - tr, y: y0))           // right ear
-        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.maxY - br))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - tr - br, y: rect.maxY), control: CGPoint(x: rect.maxX - tr, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + tr + br, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + tr, y: rect.maxY - br), control: CGPoint(x: rect.minX + tr, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + tr, y: y0 + tr))
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: y0), control: CGPoint(x: rect.minX + tr, y: y0))                     // left ear
-        p.closeSubpath()
-        return p
+    /// 0 with the bag alone on the left, 1 while a flash message widens the left wing.
+    var flash: CGFloat { Island.clamp((leftW - Island.wing) / (IslandModel.maxWing - Island.wing)) }
+    /// 0 with nothing right of the notch, 1 with something live there.
+    var wing: CGFloat { Island.clamp(rightW / Island.wing) }
+}
+
+/// The island's geometry in a fixed canvas: as wide as the open island plus room for the spring's overshoot, centred on the notch,
+/// its top `overscan` above the screen's edge. The canvas never changes size, so resizing the window around it moves nothing.
+private struct IslandLayout {
+    let notch: CGFloat          // the notch's width
+    let notchH: CGFloat         // and its height (the menu bar's)
+    static let openBody = Island.openSize.width - 28        // the open island between its two top flares
+
+    var size: CGSize { CGSize(width: max(Island.openSize.width + 2 * Island.slack, notch + 2 * IslandModel.maxWing + 20),
+                              height: Island.openSize.height + Island.slack + Island.overscan) }
+    var cx: CGFloat { size.width / 2 }
+    var top: CGFloat { Island.overscan }
+    var notchLeft: CGFloat { cx - notch / 2 }
+    var notchRight: CGFloat { cx + notch / 2 }
+
+    /// Height trails width a little: the island first runs along the screen's edge, then drops (and on closing, rises first).
+    static func depth(_ p: CGFloat) -> CGFloat { p <= 0 ? p : p < 1 ? pow(p, 1.5) : 1 + 1.5 * (p - 1) }
+
+    /// The outline: concave flares where it meets the screen's edge, straight sides, continuous ("squircle") bottom corners.
+    /// Closed it is the real notch's silhouette plus its wings; every measure is interpolated, so it morphs along the same lines.
+    func sides(_ s: IslandPose) -> (minX: CGFloat, maxX: CGFloat) {
+        (min(Island.mix(notchLeft - s.leftW, cx - Self.openBody / 2, s.p), notchLeft),                 // never narrower than the notch
+         max(Island.mix(notchRight + s.rightW, cx + Self.openBody / 2, s.p), notchRight))
+    }
+    func bodyWidth(_ s: IslandPose) -> CGFloat { let b = sides(s); return b.maxX - b.minX }
+
+    func path(_ s: IslandPose) -> Path {
+        let p = s.p, d = Self.depth(p)
+        let (minX, maxX) = sides(s)
+        let y0 = top, y1 = top + max(notchH, Island.mix(notchH, Island.openSize.height, d))
+        let flare = max(0, Island.mix(6.5, 14, p))                                                  // how far the flare reaches out
+        let flareH = min(max(0, Island.mix(7, 15, p)), (y1 - y0) * 0.4)                             // and down the side
+        let corner = max(0, min(Island.mix(10, 24, d) * 1.35, y1 - y0 - flareH, (maxX - minX) / 2)) // span of a bottom corner
+        let kf: CGFloat = 0.6, kc: CGFloat = 0.7          // handle lengths: long handles ease into the straight lines (no kink)
+        var path = Path()
+        path.move(to: CGPoint(x: minX - flare, y: 0))
+        path.addLine(to: CGPoint(x: maxX + flare, y: 0))
+        path.addLine(to: CGPoint(x: maxX + flare, y: y0))
+        path.addCurve(to: CGPoint(x: maxX, y: y0 + flareH), control1: CGPoint(x: maxX + flare * (1 - kf), y: y0), control2: CGPoint(x: maxX, y: y0 + flareH * (1 - kf)))
+        path.addLine(to: CGPoint(x: maxX, y: y1 - corner))
+        path.addCurve(to: CGPoint(x: maxX - corner, y: y1), control1: CGPoint(x: maxX, y: y1 - corner * (1 - kc)), control2: CGPoint(x: maxX - corner * (1 - kc), y: y1))
+        path.addLine(to: CGPoint(x: minX + corner, y: y1))
+        path.addCurve(to: CGPoint(x: minX, y: y1 - corner), control1: CGPoint(x: minX + corner * (1 - kc), y: y1), control2: CGPoint(x: minX, y: y1 - corner * (1 - kc)))
+        path.addLine(to: CGPoint(x: minX, y: y0 + flareH))
+        path.addCurve(to: CGPoint(x: minX - flare, y: y0), control1: CGPoint(x: minX, y: y0 + flareH * (1 - kf)), control2: CGPoint(x: minX - flare * (1 - kf), y: y0))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The island's outline at a pose: filled black, and used again as the clip of everything inside it.
+private struct IslandOutline: Shape {
+    var pose: IslandPose
+    let layout: IslandLayout
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> { get { pose.data } set { pose.data = newValue } }
+    func path(in rect: CGRect) -> Path { layout.path(pose) }
+}
+
+/// Carries one item of the top strip along the morph, from where it is in the closed island (a wing, or tucked behind the notch)
+/// to its cell in the open strip. Items leave in a short stagger, outermost first, so they come out of the notch like a train and
+/// never cross; closing runs the same function backwards, so the innermost are home first.
+private struct StripSlide: ViewModifier, Animatable {
+    enum From { case leftWing, rightWing, gear, behindLeft, behindRight }
+    enum Fade { case none, reveal, melt, gear }
+    var pose: IslandPose
+    let layout: IslandLayout
+    let from: From
+    let to: CGFloat             // the centre of its cell in the open strip
+    let width: CGFloat
+    let order: Int              // 0 = outermost
+    let fade: Fade
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> { get { pose.data } set { pose.data = newValue } }
+
+    func body(content: Content) -> some View {
+        let l = layout, p = pose.p
+        let start: CGFloat
+        switch from {
+        case .leftWing: start = l.notchLeft - pose.leftW / 2
+        case .rightWing: start = l.notchRight + pose.rightW / 2
+        case .behindLeft: start = l.notchLeft + width / 2
+        case .behindRight: start = l.notchRight - width / 2
+        case .gear: start = Island.mix(l.notchRight - width / 2, l.notchRight + pose.rightW / 2, pose.wing)    // where the live item is, if any
+        }
+        let t = Island.delayed(p, by: CGFloat(order) * 0.045)
+        let x = Island.mix(start, to, t)
+        // How much of it is out from behind the notch (the hardware hides the rest; without a notch it fades in the same way).
+        let out = Island.clamp(x < l.cx ? (l.notchLeft - (x - width / 2)) / width : (x + width / 2 - l.notchRight) / width)
+        var alpha: CGFloat = 1, scale: CGFloat = 1, blur: CGFloat = 0
+        switch fade {
+        case .none: break
+        case .reveal:           // they fan out of the notch: small while still bunched up, full size once in their cells
+            alpha = out * Island.smooth(t / 0.6); scale = Island.mix(0.45, 1, Island.clamp(t))
+        case .melt:                                         // the closed island's live item, melting into the gear as it travels
+            let m = Island.meltOut(p)
+            alpha = (1 - m) * pose.wing; scale = 1 - 0.3 * m; blur = 3 * m
+        case .gear:
+            let a = Island.meltIn(p)
+            alpha = Island.mix(out, a, pose.wing); scale = 0.6 + 0.4 * alpha; blur = 3 * (1 - a) * pose.wing
+        }
+        return content.scaleEffect(scale).blur(radius: blur).opacity(alpha)
+            .offset(x: x - width / 2, y: l.top)
+    }
+}
+
+/// Cross-morphs inside the bag's cell: the flash icon melts out as the bag melts in, and the Home highlight appears.
+private struct CellMorph: ViewModifier, Animatable {
+    enum Kind { case bag(dim: CGFloat), flashIcon, highlight }
+    var pose: IslandPose
+    let kind: Kind
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> { get { pose.data } set { pose.data = newValue } }
+
+    func body(content: Content) -> some View {
+        let p = pose.p
+        var alpha: CGFloat = 1, scale: CGFloat = 1, blur: CGFloat = 0
+        switch kind {
+        case .bag(let dim):                                 // closed: full; open: like an unselected tab when Home isn't shown
+            let a = Island.mix(1, Island.meltIn(p), pose.flash)
+            alpha = a * Island.mix(1, dim, Island.clamp(p)); scale = Island.mix(1, 0.7 + 0.3 * a, pose.flash); blur = 3 * (1 - a)
+        case .flashIcon:
+            let m = Island.meltOut(p)
+            alpha = 1 - m; scale = 1 - 0.3 * m; blur = 3 * m
+        case .highlight: alpha = Island.clamp((p - 0.5) / 0.4)
+        }
+        return content.scaleEffect(scale).blur(radius: blur).opacity(alpha)
+    }
+}
+
+/// The open page below the strip: it grows with the island's width (so it is never cut by the sides), fades in a beat after
+/// the island starts to open, and goes first on closing.
+private struct PageReveal: ViewModifier, Animatable {
+    var pose: IslandPose
+    let layout: IslandLayout
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> { get { pose.data } set { pose.data = newValue } }
+    func body(content: Content) -> some View {
+        let c = Island.smooth((pose.p - 0.35) / 0.55)
+        let scale = min(1, max(0.5, layout.bodyWidth(pose) / IslandLayout.openBody))
+        return content.opacity(c).scaleEffect(scale, anchor: .top).offset(y: -8 * (1 - c))
     }
 }
 
@@ -3080,9 +3344,7 @@ private final class CalendarWatch: ObservableObject {
     }
 
     func requestAccess() {
-        store.requestFullAccessToEvents { [weak self] granted, _ in
-            DispatchQueue.main.async { self?.asked = true; self?.access = granted; if granted { self?.refresh() } }
-        }
+        Permissions.request(.calendar) { [weak self] in self?.asked = true; self?.refresh() }
     }
 }
 
@@ -3194,7 +3456,10 @@ extension IslandView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { calendar.refresh() }
+        .onAppear {
+            if Permissions.state(.calendar) == .notAsked { calendar.requestAccess() }          // asked the first time the page is opened
+            calendar.refresh()
+        }
     }
 }
 
@@ -3256,6 +3521,8 @@ private final class MusicWatch: ObservableObject {
         lyrics = [Line(time: 70, text: "I'm running out of time")]
     }
 
+    private var askedAutomation = Set<String>()
+
     private func poll() {
         guard !busy else { return }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
@@ -3265,6 +3532,11 @@ private final class MusicWatch: ObservableObject {
         queue.async {
             var found: (Track, Bool, Double, Bool)?
             for a in candidates {
+                if !self.askedAutomation.contains(a.bundle) {                         // the first time this app is seen running: check, and ask if needed
+                    self.askedAutomation.insert(a.bundle)
+                    DispatchQueue.main.sync { NSApp.activate() }
+                    _ = Permissions.automation(a.bundle, ask: true)
+                }
                 let isSpotify = a.name == "Spotify"
                 let extra = isSpotify
                     ? "set dur to (duration of t) / 1000\n  set shuf to (shuffling as text)\n  set tid to (id of t)"
@@ -3494,20 +3766,27 @@ private final class SystemHUD {
 }
 
 /// A live view of the front camera, mirrored like a mirror. The camera runs only while it is on screen.
-private final class MirrorController: NSObject, ObservableObject {
+private final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     struct Camera: Identifiable, Equatable { var id: String; var name: String }
     @Published var denied = false
+    @Published var hasFrames = false
+    @Published var stalled = false
     @Published var cameras: [Camera] = []
     @Published var selected = ""
     @Published var flip = UserDefaults.standard.object(forKey: "mirrorFlip") as? Bool ?? true { didSet { UserDefaults.standard.set(flip, forKey: "mirrorFlip") } }
     let session = AVCaptureSession()
+    private let output = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "local.cocaine.mirror")
+    private var gotFrame = false
+    private var generation = 0
 
+    /// Checks the camera permission, asks for it if it was never asked, then starts the camera.
     func start() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: run()
-        case .notDetermined: AVCaptureDevice.requestAccess(for: .video) { ok in DispatchQueue.main.async { if ok { self.run() } else { self.denied = true } } }
-        default: denied = true
+        denied = false; hasFrames = false; stalled = false
+        switch Permissions.state(.camera) {
+        case .granted: run()
+        case .notAsked: Permissions.request(.camera) { [weak self] in if Permissions.state(.camera) == .granted { self?.run() } else { self?.denied = true } }
+        case .denied: denied = true
         }
     }
 
@@ -3516,44 +3795,82 @@ private final class MirrorController: NSObject, ObservableObject {
     }
 
     private func run() {
-        denied = false
         let devices = discover()
         cameras = devices.map { Camera(id: $0.uniqueID, name: $0.localizedName) }
-        if selected.isEmpty || !cameras.contains(where: { $0.id == selected }) { selected = (AVCaptureDevice.default(for: .video)?.uniqueID ?? cameras.first?.id) ?? "" }
+        // The Mac's own camera first: the "default" can be an iPhone that isn't ready.
+        let builtIn = devices.first { $0.deviceType == .builtInWideAngleCamera }?.uniqueID
+        if selected.isEmpty || !cameras.contains(where: { $0.id == selected }) { selected = builtIn ?? cameras.first?.id ?? "" }
         configure(selected)
     }
 
-    /// Points the session at that camera (replacing the previous one) and starts it.
+    /// Points the session at that camera (replacing the previous one) and starts it; watches that pictures really arrive.
     func configure(_ id: String) {
         selected = id
+        generation += 1
+        let mine = generation
+        gotFrame = false; hasFrames = false; stalled = false
         queue.async {
-            guard let cam = AVCaptureDevice(uniqueID: id) ?? AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam) else { return }
+            guard let cam = AVCaptureDevice(uniqueID: id) ?? self.discover().first, let input = try? AVCaptureDeviceInput(device: cam) else {
+                DispatchQueue.main.async { self.stalled = true }
+                return
+            }
             self.session.beginConfiguration()
             for old in self.session.inputs { self.session.removeInput(old) }
             if self.session.canAddInput(input) { self.session.addInput(input) }
+            if !self.session.outputs.contains(self.output), self.session.canAddOutput(self.output) {
+                self.output.setSampleBufferDelegate(self, queue: self.queue)
+                self.session.addOutput(self.output)
+            }
             self.session.commitConfiguration()
             if !self.session.isRunning { self.session.startRunning() }
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.generation == mine, !self.hasFrames else { return }
+            self.stalled = true
+        }
     }
 
-    func stop() { queue.async { if self.session.isRunning { self.session.stopRunning() } } }
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard !gotFrame else { return }
+        gotFrame = true
+        DispatchQueue.main.async { self.hasFrames = true; self.stalled = false }
+    }
+
+    func stop() {
+        generation += 1
+        hasFrames = false; stalled = false
+        queue.async { if self.session.isRunning { self.session.stopRunning() } }
+    }
 }
 
 /// The camera's picture, live. `flip` turns it into a mirror (left and right swapped, as in a real one).
 private struct MirrorPreview: NSViewRepresentable {
     let session: AVCaptureSession
     let flip: Bool
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        layer.cornerRadius = 12; layer.masksToBounds = true
-        v.layer = layer                        // first the layer, then layer-hosting on: the other way round the view drops it
-        v.wantsLayer = true
-        return v
+
+    final class PreviewView: NSView {
+        let preview: AVCaptureVideoPreviewLayer
+        init(session: AVCaptureSession) {
+            preview = AVCaptureVideoPreviewLayer(session: session)
+            super.init(frame: .zero)
+            wantsLayer = true
+            preview.videoGravity = .resizeAspectFill
+            layer?.addSublayer(preview)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+        override func layout() {
+            super.layout()
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            preview.frame = bounds
+            CATransaction.commit()
+        }
     }
-    func updateNSView(_ v: NSView, context: Context) {
-        v.layer?.setAffineTransform(CGAffineTransform(scaleX: flip ? -1 : 1, y: 1))
+
+    func makeNSView(context: Context) -> PreviewView { PreviewView(session: session) }
+    func updateNSView(_ v: PreviewView, context: Context) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        v.preview.setAffineTransform(CGAffineTransform(scaleX: flip ? -1 : 1, y: 1))
+        CATransaction.commit()
     }
 }
 
@@ -3664,12 +3981,16 @@ extension IslandView {
                 if mr.denied {
                     VStack(spacing: 8) {
                         Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(.system(size: 11)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
-                        Button { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!) } label: {
-                            Text(L("Open Settings")).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                        Button { Permissions.request(.camera) { mr.start() } } label: {
+                            Text(L("Allow")).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
                         }.buttonStyle(.plain)
                     }.padding(12)
                 } else {
                     MirrorPreview(session: mr.session, flip: mr.flip)
+                    if !mr.hasFrames {
+                        Text(mr.stalled ? L("No picture from the camera. Is another app using it?") : L("Starting the camera…"))
+                            .font(.system(size: 11)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.55)).padding(12)
+                    }
                 }
             }
             .frame(width: 290, height: 146).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -3794,6 +4115,81 @@ private enum Presence {
     static func anyRunning(_ names: [String]) -> Bool {
         let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)
         return names.contains { n in running.contains { $0.lowercased().contains(n.lowercased()) } }
+    }
+}
+
+// MARK: - The macOS volume and brightness keys, shown in the island instead of macOS's own HUD
+
+/// Intercepts the volume, mute and brightness keys (needs Accessibility), applies them itself and shows the island's bar.
+private final class MediaKeys {
+    var onStep: ((Int, Bool) -> Bool)?             // key code, fine step (⌥⇧): return true when it was handled
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+
+    /// NX_KEYTYPE_*: 0 volume up, 1 volume down, 2 brightness up, 3 brightness down, 7 mute.
+    static func decode(data1: Int) -> (key: Int, down: Bool)? {
+        let key = (data1 & 0xFFFF0000) >> 16, flags = data1 & 0x0000FFFF
+        guard [0, 1, 2, 3, 7].contains(key) else { return nil }
+        return (key, ((flags & 0xFF00) >> 8) == 0xA)
+    }
+
+    var running: Bool { tap != nil }
+
+    @discardableResult
+    func start() -> Bool {
+        guard tap == nil, AXIsProcessTrusted() else { return tap != nil }
+        let mask: CGEventMask = 1 << 14                                    // NX_SYSDEFINED
+        guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
+                                        callback: { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let me = Unmanaged<MediaKeys>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }; return Unmanaged.passUnretained(event) }
+            guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8, let k = MediaKeys.decode(data1: ns.data1) else { return Unmanaged.passUnretained(event) }
+            if !k.down { return me.onStep == nil ? Unmanaged.passUnretained(event) : nil }   // swallow the release of a key we handled
+            let fine = ns.modifierFlags.contains([.option, .shift])
+            return (me.onStep?(k.key, fine) ?? false) ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
+        tap = t
+        source = CFMachPortCreateRunLoopSource(nil, t, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: t, enable: true)
+        return true
+    }
+
+    func stop() {
+        if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
+        if let s = source { CFRunLoopRemoveSource(CFRunLoopGetMain(), s, .commonModes) }
+        tap = nil; source = nil
+    }
+
+    // MARK: acting on the keys
+
+    private static func outputDevice() -> AudioDeviceID? {
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var d = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &d) == noErr && d != 0 ? d : nil
+    }
+
+    /// Volume up/down/mute. Returns the new level and whether it's muted, or nil when this output has no volume control.
+    static func changeVolume(key: Int, fine: Bool) -> (level: Float, muted: Bool)? {
+        guard let dev = outputDevice() else { return nil }
+        var va = AudioObjectPropertyAddress(mSelector: 0x766D_7663, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var ma = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(dev, &va, 0, nil, &size, &v) == noErr else { return nil }
+        var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
+        let hasMute = AudioObjectGetPropertyData(dev, &ma, 0, nil, &msize, &mute) == noErr
+        let step: Float32 = fine ? 1.0 / 64 : 1.0 / 16
+        if key == 7 {
+            guard hasMute else { return nil }
+            mute = mute == 0 ? 1 : 0
+            AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute)
+            return (v, mute != 0)
+        }
+        v = min(1, max(0, v + (key == 0 ? step : -step)))
+        AudioObjectSetPropertyData(dev, &va, 0, nil, size, &v)
+        if hasMute && mute != 0 && key == 0 { mute = 0; AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute) }
+        return (v, mute != 0 && key != 0)
     }
 }
 
@@ -3931,7 +4327,8 @@ private final class IslandModel: ObservableObject {
     @Published var open = false
     @Published var tab = "home"
     @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
-    @Published var panelSize = CGSize(width: 150, height: 24)
+    /// The render tool only: draw this moment of the open/close morph (0…1) instead of following `open`.
+    var renderProgress: CGFloat?
     weak var pm: PanelModel?
     let focus = FocusTimer()
     let batteries = BatteryWatch()
@@ -4042,17 +4439,23 @@ private final class IslandController {
         watchTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in self?.watch() }
     }
 
-    /// Size and place the window: just the closed island, or the open one. The SwiftUI shape animates inside it.
+    /// Size and place the window: just the closed island, or the open one (with a little room for the spring's overshoot).
+    /// The SwiftUI canvas inside is fixed and centred on the notch, so these instant resizes never move what is drawn.
     func relayout() {
         guard enabled, let g = NotchGeometry.current(), let panel else { return }
         if g != model.geometry { model.geometry = g }
         // Closed, the window is wide enough for the widest wings and never changes (the shape animates inside it); it ignores the
         // mouse, so it never blocks the menu bar below it.
         let closedW = g.notchWidth + 2 * IslandModel.maxWing + 20
-        let full = model.open ? Island.openSize : CGSize(width: closedW, height: g.height)
-        model.panelSize = full
+        let full = model.open ? CGSize(width: Island.openSize.width + 2 * Island.slack, height: Island.openSize.height + Island.slack)
+                              : CGSize(width: closedW, height: g.height)
         panel.ignoresMouseEvents = !model.open
         panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height + Island.overscan), display: true)
+    }
+
+    /// The open island itself (the window has some empty room around it).
+    private func openRect(_ g: NotchGeometry) -> NSRect {
+        NSRect(x: g.centerX - Island.openSize.width / 2, y: g.frame.maxY - Island.openSize.height, width: Island.openSize.width, height: Island.openSize.height + Island.overscan)
     }
 
     func setOpen(_ open: Bool) {
@@ -4065,12 +4468,17 @@ private final class IslandController {
         } else {
             model.open = false
             panel?.ignoresMouseEvents = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in if self?.model.open == false { self?.relayout() } }     // after the morph
+            closingUntil = Date().addingTimeInterval(0.5)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in     // after the morph (and not under a later one)
+                guard let self, !self.model.open, Date() >= self.closingUntil.addingTimeInterval(-0.02) else { return }
+                self.relayout()
+            }
         }
     }
 
     private var hovering = false
     private var suspended = false
+    private var closingUntil = Date.distantPast
     private var pointerMonitors: [Any] = []
 
     /// Watches the pointer itself (in every app, and over the island), so it opens as soon as you touch the notch.
@@ -4099,7 +4507,7 @@ private final class IslandController {
         guard enabled, !suspended, let panel, panel.isVisible else { return }
         let p = NSEvent.mouseLocation, g = model.geometry
         // Open: the open island. Closed: just what is drawn (the notch and its wings), and the very top edge of the screen.
-        let f: NSRect = model.open ? panel.frame
+        let f: NSRect = model.open ? openRect(g)
             : NSRect(x: g.centerX - g.notchWidth / 2 - model.leftW, y: g.frame.maxY - g.height - 2, width: g.notchWidth + model.leftW + model.rightW, height: g.height + 14)
         let margin: CGFloat = model.open ? 8 : 3
         let inside = p.x >= f.minX - margin && p.x <= f.maxX + margin && p.y >= f.minY - (model.open ? margin : 0) && p.y <= f.maxY + 2
@@ -4124,7 +4532,7 @@ private final class IslandController {
             let covered = NotchGeometry.current().map { Self.fullScreenCovers($0.frame) } ?? false
             if covered && panel.isVisible { panel.orderOut(nil) } else if !covered && !panel.isVisible && !suspended { panel.orderFrontRegardless() }
         }
-        if !model.open { relayout() }
+        if !model.open && Date() >= closingUntil { relayout() }        // never shrink the window under a closing morph
     }
 
     private static func fullScreenCovers(_ frame: CGRect) -> Bool {
@@ -4154,29 +4562,30 @@ private struct IslandView: View {
     private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
     private var working: Bool { m.board.contains { $0.state == "working" } }
 
+    /// Closed and open are one view: a single progress (0 closed … 1 open, sprung) drives the outline, its clip and every icon,
+    /// so the bag, the live item and the tabs travel and change into each other instead of fading between two layouts.
     var body: some View {
         let open = model.open
-        let topR: CGFloat = open ? 14 : 6, bottomR: CGFloat = open ? 26 : 11              // the real notch's lines, widened
-        let leftW = model.leftW, rightW = model.rightW
-        let bodyW = open ? Island.openSize.width - 2 * 14 : leftW + g.notchWidth + rightW
-        let h = open ? Island.openSize.height : g.height
-        ZStack(alignment: .top) {
-            NotchShape(topRadius: topR, bottomRadius: bottomR, inset: Island.overscan).fill(Color.black)          // reaches above the screen's edge
-            Group {
-                if open {
-                    openContent
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)).animation(.easeOut(duration: 0.24).delay(0.07)),
-                                                removal: .opacity.animation(.easeIn(duration: 0.07))))
-                } else {
-                    closedContent(leftW, rightW).transition(.opacity.animation(.easeOut(duration: 0.16).delay(0.1)))
+        let pose = IslandPose(p: model.renderProgress ?? (open ? 1 : 0), leftW: model.leftW, rightW: model.rightW)
+        let l = IslandLayout(notch: g.notchWidth, notchH: g.height)
+        ZStack(alignment: .topLeading) {
+            IslandOutline(pose: pose, layout: l).fill(Color.black)                  // reaches above the screen's edge
+            ZStack(alignment: .topLeading) {
+                strip(pose, l)
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: l.top + g.height)
+                    if open {
+                        page.modifier(PageReveal(pose: IslandPose(p: model.renderProgress ?? 1, leftW: pose.leftW, rightW: pose.rightW), layout: l))
+                            .transition(.modifier(active: PageReveal(pose: IslandPose(p: 0, leftW: model.leftW, rightW: model.rightW), layout: l),
+                                                  identity: PageReveal(pose: IslandPose(p: 1, leftW: model.leftW, rightW: model.rightW), layout: l)))
+                    }
                 }
+                .frame(width: l.size.width, height: l.size.height, alignment: .top)
             }
-            .frame(width: bodyW, height: h, alignment: .top)
-            .padding(.top, Island.overscan)
+            .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
+            .mask(IslandOutline(pose: pose, layout: l))                            // nothing ever shows outside the black
         }
-        .frame(width: bodyW + 2 * topR, height: h + Island.overscan, alignment: .top)
-        .offset(x: open ? 0 : (rightW - leftW) / 2)                         // the notch in the shape stays over the real notch
-        .frame(width: model.panelSize.width, height: model.panelSize.height + Island.overscan, alignment: .top)
+        .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
         .contentShape(Rectangle())
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { model.dropTargeted($0) })) { providers in
             for provider in providers {
@@ -4186,28 +4595,65 @@ private struct IslandView: View {
             }
             return true
         }
-        .animation(.spring(response: 0.36, dampingFraction: 0.78), value: open)           // smooth, with a touch of give at the end
-        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: leftW)
-        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: rightW)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)        // centred on the notch whatever the window's size
+        .animation(open ? Island.openSpring : Island.closeSpring, value: open)
+        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.leftW)
+        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.rightW)
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
 
-    // MARK: closed: what is live, in the wings beside the notch
+    // MARK: the strip: the closed island's wings, and the open island's tabs
 
-    private func closedContent(_ leftW: CGFloat, _ rightW: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            leftWing.frame(width: leftW, alignment: .center)
-            Color.clear.frame(width: g.notchWidth)
-            rightWing.frame(width: rightW, alignment: .center).opacity(rightW > 0 ? 1 : 0)
+    /// Every item of the top strip, closed or open. Left: the bag (it becomes the Home tab), the tabs, the microphone. Right: what is
+    /// live (it melts into the gear), the tabs and the gear. Tabs wait behind the notch while closed and slide out of it on opening.
+    @ViewBuilder private func strip(_ s: IslandPose, _ l: IslandLayout) -> some View {
+        let tabs = Island.tabs(external: Island.external), half = (tabs.count + 1) / 2, cell = cellWidth
+        let left0 = l.cx - IslandLayout.openBody / 2 + 16, right1 = l.cx + IslandLayout.openBody / 2 - 16
+        let leftTabs = Array(tabs.prefix(half).enumerated()), rightTabs = Array(tabs.dropFirst(half).enumerated()), nRight = tabs.count - half
+        ForEach(leftTabs, id: \.element.id) { i, t in
+            Group { if i == 0 { homeButton(t, s) } else { tabButton(t) } }
+                .modifier(StripSlide(pose: s, layout: l, from: i == 0 ? .leftWing : .behindLeft, to: left0 + cell * (CGFloat(i) + 0.5),
+                                     width: cell, order: i, fade: i == 0 ? .none : .reveal))
         }
-        .frame(height: g.height)
+        if mic.active {
+            Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).frame(width: 24, height: g.height).help(L("Microphone in use"))
+                .modifier(StripSlide(pose: s, layout: l, from: .behindLeft, to: left0 + cell * CGFloat(half) + 12, width: 24, order: half, fade: .reveal))
+                .transition(.opacity)
+        }
+        rightWing.frame(width: max(1, model.rightW), height: g.height).allowsHitTesting(false).accessibilityHidden(model.open)
+            .modifier(StripSlide(pose: s, layout: l, from: .rightWing, to: right1 - cell / 2, width: max(1, model.rightW), order: 0, fade: .melt))
+        ForEach(rightTabs, id: \.element.id) { j, t in
+            tabButton(t).modifier(StripSlide(pose: s, layout: l, from: .behindRight, to: right1 - cell * (CGFloat(nRight - j) + 0.5),
+                                             width: cell, order: nRight - j, fade: .reveal))
+        }
+        Button { model.showSettings() } label: {
+            Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
+                .frame(width: cell, height: g.height).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
+        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
+        .modifier(StripSlide(pose: s, layout: l, from: .gear, to: right1 - cell / 2, width: cell, order: 0, fade: .gear))
     }
 
-    /// Left of the notch: the bag of Cocaine, filling and emptying exactly like the menu-bar icon did.
-    @ViewBuilder private var leftWing: some View {
-        if let f = model.flash { Image(systemName: f.icon).foregroundStyle(Island.accent) }
-        else { Image(nsImage: Self.bag(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, pink: m.bagPink)).frame(width: 20, height: 20) }
+    /// The Home tab is the bag itself: closed it sits left of the notch (or a flash icon does), open it is the first tab.
+    private func homeButton(_ t: (id: String, icon: String, title: String), _ s: IslandPose) -> some View {
+        let selected = model.tab == t.id
+        return Button { Haptic.tap(.alignment); model.tab = t.id } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
+                    .modifier(CellMorph(pose: s, kind: .highlight))
+                Image(nsImage: Self.bag(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, pink: m.bagPink)).frame(width: 20, height: 20)
+                    .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
+                if let f = model.flash {
+                    Image(systemName: f.icon).foregroundStyle(Island.accent).modifier(CellMorph(pose: s, kind: .flashIcon))
+                }
+            }
+            .frame(width: cellWidth, height: g.height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
+        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
     }
 
     /// The menu-bar bag, always in its light-on-dark colors (the island is black).
@@ -4245,31 +4691,28 @@ private struct IslandView: View {
 
     // MARK: open
 
-    private var openContent: some View {
-        VStack(spacing: 0) {
-            topStrip
-            Group {
-                switch model.tab {
-                case "focus": focusTab
-                case "calendar": calendarTab
-                case "music": musicTab
-                case "media": mediaTab
-                case "mirror": mirrorTab
-                case "display": displayTab
-                case "files": filesTab
-                case "shelf": shelfTab
-                case "clipboard": clipboardTab
-                case "status": statusTab
-                default: homeTab
-                }
+    /// The selected tab's page, below the strip. Only there while open: it is inserted once and unfolds (see PageReveal).
+    private var page: some View {
+        Group {
+            switch model.tab {
+            case "focus": focusTab
+            case "calendar": calendarTab
+            case "music": musicTab
+            case "media": mediaTab
+            case "mirror": mirrorTab
+            case "display": displayTab
+            case "files": filesTab
+            case "shelf": shelfTab
+            case "clipboard": clipboardTab
+            case "status": statusTab
+            default: homeTab
             }
-            .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: Island.openSize.width - 28, height: Island.openSize.height, alignment: .top)
+        .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
+        .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
     }
 
-    private var cellWidth: CGFloat { Island.tabs(external: !DDCDisplays.externalNames.isEmpty).count >= 12 ? 28 : 31 }
+    private var cellWidth: CGFloat { Island.tabs(external: Island.external).count >= 11 ? 28 : 31 }     // 11: room for the mic too
 
     private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
         Button { Haptic.tap(.alignment); model.tab = t.id } label: {
@@ -4282,28 +4725,7 @@ private struct IslandView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
-    }
-
-    private var topStrip: some View {
-        let tabs = Island.tabs(external: !DDCDisplays.externalNames.isEmpty), half = (tabs.count + 1) / 2
-        return HStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(tabs.prefix(half), id: \.id) { tabButton($0) }
-                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).frame(width: 24, height: g.height).help(L("Microphone in use")) }
-            }
-                .padding(.leading, 16).frame(maxWidth: .infinity, alignment: .leading)
-            Color.clear.frame(width: g.notchWidth)
-            HStack(spacing: 0) {
-                ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
-                Button { model.showSettings() } label: {
-                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
-                        .frame(width: cellWidth, height: g.height).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
-            }
-            .padding(.trailing, 16).frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .frame(height: g.height)
+        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
     }
 
     // MARK: home: Cocaine and what the AIs are doing
@@ -4607,6 +5029,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let speech = AVSpeechSynthesizer()
     private let island = IslandController()
     private let systemHUD = SystemHUD()
+    private let mediaKeys = MediaKeys()
+    private var autoAsked = Set<Permission>()
     private var presenceAssertion: IOPMAssertionID = 0
     private var lastOnAC: Bool?
     private let board = AgentBoard()                 // what each AI session is doing, from the hooks
@@ -4653,13 +5077,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.presenceChanged = { [weak self] in
             guard let self else { return }
-            if self.settings.stayActive && !Presence.hasAccess && !self.settings.presenceAsked {
-                self.settings.presenceAsked = true          // asked once; after that the Allow button does it
-                Presence.requestAccess()
-            }
+            self.autoAsked.remove(.accessibility)           // turning it on asks again, if it's still missing
+            self.refreshPermissions(askMissing: true)
             self.presenceTick()
         }
-        model.requestPresence = { Presence.requestAccess() }
+        model.requestPresence = { Permissions.request(.accessibility) }
+        model.requestPermission = { [weak self] p in Permissions.request(p) { self?.refreshPermissions() }; self?.refreshPermissions() }
+        mediaKeys.onStep = { [weak self] key, fine in self?.handleMediaKey(key, fine: fine) ?? false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.refreshPermissions(askMissing: true) }      // at launch: ask for what an enabled feature lacks
         model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
         if !settings.replaceHUD { SystemHUD.cleanup() }
         applyHUDReplacement()
@@ -4943,6 +5368,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
         systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
+        mediaKeys.stop()
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
@@ -5110,6 +5536,29 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         if ticks % 4 == 0 { watchPower() }                       // every 2 s
     }
 
+    // MARK: Permissions
+
+    /// What the features that are on need.
+    private func neededPermissions() -> [Permission] {
+        var n: [Permission] = []
+        if settings.stayActive || settings.replaceHUD { n.append(.accessibility) }
+        return n
+    }
+
+    /// Checks everything. With `askMissing`, asks (once per launch each) for what an enabled feature needs and lacks; the rest is
+    /// asked when you use it (camera, calendar, music) and listed under Permissions if it was refused.
+    private func refreshPermissions(askMissing: Bool = false) {
+        var problems: [Permission] = []
+        for p in neededPermissions() where Permissions.state(p) != .granted {
+            problems.append(p)
+            if askMissing && !autoAsked.contains(p) { autoAsked.insert(p); Permissions.request(p) }
+        }
+        if settings.island {
+            for p in [Permission.camera, .calendar, .automation, .files] where Permissions.state(p) == .denied { problems.append(p) }
+        }
+        if model.permissionProblems != problems { model.permissionProblems = problems }
+    }
+
     // MARK: Stay active, charging, the HUD keys
 
     /// While a chat app is open (or always) and you are idle, keeps the idle clock from running out; holds the display awake.
@@ -5117,6 +5566,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let access = Presence.hasAccess
         if model.presenceAccess != access { model.presenceAccess = access }
         let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
+        if settings.replaceHUD && !mediaKeys.running && AXIsProcessTrusted() { mediaKeys.start() }    // the permission was just given
+        refreshPermissions()
         if want != model.presenceActive {
             model.presenceActive = want
             setIconLevel(max(0, iconLevel), pouring: false)        // the menu-bar bag turns pink (or back)
@@ -5141,9 +5592,34 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         lastOnAC = b.onAC
     }
 
+    /// Volume, mute and brightness keys: applied here, shown in the island. False leaves the key to macOS.
+    private func handleMediaKey(_ key: Int, fine: Bool) -> Bool {
+        if key == 0 || key == 1 || key == 7 {
+            guard let r = MediaKeys.changeVolume(key: key, fine: fine) else { return false }
+            let icon = r.muted || r.level == 0 ? "speaker.slash.fill" : r.level < 0.34 ? "speaker.wave.1.fill" : r.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+            island.model.flashNotice(icon, L("Volume"), level: r.muted ? 0 : Double(r.level))
+            return true
+        }
+        guard dimPlan == nil, previewPlan == nil, let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) else { return false }
+        let step: Float = fine ? 1.0 / 64 : 1.0 / 16
+        let new = min(1, max(0, b + (key == 2 ? step : -step)))
+        dimQuiet = Date().addingTimeInterval(1)
+        screens.setBrightness(id, new)
+        island.model.flashNotice("sun.max.fill", L("Brightness"), level: Double(new))
+        return true
+    }
+
     private func applyHUDReplacement() {
         island.syncHUD(settings.replaceHUD)
-        if settings.replaceHUD { systemHUD.enable() } else { systemHUD.disable() }
+        if settings.replaceHUD {
+            systemHUD.enable()
+            autoAsked.remove(.accessibility)
+            refreshPermissions(askMissing: true)
+            if AXIsProcessTrusted() { mediaKeys.start() }
+        } else {
+            systemHUD.disable()
+            mediaKeys.stop()
+        }
     }
 
     // MARK: Timer, Battery Guard, Smart Triggers, hotkeys
@@ -5684,6 +6160,9 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     board.prune(now.addingTimeInterval(7300))
     check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
     check("hud: this process is not mistaken for the system helper", !SystemHUD.helperPIDs().contains(getpid()))
+    check("hud: volume-up key down is decoded", MediaKeys.decode(data1: (0 << 16) | (0xA << 8))?.down == true)
+    check("hud: brightness-down key up is decoded", { let k = MediaKeys.decode(data1: (3 << 16) | (0xB << 8)); return k?.key == 3 && k?.down == false }())
+    check("hud: other keys are ignored", MediaKeys.decode(data1: (16 << 16) | (0xA << 8)) == nil)
     check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
     check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
           Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
@@ -5710,6 +6189,34 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
         print("codex needs trust: \(s.codexNeedsTrust)")
         exit(0)
     }
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" {
+    // The state of every permission for this app, without asking for any.
+    for p in Permission.allCases { print("\(p.rawValue):", "\(Permissions.state(p))") }
+    exit(0)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--camera-test" {
+    // The camera permission state of this app, and (if allowed) whether frames arrive. Never asks for the permission.
+    let st = AVCaptureDevice.authorizationStatus(for: .video)
+    print("camera authorization:", st.rawValue, "(0 not asked, 1 restricted, 2 denied, 3 allowed)")
+    if st == .authorized {
+        let session = AVCaptureSession(), out = AVCaptureVideoDataOutput()
+        final class Counter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+            var frames = 0
+            func captureOutput(_ o: AVCaptureOutput, didOutput b: CMSampleBuffer, from c: AVCaptureConnection) { frames += 1 }
+        }
+        let counter = Counter()
+        if let cam = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam), session.canAddInput(input) {
+            session.addInput(input)
+            out.setSampleBufferDelegate(counter, queue: DispatchQueue(label: "camtest"))
+            if session.canAddOutput(out) { session.addOutput(out) }
+            session.startRunning()
+            Thread.sleep(forTimeInterval: 3)
+            session.stopRunning()
+        }
+        print("frames in 3 s:", counter.frames)
+    }
+    exit(0)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-test" {
     // Does a presence nudge reset the system idle time? Prints the permission state and the idle time before and after.
@@ -5758,19 +6265,49 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
-    let full = im.open ? Island.openSize : CGSize(width: 185 + 2 * IslandModel.maxWing + 20, height: 32)
-    im.panelSize = full
-    let view = ZStack(alignment: .top) {
-        LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
-    }.frame(width: 760, height: im.open ? 290 : 70)
-    let host = NSHostingView(rootView: view)
-    let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
-    window.contentView = host
-    host.layoutSubtreeIfNeeded()
-    let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
-    host.cacheDisplay(in: host.bounds, to: rep)
-    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+    // The morph: --progress 0.3 (or a list, 0,0.15,0.3…, drawn one under the other) draws those moments of opening; closing runs
+    // the same frames backwards. --flash "text" / --level 0.6 shows a flash message, --pink the pink bag, --external the Monitors tab,
+    // --notch covers the notch like the hardware does (what you really see), --xray shows it in translucent red instead.
+    let progress = args.firstIndex(of: "--progress").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }?
+        .split(separator: ",").compactMap { Double($0).map { CGFloat($0) } }
+    if let i = args.firstIndex(of: "--flash"), i + 1 < args.count {
+        let level = args.firstIndex(of: "--level").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
+        im.flash = (level == nil ? "arrow.down.circle.fill" : "speaker.wave.2.fill", args[i + 1], level)
+    }
+    if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true }        // Stay active alone: the pink bag
+    Island.forceExternal = args.contains("--external")
+    let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
+    func frame(_ p: CGFloat?) -> NSBitmapImageRep {
+        if let p { im.renderProgress = p; im.open = p > 0 }
+        let l = IslandLayout(notch: 185, notchH: 32)
+        let view = ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
+            if let notch {
+                IslandOutline(pose: IslandPose(p: 0, leftW: 0, rightW: 0), layout: l).fill(notch).frame(width: l.size.width, height: l.size.height)
+            }
+        }.frame(width: 760, height: im.open || progress != nil ? 250 : 70, alignment: .top).clipped()
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+    var reps = progress.map { $0.map { frame($0) } } ?? [frame(nil)]
+    if reps.count > 1 {                     // a contact sheet, labelled with each frame's progress
+        let w = reps[0].size.width, h = reps[0].size.height, sheet = NSImage(size: NSSize(width: w, height: h * CGFloat(reps.count)))
+        sheet.lockFocus()
+        for (i, r) in reps.enumerated() {
+            r.draw(in: NSRect(x: 0, y: h * CGFloat(reps.count - 1 - i), width: w, height: h))
+            NSString(string: String(format: "p %.2f", progress![i])).draw(at: NSPoint(x: 8, y: h * CGFloat(reps.count - 1 - i) + 8),
+                withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold), .foregroundColor: NSColor.black])
+        }
+        sheet.unlockFocus()
+        reps = [NSBitmapImageRep(data: sheet.tiffRepresentation!)!]
+    }
+    try? reps[0].representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
     exit(0)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
