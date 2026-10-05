@@ -1366,7 +1366,7 @@ private final class PanelModel: ObservableObject {
     @Published var presenceAccess = Presence.hasAccess
     @Published var permissionProblems: [Permission] = []
     /// Cocaine is off but Stay active is working: the bag is full of pink powder.
-    var bagPink: Bool { !on && presenceActive && fillLevel < 0.05 }
+    var bagPink: Bool { !on && (stayActive || presenceActive) && fillLevel < 0.05 }        // Stay active is on, whether or not a chat app is open
     @Published var presenceActive = false
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
@@ -4443,7 +4443,7 @@ private final class IslandModel: ObservableObject {
     var relayoutNow: () -> Void = {}
     /// Is something worth a mark right of the notch? (The bag on the left is always there.)
     var rightActive: Bool {
-        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.presenceActive ?? false)
+        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.stayActive ?? false) || (pm?.presenceActive ?? false)
             || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
     }
     var leftW: CGFloat { flash != nil ? 130 : Island.wing }
@@ -4800,7 +4800,7 @@ private struct IslandView: View {
         else if working { ProgressView().controlSize(.mini).tint(.white) }
         else if model.music.playing { Visualizer(playing: true) }
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
-        else if m.presenceActive { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Color(red: 1, green: 0.5, blue: 0.72)) }
+        else if m.stayActive || m.presenceActive { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Color(red: 1, green: 0.5, blue: 0.72)) }
     }
 
     private static func remaining(_ until: Date) -> String {
@@ -5204,6 +5204,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.presenceChanged = { [weak self] in
             guard let self else { return }
+            self.setIconLevel(max(0, self.iconLevel), pouring: false)        // the bag turns pink (or back) with the switch
             self.autoAsked.remove(.accessibility)           // turning it on asks again, if it's still missing
             self.refreshPermissions(askMissing: true)
             if !self.model.permissionProblems.isEmpty { self.watchPermissions() }
@@ -6480,6 +6481,9 @@ private enum IslandCheck {
     static func run() -> Int32 {
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+        let saved = SavedSettings()
+        defer { saved.restore() }                                  // the checks must not leave anything in the real settings
+        UserDefaults.standard.set(false, forKey: "stayActive")     // the states below are the ones named, whatever the user has on
         let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
         let closed = IslandController.windowFrame(g, open: false), opened = IslandController.windowFrame(g, open: true)
         check("island: the closed window holds both wings", closed.minX <= g.centerX - g.notchWidth / 2 - IslandModel.maxWing
@@ -6492,7 +6496,7 @@ private enum IslandCheck {
         for state in ["off", "on", "pink"] {
             let pm = PanelModel()
             pm.persistLanguage = false
-            pm.on = state == "on"; pm.fillLevel = pm.on ? 1 : 0; pm.presenceActive = state == "pink"
+            pm.on = state == "on"; pm.fillLevel = pm.on ? 1 : 0; pm.stayActive = state == "pink"        // Stay active alone, with no chat app open
             let im = IslandModel()
             im.pm = pm; im.geometry = g                 // renderProgress nil: the live path, driven by `open` alone
             let rep = render(im, pm, frame: closed)

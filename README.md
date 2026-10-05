@@ -123,7 +123,7 @@ opens, with these pages:
   Apple silicon only; not every monitor supports it, and it can't read values back.
 
 Plugging the charger in or out is announced too. The island replaces the menu-bar icon: the bag of Cocaine, always on its left, fills and empties as the icon did (white powder: Cocaine is on;
-pink powder: Cocaine is off but *Stay active* is working). Turn the island off and the icon comes back. It opens and closes by following the
+pink powder: Cocaine is off but *Stay active* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
 lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; *Cocaine → Haptic feedback* turns it off). The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. With *Cocaine →
 Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
 returns as soon as you turn the option off or quit Cocaine. No special permission is needed.

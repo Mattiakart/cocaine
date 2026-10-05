@@ -123,7 +123,7 @@ o ci clicchi e si apre, con queste pagine:
   silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
 
 Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu: la busta di Cocaine, sempre a sinistra, si riempie e si svuota come faceva l'icona (polvere
-bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta attivo* sta lavorando). Se disattivi l'isola, l'icona torna. Si apre e si chiude
+bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta attivo* è acceso, con o senza app di chat aperte). Se disattivi l'isola, l'icona torna. Si apre e si chiude
 seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; *Cocaine → Feedback aptico* lo disattiva). L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
 giochi. Con *Cocaine →
 Sostituisci l'HUD di sistema* attivo, volume e luminosità compaiono solo nell'isola: l'HUD di macOS viene zittito (il suo processo di supporto resta
