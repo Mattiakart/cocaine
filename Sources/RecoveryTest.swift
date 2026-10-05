@@ -172,12 +172,13 @@ enum RecoveryTest {
             while Date() < end { if cond() { return true }; usleep(100_000) }
             return cond()
         }
+        func sig(_ pid: pid_t, _ s: Int32) { if pid > 1 { kill(pid, s) } }   // never 0 or -1 (that would hit this test itself)
         var spawned: [Process] = []
         func standIn(stop: Bool = true) -> pid_t {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: T + "/" + standInName); p.arguments = ["--recovery-standin"]
             try? p.run(); spawned.append(p)
-            if stop { kill(p.processIdentifier, SIGSTOP); waitFor(2) { stopped(p.processIdentifier) } }
+            if stop { sig(p.processIdentifier, SIGSTOP); waitFor(2) { stopped(p.processIdentifier) } }
             return p.processIdentifier
         }
         func owner(_ args: [String], env extra: [String: String] = [:], ready: Bool = true) -> Process {
@@ -192,9 +193,9 @@ enum RecoveryTest {
         func lease() -> RecoveryLease? { Recovery.readLease() }
         func claim() -> String? { (try? String(contentsOfFile: support + "/sleep-claim", encoding: .utf8)).map { String($0.prefix(7)) } }
         func reset() {
-            for w in watchdogs() { kill(w, SIGKILL) }
+            for w in watchdogs() { sig(w, SIGKILL) }
             _ = eng("off")
-            for p in spawned where p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            for p in spawned where p.isRunning { sig(p.processIdentifier, SIGKILL) }
             spawned.removeAll()
             for f in ["recovery.json", "sleep-claim"] { unlink(support + "/" + f) }
             setFlag("0"); put(pmlog, "")
@@ -264,7 +265,7 @@ enum RecoveryTest {
             check("crash: the stand-in HUD helpers run (one frozen)", stopped(s1) && alive(s2) && !stopped(s2))
             check("crash: the session is set up (sleep off, hold, lease, watchdog)",
                   flag() == "1" && holdRunning() && lease()?.owner == o.processIdentifier && lease()?.hudFrozen == true && watchdogs(o.processIdentifier).count == 1)
-            kill(o.processIdentifier, SIGKILL)
+            sig(o.processIdentifier, SIGKILL)
             check("crash: the watchdog clears the lease", waitFor(15) { lease() == nil })
             check("crash: sleep is allowed again (it was before)", flag() == "0" && claim() == nil)
             check("crash: the display-hold helper is gone", waitFor(4) { !holdRunning() })
@@ -283,7 +284,7 @@ enum RecoveryTest {
             setFlag("1")
             let o = owner(["on"])
             check("prior state: the claim says it was already disabled", claim() == "prior=1")
-            kill(o.processIdentifier, SIGKILL)
+            sig(o.processIdentifier, SIGKILL)
             check("prior state: after the crash SleepDisabled is still 1, the helper gone",
                   waitFor(15) { lease() == nil } && flag() == "1" && waitFor(4) { !holdRunning() } && claim() == nil)
             reset()
@@ -292,7 +293,7 @@ enum RecoveryTest {
         // 5. Normal quit (SIGTERM, as from the Quit button or pkill): release, nothing left.
         do {
             let o = owner(["on"])
-            kill(o.processIdentifier, SIGTERM)
+            sig(o.processIdentifier, SIGTERM)
             check("quit: SleepDisabled back to 0, no lease, no helper, watchdog ends",
                   waitFor(10) { !o.isRunning } && flag() == "0" && lease() == nil && waitFor(4) { !holdRunning() } && waitFor(5) { watchdogs(o.processIdentifier).isEmpty })
             reset()
@@ -303,7 +304,7 @@ enum RecoveryTest {
             check("update: --prepare-update with no running app does nothing", sh([bin, "--prepare-update"]) == 0 && lease() == nil)
             let o1 = owner(["on"])
             check("update: --prepare-update marks the running session", sh([bin, "--prepare-update"]) == 0 && lease()?.handoverUntil != nil)
-            kill(o1.processIdentifier, SIGTERM)
+            sig(o1.processIdentifier, SIGTERM)
             waitFor(10) { !o1.isRunning }
             usleep(2_500_000)
             check("update: after the old version quits, sleep stays disabled and the lease waits",
@@ -311,7 +312,7 @@ enum RecoveryTest {
             let o2 = owner([])
             check("update: the new version adopts the session", lease()?.owner == o2.processIdentifier && lease()?.ownsSleep == true && flag() == "1")
             check("update: the old watchdog ends without touching sleep", waitFor(5) { watchdogs(o1.processIdentifier).isEmpty } && flag() == "1")
-            kill(o2.processIdentifier, SIGTERM)
+            sig(o2.processIdentifier, SIGTERM)
             check("update: quitting the new version releases as usual", waitFor(10) { !o2.isRunning } && flag() == "0" && lease() == nil)
             reset()
         }
@@ -321,7 +322,7 @@ enum RecoveryTest {
             let short = ["COCAINE_HANDOVER_SECONDS": "3"]
             let o = owner(["on"], env: short)
             _ = sh([bin, "--prepare-update"], env: short)
-            kill(o.processIdentifier, SIGTERM)
+            sig(o.processIdentifier, SIGTERM)
             waitFor(10) { !o.isRunning }
             check("update: an unclaimed hand-over keeps sleep only until it expires", flag() == "1")
             check("update: …then the watchdog releases it", waitFor(15) { lease() == nil } && flag() == "0")
@@ -332,11 +333,11 @@ enum RecoveryTest {
         do {
             let s = standIn()
             let o = owner(["on", "hud"])
-            kill(o.processIdentifier, SIGSTOP)
+            sig(o.processIdentifier, SIGSTOP)
             check("hang: the frozen HUD helper is ended while the app is stuck", waitFor(12) { !alive(s) })
             check("hang: sleep and lease are untouched", flag() == "1" && lease()?.owner == o.processIdentifier)
-            kill(o.processIdentifier, SIGCONT)
-            kill(o.processIdentifier, SIGTERM)
+            sig(o.processIdentifier, SIGCONT)
+            sig(o.processIdentifier, SIGTERM)
             check("hang: after it recovers, quitting still cleans up", waitFor(10) { !o.isRunning } && flag() == "0" && lease() == nil)
             reset()
         }
@@ -345,10 +346,10 @@ enum RecoveryTest {
         do {
             let o = owner(["on"])
             let w1 = watchdogs(o.processIdentifier).first ?? 0
-            kill(w1, SIGTERM)
+            sig(w1, SIGTERM)
             check("watchdog: SIGTERM with the app alive changes nothing", waitFor(5) { !alive(w1) } && flag() == "1" && lease()?.owner == o.processIdentifier)
             check("watchdog: the app starts a new one", waitFor(15) { watchdogs(o.processIdentifier).contains { $0 != w1 } })
-            kill(o.processIdentifier, SIGKILL)
+            sig(o.processIdentifier, SIGKILL)
             check("watchdog: the new one recovers a crash", waitFor(15) { lease() == nil } && flag() == "0")
             reset()
         }
@@ -357,8 +358,8 @@ enum RecoveryTest {
         do {
             let s = standIn()
             let o = owner(["on", "hud"])
-            for w in watchdogs(o.processIdentifier) { kill(w, SIGKILL) }
-            kill(o.processIdentifier, SIGKILL)
+            for w in watchdogs(o.processIdentifier) { sig(w, SIGKILL) }
+            sig(o.processIdentifier, SIGKILL)
             usleep(500_000)
             check("both killed: the lease stays behind (nothing could act)", lease()?.owner == o.processIdentifier && stopped(s))
             let o2 = owner([])
@@ -368,8 +369,8 @@ enum RecoveryTest {
                   && lease()?.owner == o2.processIdentifier)
             let s2 = standIn()
             RecoveryTestHelpers.markHUD(support)                // as if o2 had frozen it
-            for w in watchdogs(o2.processIdentifier) { kill(w, SIGKILL) }
-            kill(o2.processIdentifier, SIGKILL)
+            for w in watchdogs(o2.processIdentifier) { sig(w, SIGKILL) }
+            sig(o2.processIdentifier, SIGKILL)
             usleep(300_000)
             check("uninstall: cleanup ends the frozen HUD helper, releases sleep, stops the helper",
                   sh([bin, "--uninstall-cleanup"]) == 0 && waitFor(3) { !alive(s2) } && flag() == "0" && waitFor(4) { !holdRunning() })
