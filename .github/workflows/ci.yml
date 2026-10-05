@@ -1,0 +1,69 @@
+# Build and verify on every push and pull request; verify published release artifacts on demand or when a release is
+# published. Nothing here signs with a real identity, notarizes, uploads or publishes anything.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g. v2.3.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      VERIFY_SIGN: adhoc   # the runner has no signing identity; tests needing one print SKIP (CI)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          swiftc --version
+      - name: verify.sh
+        run: ./verify.sh
+
+  release-verification:
+    # Manual, or when a release (its v* tag) is published; not on the bare tag push, which usually comes before the assets
+    # are uploaded. Downloads the release's DMG and signed manifest (read-only) and checks them against the public key in
+    # the tagged source and against the declared signing tier.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    needs: verify
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Tag matches Info.plist
+        run: |
+          v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
+          test "v$v" = "$TAG" || { echo "Info.plist says $v but the tag is $TAG"; exit 1; }
+      - name: Build (ad hoc; only to get this commit's verifier and embedded key)
+        run: ./build.sh --no-install --sign adhoc
+      - name: Download the published release assets
+        id: dl
+        run: |
+          mkdir -p dist
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG isn't published yet: run this job again (workflow_dispatch) after publishing."
+            exit 1
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "Cocaine-*.dmg" --pattern "Cocaine-*.dmg.manifest.json"
+      - name: Verify DMG, signed manifest and declared tier
+        run: zsh tools/check-release.sh "dist/Cocaine-${TAG#v}.dmg"
