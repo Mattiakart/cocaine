@@ -99,6 +99,15 @@ chiuso.
 La ✉︎ accanto alla versione, nel pannello, apre una mail all'autore con le versioni di Cocaine e di macOS già scritte.
 Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattiakart/cocaine/issues).
 
+## Isola
+
+Cocaine vive anche nel notch (o, su uno schermo senza, in una sottile pillola in alto). Chiusa, mostra accanto al notch ciò che
+è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, il microfono in uso. Ci
+passi sopra o ci clicchi e si apre: **Home** (l'interruttore, il timer, gli agent AI al lavoro), **Focus** (un timer
+focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio), **Batterie** (il Mac, gli AirPods e altri
+dispositivi Bluetooth) e **Utilizzo** (i limiti di Codex e i token di Claude Code, letti dai loro file locali). L'ingranaggio
+apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e giochi.
+
 ## Lavoro da remoto
 
 Lasci il Mac e continui a lavorare dal telefono. Cocaine tiene sveglio il Mac (il coperchio può restare chiuso) e un

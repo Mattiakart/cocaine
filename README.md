@@ -99,6 +99,15 @@ running.
 The ✉︎ next to the version in the panel opens an email to the author, with your Cocaine and macOS versions already filled
 in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattiakart/cocaine/issues).
 
+## Island
+
+Cocaine also lives in the notch (or, on a screen without one, in a slim pill at the top). Closed, it shows what is live beside
+the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, the microphone in use. Point at it, or click
+it, and it opens: **Home** (the switch, the timer, the AI agents at work), **Focus** (a focus/break timer with a minute ruler;
+starting a focus keeps the Mac awake), **Batteries** (the Mac, AirPods and other Bluetooth devices) and **Usage** (Codex's
+limits, and Claude Code's tokens, both read from their own local files). The gear opens the settings panel; *Cocaine →
+Island* turns it off. It hides during full-screen video and games.
+
 ## Remote work
 
 Leave the Mac, keep working from your phone. Cocaine keeps the Mac awake (the lid can stay closed), and a small

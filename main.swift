@@ -12,6 +12,7 @@
 
 import AppKit
 import AVFoundation
+import CoreAudio
 import Carbon.HIToolbox
 import Darwin
 import ImageIO
@@ -353,6 +354,7 @@ private extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var island: Bool { get { flag("island", true) } nonmutating set { d.set(newValue, forKey: "island") } }
     var wakeForPhone: Bool { get { flag("wakeForPhone", false) } nonmutating set { d.set(newValue, forKey: "wakeForPhone") } }
     /// A random value the app keeps for its own tools (`cocaine remote notify test`); URLs need it for `test=` flags.
     var testToken: String {
@@ -1157,6 +1159,7 @@ private final class PanelModel: ObservableObject {
     @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var wakeForPhone: Bool { didSet { settings.wakeForPhone = wakeForPhone; wakeChanged() } }
+    @Published var island: Bool { didSet { settings.island = island; islandChanged() } }
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
     @Published var phoneCount = 0                    // iPhones paired for remote control
@@ -1197,6 +1200,7 @@ private final class PanelModel: ObservableObject {
     var timerChanged: () -> Void = {}
     var hotkeysChanged: () -> Void = {}
     var wakeChanged: () -> Void = {}
+    var islandChanged: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1226,6 +1230,7 @@ private final class PanelModel: ObservableObject {
         triggerApps = settings.triggerApps
         hotkeys = settings.hotkeys
         wakeForPhone = settings.wakeForPhone
+        island = settings.island
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -1595,6 +1600,7 @@ private struct PanelView: View {
             row(L("Open at login")) {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
+            row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
             row(L("Language")) {
                 let code = m.language.isEmpty ? Language.system : m.language
                 Menu {
@@ -2517,6 +2523,690 @@ private final class ClosureItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
+// MARK: - Island: the notch (or the top of any screen) as a live home for Cocaine and its tools
+
+private enum Island {
+    static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
+    static let openSize = CGSize(width: 600, height: 214)
+    static let wing: CGFloat = 62                              // each side of the notch when something is live
+    /// id, symbol, title. The first half goes left of the notch, the rest right of it.
+    static var tabs: [(id: String, icon: String, title: String)] {
+        [("home", "house.fill", L("Home")), ("focus", "timer", L("Focus")),
+         ("battery", "battery.100", L("Batteries")), ("usage", "chart.bar.fill", L("Usage"))]
+    }
+}
+
+/// Where the island sits: the real notch of a built-in display, or a slim pill at the top of any other screen.
+private struct NotchGeometry: Equatable {
+    var frame: CGRect          // the screen's frame
+    var notchWidth: CGFloat
+    var height: CGFloat
+    var centerX: CGFloat       // the notch's middle, in screen coordinates
+    var hasNotch: Bool
+
+    static func current() -> NotchGeometry? {
+        let screens = NSScreen.screens
+        guard let s = screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first else { return nil }
+        if s.safeAreaInsets.top > 0, let l = s.auxiliaryTopLeftArea, let r = s.auxiliaryTopRightArea {
+            return NotchGeometry(frame: s.frame, notchWidth: s.frame.width - l.width - r.width, height: s.safeAreaInsets.top,
+                                 centerX: s.frame.minX + l.width + (s.frame.width - l.width - r.width) / 2, hasNotch: true)
+        }
+        return NotchGeometry(frame: s.frame, notchWidth: 150, height: 24, centerX: s.frame.midX, hasNotch: false)
+    }
+}
+
+private struct NotchShape: Shape {
+    var radius: CGFloat
+    var animatableData: CGFloat { get { radius } set { radius = newValue } }
+    func path(in rect: CGRect) -> Path {
+        let r = min(radius, rect.height / 2, rect.width / 2)
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        p.addArc(center: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: Island data
+
+/// Focus / break timer: a minute ruler to set the length, a countdown shown in the closed island.
+private final class FocusTimer: ObservableObject {
+    @Published var focusMinutes = 25
+    @Published var breakMinutes = 5
+    @Published var isBreak = false
+    @Published var endsAt: Date?
+    @Published var pausedLeft: TimeInterval?
+    @Published var tick = Date()
+    var onFinish: ((Bool) -> Void)?                // true when a break just ended
+    var onStart: ((Int) -> Void)?
+    private var timer: Timer?
+
+    var minutes: Int { get { isBreak ? breakMinutes : focusMinutes } set { if isBreak { breakMinutes = newValue } else { focusMinutes = newValue } } }
+    var running: Bool { endsAt != nil }
+    var active: Bool { endsAt != nil || pausedLeft != nil }
+    var remaining: TimeInterval { endsAt.map { max(0, $0.timeIntervalSinceNow) } ?? pausedLeft ?? Double(minutes) * 60 }
+    var text: String { let s = Int(remaining.rounded(.up)); return String(format: "%d:%02d", s / 60, s % 60) }
+
+    func start() {
+        let left = pausedLeft ?? Double(minutes) * 60
+        endsAt = Date().addingTimeInterval(left); pausedLeft = nil
+        if !isBreak { onStart?(Int((left / 60).rounded(.up)) + 1) }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.step() }
+    }
+    func pause() { pausedLeft = remaining; endsAt = nil; timer?.invalidate(); tick = Date() }
+    func reset() { endsAt = nil; pausedLeft = nil; timer?.invalidate(); tick = Date() }
+    func setBreak(_ b: Bool) { reset(); isBreak = b }
+    private func step() {
+        tick = Date()
+        guard let e = endsAt, e.timeIntervalSinceNow <= 0 else { return }
+        let wasBreak = isBreak
+        reset()
+        NSSound(named: "Glass")?.play()
+        isBreak.toggle()
+        onFinish?(wasBreak)
+    }
+}
+
+private struct BatteryItem: Identifiable {
+    var id: String
+    var name: String
+    var icon: String
+    var parts: [(label: String, percent: Int)]
+    var charging = false
+}
+
+/// Charge of the Mac and of connected Bluetooth devices (AirPods, keyboard, mouse, trackpad).
+private final class BatteryWatch: ObservableObject {
+    @Published var items: [BatteryItem] = []
+    private var busy = false
+
+    func refresh() {
+        guard !busy else { return }
+        busy = true
+        DispatchQueue.global().async {
+            var list: [BatteryItem] = []
+            if let b = System.battery {
+                list.append(BatteryItem(id: "mac", name: "Mac", icon: "laptopcomputer", parts: [("", b.percent)], charging: b.onAC))
+            }
+            list += Self.bluetooth()
+            DispatchQueue.main.async { self.items = list; self.busy = false }
+        }
+    }
+
+    private static func bluetooth() -> [BatteryItem] {
+        let p = Process(), out = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        p.arguments = ["SPBluetoothDataType", "-json"]
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return [] }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let top = (root["SPBluetoothDataType"] as? [[String: Any]])?.first,
+              let connected = top["device_connected"] as? [[String: Any]] else { return [] }
+        func pct(_ v: Any?) -> Int? { (v as? String).flatMap { Int($0.replacingOccurrences(of: "%", with: "")) } }
+        var items: [BatteryItem] = []
+        for entry in connected {
+            for (name, value) in entry {
+                guard let d = value as? [String: Any] else { continue }
+                var parts: [(String, Int)] = []
+                for (key, label) in [("device_batteryLevelMain", ""), ("device_batteryLevelLeft", "L"), ("device_batteryLevelRight", "R"), ("device_batteryLevelCase", "↳")] {
+                    if let v = pct(d[key]) { parts.append((label, v)) }
+                }
+                guard !parts.isEmpty else { continue }
+                let kind = (d["device_minorType"] as? String ?? "").lowercased()
+                let icon = kind.contains("head") || name.lowercased().contains("airpods") ? "airpodspro" : kind.contains("keyboard") ? "keyboard"
+                    : kind.contains("mouse") ? "computermouse" : kind.contains("trackpad") ? "rectangle.and.hand.point.up.left" : "dot.radiowaves.left.and.right"
+                items.append(BatteryItem(id: name, name: name, icon: icon, parts: parts))
+            }
+        }
+        return items.sorted { $0.name < $1.name }
+    }
+}
+
+/// Is something using the microphone right now? (CoreAudio's own "running somewhere" flag of the default input.)
+private final class MicWatch: ObservableObject {
+    @Published var active = false
+    private var timer: Timer?
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.poll() }
+        poll()
+    }
+
+    private func poll() {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var device = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &device) == noErr, device != 0 else { return }
+        var running: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &running) == noErr else { return }
+        let now = running != 0
+        if now != active { active = now }
+    }
+}
+
+/// Usage of the AI coding tools, read from their own local files: Codex's rate limits, and Claude Code's token counts.
+private final class UsageWatch: ObservableObject {
+    struct Limit: Identifiable { var id: String; var name: String; var percent: Double; var resets: Date? }
+    @Published var codex: [Limit] = []
+    @Published var claudeFive = 0
+    @Published var claudeWeek = 0
+    @Published var loaded = false
+    private var busy = false, last = Date.distantPast
+
+    func refresh() {
+        guard !busy, Date().timeIntervalSince(last) > 30 else { return }
+        busy = true
+        DispatchQueue.global().async {
+            let c = Self.codexLimits(), t = Self.claudeTokens()
+            DispatchQueue.main.async { self.codex = c; self.claudeFive = t.five; self.claudeWeek = t.week; self.loaded = true; self.busy = false; self.last = Date() }
+        }
+    }
+
+    private static func codexLimits() -> [Limit] {
+        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+        guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        var newest: (URL, Date)?
+        for case let u as URL in en where u.pathExtension == "jsonl" {
+            let d = (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if newest == nil || d > newest!.1 { newest = (u, d) }
+        }
+        guard let file = newest?.0, let h = try? FileHandle(forReadingFrom: file) else { return [] }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > 400_000 ? size - 400_000 : 0)
+        let text = String(decoding: (try? h.readToEnd()) ?? Data(), as: UTF8.self)
+        guard let r = text.range(of: "\"rate_limits\":", options: .backwards) else { return [] }
+        let tail = String(text[r.upperBound...].prefix(600))
+        guard let re = try? NSRegularExpression(pattern: #""used_percent":([0-9.]+),"window_minutes":(\d+),"resets_at":(\d+)"#) else { return [] }
+        return re.matches(in: tail, range: NSRange(tail.startIndex..., in: tail)).compactMap { m in
+            guard let a = Range(m.range(at: 1), in: tail), let b = Range(m.range(at: 2), in: tail), let c = Range(m.range(at: 3), in: tail),
+                  let pct = Double(tail[a]), let win = Int(tail[b]), let reset = Double(tail[c]) else { return nil }
+            let name = win >= 10000 ? L("Week") : win >= 1440 ? L("Day") : String(format: L("%d h"), win / 60)
+            return Limit(id: "codex\(win)", name: name, percent: pct, resets: Date(timeIntervalSince1970: reset))
+        }
+    }
+
+    /// Input + output tokens of Claude Code's own conversations in the last 5 hours and 7 days (each message counted once).
+    private static func claudeTokens() -> (five: Int, week: Int) {
+        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) else { return (0, 0) }
+        let now = Date(), weekAgo = now.addingTimeInterval(-7 * 86400), fiveAgo = now.addingTimeInterval(-5 * 3600)
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let start = Date()
+        var byID: [String: (Date, Int)] = [:]
+        func number(_ key: String, in s: Substring) -> Int {
+            guard let r = s.range(of: key) else { return 0 }
+            return Int(s[r.upperBound...].prefix { $0.isNumber }) ?? 0
+        }
+        for case let u as URL in en where u.pathExtension == "jsonl" {
+            guard Date().timeIntervalSince(start) < 4 else { break }
+            let v = try? u.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            guard (v?.contentModificationDate ?? .distantPast) > weekAgo, (v?.fileSize ?? 0) < 120_000_000, let data = try? Data(contentsOf: u) else { continue }
+            for line in data.split(separator: 10) {
+                guard line.count > 40, let s = String(data: line, encoding: .utf8), s.contains("\"output_tokens\":") else { continue }
+                let sub = Substring(s)
+                guard let tsR = sub.range(of: "\"timestamp\":\""), let ts = iso.date(from: String(sub[tsR.upperBound...].prefix(24))) else { continue }
+                var id = "\(u.lastPathComponent)\(ts.timeIntervalSince1970)"
+                if let idR = sub.range(of: "\"id\":\"msg_") { id = String(sub[idR.upperBound...].prefix { $0 != "\"" }) }
+                let total = number("\"input_tokens\":", in: sub) + number("\"output_tokens\":", in: sub)
+                if total > (byID[id]?.1 ?? 0) { byID[id] = (ts, total) }
+            }
+        }
+        var five = 0, week = 0
+        for (_, v) in byID where v.0 > weekAgo { week += v.1; if v.0 > fiveAgo { five += v.1 } }
+        return (five, week)
+    }
+}
+
+// MARK: Island model and controller
+
+private final class IslandModel: ObservableObject {
+    @Published var open = false
+    @Published var tab = "home"
+    @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
+    @Published var panelSize = CGSize(width: 150, height: 24)
+    weak var pm: PanelModel?
+    let focus = FocusTimer()
+    let batteries = BatteryWatch()
+    let mic = MicWatch()
+    let usage = UsageWatch()
+    /// Is anything live (so the closed island shows wings beside the notch)?
+    var live: Bool {
+        focus.active || mic.active || (pm?.on ?? false) || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
+    }
+    var hover: (Bool) -> Void = { _ in }
+    var toggleOpen: () -> Void = {}
+    var showSettings: () -> Void = {}
+}
+
+private final class IslandPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+private final class IslandController {
+    let model = IslandModel()
+    private var panel: IslandPanel?
+    private var host: NSHostingView<IslandView>?
+    private var openTimer: Timer?, closeTimer: Timer?, watchTimer: Timer?
+    private var panelModel: PanelModel?
+    private var enabled = false
+    private var ticks = 0
+
+    func start(panelModel: PanelModel, enabled: Bool, showSettings: @escaping () -> Void) {
+        self.panelModel = panelModel
+        model.pm = panelModel
+        model.showSettings = showSettings
+        model.hover = { [weak self] inside in self?.hover(inside) }
+        model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
+        model.mic.start()
+        setEnabled(enabled)
+    }
+
+    func setEnabled(_ on: Bool) {
+        enabled = on
+        guard on else { panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; return }
+        if panel == nil, let pm = panelModel {
+            let p = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+            p.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+            p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+            p.hidesOnDeactivate = false; p.isMovable = false
+            p.appearance = NSAppearance(named: .darkAqua)
+            let h = NSHostingView(rootView: IslandView(model: model, m: pm, focus: model.focus, batteries: model.batteries, mic: model.mic, usage: model.usage))
+            h.sizingOptions = []
+            p.contentView = h
+            panel = p; host = h
+        }
+        relayout()
+        panel?.orderFrontRegardless()
+        watchTimer?.invalidate()
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in self?.watch() }
+    }
+
+    /// Size and place the window: just the closed island, or the open one. The SwiftUI shape animates inside it.
+    func relayout() {
+        guard enabled, let g = NotchGeometry.current(), let panel else { return }
+        if g != model.geometry { model.geometry = g }
+        let closedW = g.notchWidth + (model.live ? 2 * Island.wing : 0)
+        let full = model.open ? Island.openSize : CGSize(width: closedW, height: g.height)
+        model.panelSize = full
+        panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height), display: true)
+    }
+
+    func setOpen(_ open: Bool) {
+        openTimer?.invalidate(); closeTimer?.invalidate()
+        guard model.open != open else { return }
+        if open {
+            model.open = true
+            relayout()
+        } else {
+            model.open = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in if self?.model.open == false { self?.relayout() } }
+        }
+    }
+
+    private func hover(_ inside: Bool) {
+        openTimer?.invalidate(); closeTimer?.invalidate()
+        if inside {
+            guard !model.open else { return }
+            openTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: false) { [weak self] _ in self?.setOpen(true) }
+        } else if model.open {
+            closeTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in self?.setOpen(false) }
+        }
+    }
+
+    /// Once a second: hide during full-screen video and games, follow the screen, keep the closed width in step.
+    private func watch() {
+        guard enabled, let panel else { return }
+        ticks += 1
+        if ticks % 4 == 0 {
+            let covered = NotchGeometry.current().map { Self.fullScreenCovers($0.frame) } ?? false
+            if covered && panel.isVisible { panel.orderOut(nil) } else if !covered && !panel.isVisible { panel.orderFrontRegardless() }
+        }
+        if !model.open { relayout() }
+    }
+
+    private static func fullScreenCovers(_ frame: CGRect) -> Bool {
+        let list = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]) ?? []
+        for w in list where (w[kCGWindowLayer as String] as? Int) == 0 && (w[kCGWindowOwnerName as String] as? String) != "Cocaine" {
+            guard let b = w[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+            if r.width >= frame.width - 1 && r.height >= frame.height - 1 { return true }
+        }
+        return false
+    }
+}
+
+// MARK: Island views
+
+private struct IslandView: View {
+    @ObservedObject var model: IslandModel
+    @ObservedObject var m: PanelModel
+    @ObservedObject var focus: FocusTimer
+    @ObservedObject var batteries: BatteryWatch
+    @ObservedObject var mic: MicWatch
+    @ObservedObject var usage: UsageWatch
+
+    private var g: NotchGeometry { model.geometry }
+    private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
+    private var working: Bool { m.board.contains { $0.state == "working" } }
+    private var live: Bool { model.live }
+    private var closedWidth: CGFloat { g.notchWidth + (live ? 2 * Island.wing : 0) }
+
+    var body: some View {
+        let size = model.open ? Island.openSize : CGSize(width: closedWidth, height: g.height)
+        ZStack(alignment: .top) {
+            NotchShape(radius: model.open ? 28 : 11).fill(Color.black)
+            if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.1))) } else { closedContent }
+        }
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .clipShape(NotchShape(radius: model.open ? 28 : 11))
+        .contentShape(Rectangle())
+        .onHover { model.hover($0) }
+        .onTapGesture { if !model.open { model.toggleOpen() } }
+        .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height), alignment: .top)
+        .animation(.spring(response: 0.42, dampingFraction: 0.8), value: model.open)
+        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: live)
+        .environment(\.colorScheme, .dark)
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: closed: what is live, in the wings beside the notch
+
+    private var closedContent: some View {
+        HStack(spacing: 0) {
+            leftWing.frame(width: Island.wing, alignment: .center)
+            Color.clear.frame(width: g.notchWidth)
+            rightWing.frame(width: Island.wing, alignment: .center)
+        }
+        .frame(height: g.height)
+        .opacity(live ? 1 : 0)
+    }
+
+    @ViewBuilder private var leftWing: some View {
+        if focus.running { Image(systemName: focus.isBreak ? "cup.and.saucer.fill" : "timer").foregroundStyle(Island.accent) }
+        else if waiting != nil { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
+        else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
+        else if working { Image(systemName: "gearshape.fill").foregroundStyle(Island.accent) }
+        else if m.on { Image(systemName: "bolt.fill").foregroundStyle(Island.accent) }
+    }
+
+    @ViewBuilder private var rightWing: some View {
+        if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
+        else if let w = waiting { Text(w.from.prefix(7)).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)) }
+        else if mic.active { Circle().fill(.orange).frame(width: 7, height: 7) }
+        else if working { ProgressView().controlSize(.mini).tint(.white) }
+        else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
+    }
+
+    private static func remaining(_ until: Date) -> String {
+        let s = Int(until.timeIntervalSinceNow)
+        guard s > 0 else { return "∞" }
+        return s >= 3600 ? "\(s / 3600)h" : "\(max(1, s / 60))m"
+    }
+
+    // MARK: open
+
+    private var openContent: some View {
+        VStack(spacing: 0) {
+            topStrip
+            Group {
+                switch model.tab {
+                case "focus": focusTab
+                case "battery": batteryTab
+                case "usage": usageTab
+                default: homeTab
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .frame(width: Island.openSize.width, height: Island.openSize.height, alignment: .top)
+    }
+
+    private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
+        Button { model.tab = t.id } label: {
+            Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
+                .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
+                .frame(width: 30, height: 24)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)))
+        }
+        .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
+    }
+
+    private var topStrip: some View {
+        let tabs = Island.tabs, half = (tabs.count + 1) / 2
+        return HStack(spacing: 0) {
+            HStack(spacing: 4) { ForEach(tabs.prefix(half), id: \.id) { tabButton($0) } }
+                .padding(.leading, 22).frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: g.notchWidth)
+            HStack(spacing: 4) {
+                ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
+                if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 4) }
+                Button { model.showSettings() } label: {
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 30, height: 24)
+                }
+                .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
+            }
+            .padding(.trailing, 22).frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(height: g.height)
+    }
+
+    // MARK: home: Cocaine and what the AIs are doing
+
+    private var statusText: String {
+        guard m.on else { return L("Your Mac sleeps as usual") }
+        if let u = m.onUntil, u > Date() { return L("Your Mac stays awake") + " · " + String(format: L("until %@"), PanelView.timeString(u)) }
+        return L("Your Mac stays awake")
+    }
+
+    private var homeTab: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cocaine").font(.system(size: 17, weight: .bold))
+                        Text(statusText).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(2)
+                    }
+                    Spacer(minLength: 6)
+                    CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L("Stay on for")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                    EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices) { $0 == 0 ? "∞" : ($0 < 60 ? "\($0)m" : "\($0 / 60)h") }
+                }
+            }
+            .frame(width: 270)
+            VStack(alignment: .leading, spacing: 8) {
+                let shown = Array(m.board.filter { $0.isLive || Date().timeIntervalSince1970 - $0.since < 600 }.prefix(3))
+                Text(L("Agents")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                if shown.isEmpty {
+                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                } else {
+                    ForEach(shown) { e in
+                        HStack(spacing: 9) {
+                            Image(systemName: Self.icon(e.state)).font(.system(size: 12, weight: .medium)).foregroundStyle(Self.color(e.state)).frame(width: 16)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(e.from).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Text([Self.name(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private static func icon(_ s: String) -> String { ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle" }
+    private static func color(_ s: String) -> Color { s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Island.accent }
+    private static func name(_ s: String) -> String { ["working": L("Working"), "waiting": L("Needs you"), "done": L("Done"), "error": L("Error")][s] ?? s }
+
+    // MARK: focus
+
+    private var focusTab: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    ForEach([(false, L("Focus")), (true, L("Break"))], id: \.0) { b in
+                        Button { focus.setBreak(b.0) } label: {
+                            Text(b.1).font(.system(size: 12, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(focus.isBreak == b.0 ? 0.18 : 0.06)))
+                                .foregroundStyle(focus.isBreak == b.0 ? Color.white : Color.white.opacity(0.55))
+                        }.buttonStyle(.plain)
+                    }
+                }
+                Text(focus.text).font(.system(size: 46, weight: .semibold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
+                HStack(spacing: 8) {
+                    Button { focus.running ? focus.pause() : focus.start() } label: {
+                        Label(focus.running ? L("Pause") : L("Start"), systemImage: focus.running ? "pause.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                            .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                    }.buttonStyle(.plain)
+                    if focus.active {
+                        Button { focus.reset() } label: {
+                            Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .semibold)).padding(7)
+                                .background(Circle().fill(Color.white.opacity(0.12)))
+                        }.buttonStyle(.plain).help(L("Reset")).accessibilityLabel(L("Reset"))
+                    }
+                }
+            }
+            .frame(width: 250, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Minutes")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                MinuteRuler(minutes: Binding(get: { focus.minutes }, set: { if !focus.active { focus.minutes = $0 } }))
+                    .opacity(focus.active ? 0.4 : 1)
+                Text(L("Drag the ruler to set the length. Cocaine keeps the Mac awake while a focus runs."))
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4)).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: batteries
+
+    private var batteryTab: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if batteries.items.isEmpty {
+                Text(L("No devices")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+            }
+            let cols = [GridItem(.flexible(), spacing: 22), GridItem(.flexible())]
+            LazyVGrid(columns: cols, alignment: .leading, spacing: 10) {
+                ForEach(batteries.items.prefix(8)) { item in
+                    HStack(spacing: 9) {
+                        Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(.white.opacity(0.75)).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(item.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                if item.charging { Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.green) }
+                                Spacer(minLength: 0)
+                                Text(item.parts.map { ($0.label.isEmpty ? "" : $0.label + " ") + "\($0.percent)%" }.joined(separator: "  "))
+                                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                            }
+                            Capsule().fill(Color.white.opacity(0.12)).frame(height: 4)
+                                .overlay(alignment: .leading) {
+                                    GeometryReader { r in Capsule().fill(Self.level(item.parts.map(\.percent).min() ?? 0)).frame(width: r.size.width * CGFloat(item.parts.map(\.percent).min() ?? 0) / 100) }
+                                }
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { batteries.refresh() }
+    }
+
+    private static func level(_ p: Int) -> Color { p <= 15 ? .red : p <= 30 ? .orange : .green }
+
+    // MARK: usage
+
+    private var usageTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 26) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Codex").font(.system(size: 13, weight: .semibold))
+                    if usage.codex.isEmpty {
+                        Text(usage.loaded ? L("Nothing found") : "…").font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                    }
+                    ForEach(usage.codex) { l in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack { Text(l.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)); Spacer()
+                                Text("\(Int(l.percent))%").font(.system(size: 11, weight: .medium).monospacedDigit()) }
+                            Capsule().fill(Color.white.opacity(0.12)).frame(height: 5)
+                                .overlay(alignment: .leading) { GeometryReader { r in Capsule().fill(Island.accent).frame(width: r.size.width * min(1, l.percent / 100)) } }
+                            if let d = l.resets { Text(String(format: L("Resets %@"), d.formatted(date: .abbreviated, time: .shortened))).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)) }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Claude Code").font(.system(size: 13, weight: .semibold))
+                    tokenRow(L("Last 5 hours"), usage.claudeFive)
+                    tokenRow(L("Last 7 days"), usage.claudeWeek)
+                    Text(L("Tokens in your conversations on this Mac")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onAppear { usage.refresh() }
+    }
+
+    private func tokenRow(_ label: String, _ n: Int) -> some View {
+        HStack { Text(label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)); Spacer()
+            Text(n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1e6) : n >= 1000 ? "\(n / 1000)k" : "\(n)").font(.system(size: 13, weight: .semibold).monospacedDigit()) }
+    }
+}
+
+private final class RulerDrag: ObservableObject { var start: Int? }
+
+/// A horizontal ruler of minutes: drag it to set a length from 5 to 120 minutes.
+private struct MinuteRuler: View {
+    @Binding var minutes: Int
+    @StateObject private var drag = RulerDrag()
+    private let step: CGFloat = 5          // points per minute
+
+    var body: some View {
+        GeometryReader { r in
+            let mid = r.size.width / 2
+            Canvas { g, size in
+                for v in max(0, minutes - 60)...(minutes + 60) where v >= 5 && v <= 120 {
+                    let x = mid + CGFloat(v - minutes) * step
+                    guard x > 0, x < size.width else { continue }
+                    let big = v % 10 == 0, mid5 = v % 5 == 0
+                    let h: CGFloat = big ? 20 : mid5 ? 14 : 8
+                    g.fill(Path(CGRect(x: x - 0.5, y: size.height - h - 14, width: 1, height: h)), with: .color(.white.opacity(big ? 0.7 : 0.3)))
+                    if big { g.draw(Text("\(v)").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)), at: CGPoint(x: x, y: size.height - 5)) }
+                }
+            }
+            RoundedRectangle(cornerRadius: 1.5).fill(Island.accent).frame(width: 3, height: 34).position(x: mid, y: 22)
+            Text("\(minutes)").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(Island.accent).position(x: mid, y: -4)
+        }
+        .frame(height: 52)
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+            if drag.start == nil { drag.start = minutes }
+            minutes = min(120, max(5, (drag.start ?? minutes) - Int((v.translation.width / step).rounded())))
+        }.onEnded { _ in drag.start = nil })
+        .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
+    }
+}
+
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = Settings()
     private let model = PanelModel()
@@ -2545,6 +3235,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchedForAlert = false         // started only to show an alert: don't turn Cocaine on
     private var repeatTimer: Timer?
     private let speech = AVSpeechSynthesizer()
+    private let island = IslandController()
     private let board = AgentBoard()                 // what each AI session is doing, from the hooks
     private var batteryGuard = BatteryGuard()
     private var autoOn = AutoOn()
@@ -2577,6 +3268,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
         model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
+        model.islandChanged = { [weak self] in self?.island.setEnabled(self?.settings.island ?? false) }
+        island.start(panelModel: model, enabled: settings.island) { [weak self] in self?.showPanel(fromClick: false) }
+        island.model.focus.onStart = { [weak self] minutes in
+            guard let self, !System.cocaineOn else { return }
+            self.setCocaine(true, forMinutes: minutes)
+        }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
         model.revokePhones = { [weak self] in self?.revokePhones() }
         model.testPhone = { Phone.send(L("This is a test")) }
@@ -3568,6 +4265,48 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
         exit(0)
     }
 }
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" {
+    // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
+    _ = NSApplication.shared
+    let args = CommandLine.arguments
+    let pm = PanelModel()
+    pm.persistLanguage = false
+    pm.language = args.firstIndex(of: "--lang").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
+    pm.on = !args.contains("--off"); pm.fillLevel = pm.on ? 1 : 0
+    pm.ai = AIHooks.Status(tools: AIHooks.tools.enumerated().map { i, t in AIHooks.Entry(id: t.id, name: t.name, installed: i < 3, on: i < 2) }, codexNeedsTrust: false)
+    if args.contains("--agents") {
+        let t = Date().timeIntervalSince1970
+        pm.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
+                    AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90)]
+    }
+    pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
+    let im = IslandModel()
+    im.pm = pm
+    im.geometry = NotchGeometry(frame: .zero, notchWidth: 185, height: 32, centerX: 0, hasNotch: true)
+    im.open = args.contains("--open")
+    if let i = args.firstIndex(of: "--tab"), i + 1 < args.count { im.tab = args[i + 1] }
+    if args.contains("--focus") { im.focus.start() }
+    if args.contains("--mic") { im.mic.active = true }
+    im.batteries.items = [BatteryItem(id: "mac", name: "MacBook Pro", icon: "laptopcomputer", parts: [("", 80)], charging: true),
+                          BatteryItem(id: "a", name: "AirPods Pro", icon: "airpodspro", parts: [("L", 71), ("R", 64), ("↳", 90)]),
+                          BatteryItem(id: "k", name: "Magic Keyboard", icon: "keyboard", parts: [("", 22)])]
+    im.usage.codex = [UsageWatch.Limit(id: "w", name: L("Week"), percent: 5, resets: Date().addingTimeInterval(86400 * 5))]
+    im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
+    let full = im.open ? Island.openSize : CGSize(width: 185 + (im.live ? 2 * Island.wing : 0), height: 32)
+    im.panelSize = full
+    let view = ZStack(alignment: .top) {
+        LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
+    }.frame(width: 680, height: im.open ? 290 : 70)
+    let host = NSHostingView(rootView: view)
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+    host.cacheDisplay(in: host.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+    exit(0)
+}
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
@@ -3631,7 +4370,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         let ok = right <= Layout.width - 14 + 0.5
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
-    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone"] {
+    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island"] {
         UserDefaults.standard.removeObject(forKey: key)     // the sample values above must not stay in the real settings
     }
     print(Bundle.main.preferredLocalizations.first ?? "?")
