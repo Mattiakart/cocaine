@@ -145,18 +145,25 @@ final class Updater: ObservableObject {
             let staged = Installer.stage(dmg: dmg, manifest: m, installed: installed, requirement: req)
             let result: Result<URL, InstallError> = staged.flatMap { Installer.install($0, at: installed, manifest: m, requirement: req) }
             if case .success = result { runTool(Self.lsregister, ["-f", installed.path], timeout: 10) }   // Launch Services sees the new version
-            DispatchQueue.main.async {
-                switch result {
-                case .failure(let e): self.failedInstall(e)
-                case .success(let backup):
-                    try? FileManager.default.removeItem(at: dmg)
-                    prepareForUpdateHandover()
-                    guard Installer.launchRelauncher(pid: getpid(), app: installed, backup: backup) != nil else {
-                        return self.failedText(updatesText("Installed. Quit and reopen Cocaine to start the new version."))
-                    }
-                    NSApp.terminate(nil)
-                }
+            DispatchQueue.main.async { () -> Void in
+                self.finishInstall(result, dmg: dmg, installed: installed)
             }
+        }
+    }
+
+    private func finishInstall(_ result: Result<URL, InstallError>, dmg: URL, installed: URL) {
+        switch result {
+        case .failure(let e):
+            failedInstall(e)
+        case .success(let backup):
+            try? FileManager.default.removeItem(at: dmg)
+            prepareForUpdateHandover()
+            let relauncher = Installer.launchRelauncher(pid: getpid(), app: installed, backup: backup)
+            if relauncher == nil {
+                failedText(updatesText("Installed. Quit and reopen Cocaine to start the new version."))
+                return
+            }
+            NSApp.terminate(nil)
         }
     }
 
