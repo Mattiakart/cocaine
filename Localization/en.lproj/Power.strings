@@ -1,0 +1,30 @@
+/* Cocaine — Power (triggers, screen off, Shortcuts) — en */
+
+"Turn the screen off instead" = "Turn the screen off instead";
+"The Mac keeps working with the screen off." = "The Mac keeps working with the screen off.";
+"While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings.";
+"Now" = "Now";
+"Turn the screens off now" = "Turn the screens off now";
+"Power" = "Power";
+"On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "On while the Mac is on the charger, or on battery above a level; off 30 seconds after";
+"On the charger" = "On the charger";
+"Down to" = "Down to";
+"Below this level the battery trigger lets go" = "Below this level the battery trigger lets go";
+"External display" = "External display";
+"On while a display is connected (or while none is); off 30 seconds after" = "On while a display is connected (or while none is); off 30 seconds after";
+"Not connected" = "Not connected";
+"Schedule" = "Schedule";
+"On during these hours on the chosen days; off when they end" = "On during these hours on the chosen days; off when they end";
+"Hours" = "Hours";
+"Ends the next day" = "Ends the next day";
+"Local time; follows daylight saving and time-zone changes" = "Local time; follows daylight saving and time-zone changes";
+"Turn on when" = "Turn on when";
+"Any: one reason is enough. All: every chosen one must hold." = "Any: one reason is enough. All: every chosen one must hold.";
+"All are true" = "All are true";
+"Any is true" = "Any is true";
+"Shortcuts app and links" = "Shortcuts app and links";
+"Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first." = "Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first.";
+"Allow Shortcuts and links to control Cocaine?" = "Allow Shortcuts and links to control Cocaine?";
+"Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts.";
+"Don't Allow" = "Don't Allow";
+"Too hot with the lid closed: Cocaine is off" = "Too hot with the lid closed: Cocaine is off";

@@ -568,6 +568,21 @@ private extension Settings {
     var batteryTurnsOff: Bool { get { flag("batteryTurnsOff", true) } nonmutating set { d.set(newValue, forKey: "batteryTurnsOff") } }
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
+    // Power, display and schedule triggers (Sources/Power.swift)
+    static let powerMinimumChoices = [10, 20, 30, 50]
+    var triggerPower: String { get { d.string(forKey: "triggerPower") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerPower") } }   // "" | ac | battery
+    var triggerPowerMin: Int { get { d.object(forKey: "triggerPowerMin") as? Int ?? 20 } nonmutating set { d.set(newValue, forKey: "triggerPowerMin") } }
+    var triggerDisplay: String { get { d.string(forKey: "triggerDisplay") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerDisplay") } }   // "" | connected | disconnected
+    var triggerSchedule: Bool { get { flag("triggerSchedule", false) } nonmutating set { d.set(newValue, forKey: "triggerSchedule") } }
+    var scheduleDays: [Int] { get { (d.array(forKey: "scheduleDays") as? [Int])?.filter { (1...7).contains($0) } ?? [2, 3, 4, 5, 6] } nonmutating set { d.set(newValue, forKey: "scheduleDays") } }
+    var scheduleStart: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleStart") as? Int ?? 540) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleStart") } }
+    var scheduleEnd: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleEnd") as? Int ?? 1080) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleEnd") } }
+    var triggerAll: Bool { get { flag("triggerAll", false) } nonmutating set { d.set(newValue, forKey: "triggerAll") } }
+    var schedule: TimeWindow { TimeWindow(days: Set(scheduleDays), start: scheduleStart, end: scheduleEnd) }
+    /// "Dim the screen when idle" turns the displays off instead (the Mac keeps working).
+    var screenOff: Bool { get { flag("screenOff", false) } nonmutating set { d.set(newValue, forKey: "screenOff") } }
+    /// Shortcuts and cocaine:// links may turn Cocaine on and off without asking.
+    var allowLinks: Bool { get { flag("allowLinks", false) } nonmutating set { d.set(newValue, forKey: "allowLinks") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
     var haptics: Bool { get { flag("haptics", true) } nonmutating set { d.set(newValue, forKey: "haptics") } }
     var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
@@ -1387,6 +1402,20 @@ private final class PanelModel: ObservableObject {
     @Published var batteryTurnsOff: Bool { didSet { settings.batteryTurnsOff = batteryTurnsOff } }
     @Published var triggerAgents: Bool { didSet { settings.triggerAgents = triggerAgents } }
     @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
+    @Published var triggerPower: String { didSet { settings.triggerPower = triggerPower; triggersChanged() } }
+    @Published var triggerPowerMin: Int { didSet { settings.triggerPowerMin = triggerPowerMin; triggersChanged() } }
+    @Published var triggerDisplay: String { didSet { settings.triggerDisplay = triggerDisplay; triggersChanged() } }
+    @Published var triggerSchedule: Bool { didSet { settings.triggerSchedule = triggerSchedule; triggersChanged() } }
+    @Published var scheduleDays: [Int] { didSet { settings.scheduleDays = scheduleDays; triggersChanged() } }
+    @Published var scheduleStart: Int { didSet { settings.scheduleStart = scheduleStart; triggersChanged() } }
+    @Published var scheduleEnd: Int { didSet { settings.scheduleEnd = scheduleEnd; triggersChanged() } }
+    @Published var triggerAll: Bool { didSet { settings.triggerAll = triggerAll; triggersChanged() } }
+    @Published var screenOff: Bool { didSet { settings.screenOff = screenOff; screenModeChanged() } }
+    @Published var allowLinks: Bool { didSet { settings.allowLinks = allowLinks } }
+    /// How many Smart Triggers are set (the "Any / All" choice shows from two).
+    var triggerCount: Int {
+        [triggerAgents, !triggerApps.isEmpty, !triggerPower.isEmpty, !triggerDisplay.isEmpty, triggerSchedule].filter { $0 }.count
+    }
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var wakeForPhone: Bool { didSet { settings.wakeForPhone = wakeForPhone; wakeChanged() } }
     @Published var island: Bool { didSet { settings.island = island; islandChanged() } }
@@ -1425,7 +1454,7 @@ private final class PanelModel: ObservableObject {
     @Published var alertSound: String {
         didSet { settings.alertSound = alertSound; if !alertSound.isEmpty { NSSound(named: alertSound)?.play() } }   // hear it
     }
-    @Published var dimEnabled: Bool { didSet { settings.dimEnabled = dimEnabled } }
+    @Published var dimEnabled: Bool { didSet { settings.dimEnabled = dimEnabled; screenModeChanged() } }
     @Published private(set) var levelPercent: Double
     @Published var delayMinutes: Int { didSet { if delayMinutes > 0 { settings.delay = Double(delayMinutes * 60) } } }
     /// "" = same as the Mac, otherwise a code from Language.codes. Changes apply at once.
@@ -1446,6 +1475,9 @@ private final class PanelModel: ObservableObject {
     var previewVoice: () -> Void = {}
     var timerChanged: () -> Void = {}
     var hotkeysChanged: () -> Void = {}
+    var triggersChanged: () -> Void = {}
+    var screenModeChanged: () -> Void = {}
+    var screenOffNow: () -> Void = {}
     var wakeChanged: () -> Void = {}
     var islandChanged: () -> Void = {}
     var presenceChanged: () -> Void = {}
@@ -1479,6 +1511,16 @@ private final class PanelModel: ObservableObject {
         batteryTurnsOff = settings.batteryTurnsOff
         triggerAgents = settings.triggerAgents
         triggerApps = settings.triggerApps
+        triggerPower = settings.triggerPower
+        triggerPowerMin = settings.triggerPowerMin
+        triggerDisplay = settings.triggerDisplay
+        triggerSchedule = settings.triggerSchedule
+        scheduleDays = settings.scheduleDays
+        scheduleStart = settings.scheduleStart
+        scheduleEnd = settings.scheduleEnd
+        triggerAll = settings.triggerAll
+        screenOff = settings.screenOff
+        allowLinks = settings.allowLinks
         hotkeys = settings.hotkeys
         wakeForPhone = settings.wakeForPhone
         island = settings.island
@@ -1809,6 +1851,15 @@ private struct PanelView: View {
                     Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
                         .help(L("Shows the minimum brightness for 3 seconds"))
                 }
+                .disabled(m.screenOff).opacity(m.screenOff ? 0.45 : 1)
+                row(L("Turn the screen off instead"),
+                    detail: L("The Mac keeps working with the screen off."),
+                    tip: L("While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings.")) {
+                    HStack(spacing: 6) {
+                        Button(L("Now")) { m.screenOffNow() }.controlSize(.small).help(L("Turn the screens off now"))
+                        toggle(L("Turn the screen off instead"), $m.screenOff)
+                    }
+                }
                 HStack(spacing: 8) {
                     Text(L("After")).font(UI.title).fixedSize()
                     EqualSegments(selection: $m.delayMinutes, values: Settings.delayChoices) { String(format: L("%d min"), $0) }
@@ -1987,6 +2038,49 @@ private struct PanelView: View {
 
     // MARK: Automation
 
+    /// The schedule: the days (in the order this Mac's calendar starts its week) and the hours, on the wall clock.
+    @ViewBuilder private var scheduleRows: some View {
+        let cal = Calendar.autoupdatingCurrent
+        let order = (0..<7).map { (cal.firstWeekday - 1 + $0) % 7 + 1 }
+        HStack(spacing: 4) {
+            ForEach(order, id: \.self) { day in
+                let on = m.scheduleDays.contains(day)
+                Button {
+                    Haptic.tap(.alignment)
+                    if on { m.scheduleDays.removeAll { $0 == day } } else { m.scheduleDays = (m.scheduleDays + [day]).sorted() }
+                } label: {
+                    Text(cal.veryShortStandaloneWeekdaySymbols[day - 1]).font(UI.value)
+                        .frame(maxWidth: .infinity, minHeight: 22)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(on ? Island.accent : Color.white.opacity(0.10)))
+                        .foregroundStyle(on ? Color.white : Color.primary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(cal.standaloneWeekdaySymbols[day - 1])
+                .accessibilityValue(on ? "1" : "0")
+            }
+        }
+        row(L("Hours"), detail: m.scheduleEnd <= m.scheduleStart ? L("Ends the next day") : nil,
+            tip: L("Local time; follows daylight saving and time-zone changes")) {
+            HStack(spacing: 4) {
+                minutePicker($m.scheduleStart)
+                Text("–").font(UI.value)
+                minutePicker($m.scheduleEnd)
+            }
+        }
+    }
+
+    /// A time of day (minutes after midnight) as an hour-and-minute field.
+    private func minutePicker(_ minutes: Binding<Int>) -> some View {
+        let cal = Calendar.autoupdatingCurrent
+        let day = cal.startOfDay(for: Date())
+        return DatePicker("", selection: Binding(
+            get: { cal.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: day) ?? day },
+            set: { let c = cal.dateComponents([.hour, .minute], from: $0); minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0) }),
+            displayedComponents: .hourAndMinute)
+            .labelsHidden().datePickerStyle(.field).controlSize(.small)
+    }
+
     private var automationTab: some View {
         VStack(alignment: .leading, spacing: 10) {
             card("bolt.badge.automatic", L("Smart Triggers")) {
@@ -2014,6 +2108,32 @@ private struct PanelView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.visible)
+                }
+                row(L("Power"), tip: L("On while the Mac is on the charger, or on battery above a level; off 30 seconds after")) {
+                    choice(L("Power"), $m.triggerPower, ["", "ac", "battery"]) {
+                        $0 == "ac" ? L("On the charger") : $0 == "battery" ? L("On battery") : L("Off")
+                    }
+                }
+                if m.triggerPower == "battery" {
+                    row(L("Down to"), tip: L("Below this level the battery trigger lets go")) {
+                        choice(L("Down to"), $m.triggerPowerMin, Settings.powerMinimumChoices) { "\($0)%" }
+                    }
+                }
+                row(L("External display"), tip: L("On while a display is connected (or while none is); off 30 seconds after")) {
+                    choice(L("External display"), $m.triggerDisplay, ["", "connected", "disconnected"]) {
+                        $0 == "connected" ? L("Connected") : $0 == "disconnected" ? L("Not connected") : L("Off")
+                    }
+                }
+                row(L("Schedule"), tip: L("On during these hours on the chosen days; off when they end")) {
+                    toggle(L("Schedule"), $m.triggerSchedule)
+                }
+                if m.triggerSchedule {
+                    scheduleRows
+                }
+                if m.triggerCount >= 2 {
+                    row(L("Turn on when"), tip: L("Any: one reason is enough. All: every chosen one must hold.")) {
+                        choice(L("Turn on when"), $m.triggerAll, [false, true]) { $0 ? L("All are true") : L("Any is true") }
+                    }
                 }
             }
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
@@ -2084,6 +2204,10 @@ private struct PanelView: View {
                     .lineLimit(1).minimumScaleFactor(0.75)
                     .help("⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts"))
                     .opacity(m.hotkeys ? 1 : 0.45)
+                row(L("Shortcuts app and links"),
+                    tip: L("Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first.")) {
+                    toggle(L("Shortcuts app and links"), $m.allowLinks)
+                }
             }
         }
     }
@@ -5196,6 +5320,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var batteryGuard = BatteryGuard()
     private var autoOn = AutoOn()
     private var triggerActive = false
+    private var arbiter = TriggerArbiter()
+    private var triggerGrace: TimeInterval = 180
+    private var requestedOn: Bool?                   // what Cocaine itself last applied; any other change came from outside
+    private var realIdle = RealIdle()
+    private var idleNow = 0.0                        // the user's idle time, Stay active's nudges left out
+    private var screenGate = ScreenOffGate()
+    private var heatGuard = HeatGuard()
+    private var asking = false                       // the "allow links" question is on screen
+    private var linksRefusedUntil = Date.distantPast
     private let hotkeys = Hotkeys()
     private var pendingCommands: [URL] = []          // cocaine://on|off|… that arrived while the app was still starting
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
@@ -5223,6 +5356,23 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
+        model.triggersChanged = { [weak self] in self?.evaluateTriggers(System.cocaineOn) }
+        model.screenModeChanged = { [weak self] in self?.syncScreenMode() }
+        model.screenOffNow = { [weak self] in
+            self?.hidePanel()
+            DispatchQueue.global().async { PowerState.sleepDisplays() }
+        }
+        syncScreenMode()
+        // Triggers look again at once after a wake, a clock or time-zone change, or a display coming or going.
+        let recheck: (Notification) -> Void = { [weak self] n in
+            if n.name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.evaluateTriggers(System.cocaineOn) }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: recheck)
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main, using: recheck)
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange, NSApplication.didChangeScreenParametersNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main, using: recheck)
+        }
         model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
         model.islandChanged = { [weak self] in
             guard let self else { return }
@@ -5316,10 +5466,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         applyHotkeys()
         model.phone = Phone.configured ? Phone.summary : ""
         if launchedForAlert {                        // `open cocaine://…` started us: show it, then go away again
+            pendingCommands.forEach(command)         // (a status question is answered first)
+            pendingCommands = []
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
             return
         }
-        if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
+        // Opening the app turns Cocaine on; a link that started it decides by itself (cocaine://off must not turn it on first).
+        if !System.cocaineOn && pendingCommands.isEmpty { toggleCocaine() }
         pendingCommands.forEach(command)             // then whatever was asked for while it started
         pendingCommands = []
         DispatchQueue.global().async {
@@ -5335,10 +5488,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "cocaine" {
             guard url.host == "alert" else {
-                if didFinishLaunching { command(url) } else { pendingCommands.append(url) }
+                if didFinishLaunching { command(url); continue }
+                pendingCommands.append(url)
+                // Started only to answer "status" (or show an alert): answer, then go away again. Anything else keeps it running.
+                launchedForAlert = !pendingNeedsApp
                 continue
             }
-            if !didFinishLaunching { launchedForAlert = true }
+            if !didFinishLaunching { launchedForAlert = !pendingNeedsApp }
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             // Anything can open a cocaine:// URL: keep values short and free of control characters.
             func value(_ name: String) -> String? {
@@ -5391,21 +5547,72 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The control commands above.
+    /// A pending link that needs the app to keep running (anything but "status").
+    private var pendingNeedsApp: Bool {
+        pendingCommands.contains { if case .success(let r) = ControlURL.parse($0) { return r.action != .status }; return false }
+    }
+
+    /// The control commands above. Anything can open a cocaine:// link (a web page too), so what changes the Mac's sleep
+    /// needs the "Shortcuts app and links" switch, or the user's OK when it's off. Bad values are refused, not guessed.
     private func command(_ url: URL) {
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        let minutes = items.first { $0.name == "minutes" }?.value.flatMap(Int.init).map { min(max($0, 1), 1440) }
-        log.notice("command \(url.host ?? "", privacy: .public)")
-        switch url.host {
-        case "on": autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true)
-        case "off": autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
-        case "toggle": toggleCocaine()
-        case "timer": autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes ?? (settings.timerMinutes > 0 ? settings.timerMinutes : 60))
-        case "pause": pauseAlerts(until: Date().addingTimeInterval(Double(minutes ?? 60) * 60))
-        case "resume": pauseAlerts(until: nil)
-        case "panel": if !panel.isVisible { showPanel(fromClick: false) }
-        default: break
+        let req: ControlRequest
+        switch ControlURL.parse(url) {
+        case .success(let r): req = r
+        case .failure(let f):
+            log.notice("command refused: \(String(describing: f), privacy: .public)")
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if let e = items.first(where: { $0.name == "x-error" })?.value.flatMap(ControlURL.callback),
+               let r = ControlURL.reply(e, [("errorMessage", f == .badMinutes ? "minutes must be 1 to 1440" : "unknown command")]) {
+                NSWorkspace.shared.open(r)
+            }
+            return
         }
+        log.notice("command \(String(describing: req.action), privacy: .public)")
+        guard !req.action.guarded || linksAllowed(url) else {
+            if let e = req.failure, let r = ControlURL.reply(e, [("errorMessage", "not allowed")]) { NSWorkspace.shared.open(r) }
+            return
+        }
+        switch req.action {
+        case .on(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes)
+        case .off: autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
+        case .toggle: toggleCocaine()
+        case .timer(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes ?? (settings.timerMinutes > 0 ? settings.timerMinutes : 60))
+        case .pause(let minutes): pauseAlerts(until: Date().addingTimeInterval(Double(minutes ?? 60) * 60))
+        case .resume: pauseAlerts(until: nil)
+        case .panel: if !panel.isVisible { showPanel(fromClick: false) }
+        case .status: break
+        }
+        guard let s = req.success else { return }
+        // Answer with what was asked for (a change is applied in the background: report the target, not the old state).
+        let on = wantOn ?? System.cocaineOn
+        if let r = ControlURL.reply(s, ControlURL.status(on: on, until: settings.onUntil, now: Date(),
+                                                         screenOff: screenOffMode, trigger: triggerActive)) {
+            NSWorkspace.shared.open(r)
+        }
+    }
+
+    /// Links may change things when the switch is on; otherwise ask (one question at a time, and after a "Don't Allow"
+    /// links are ignored for 10 minutes, so a page can't flood the screen with questions).
+    private func linksAllowed(_ url: URL) -> Bool {
+        if settings.allowLinks { return true }
+        guard !asking, Date() >= linksRefusedUntil else { return false }
+        asking = true
+        defer { asking = false }
+        hidePanel()
+        NSApp.activate()
+        let a = NSAlert()
+        a.messageText = L("Allow Shortcuts and links to control Cocaine?")
+        let shown = String(url.absoluteString.prefix(120)).replacingOccurrences(of: "\n", with: " ")
+        a.informativeText = String(format: L("Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts."), shown)
+        a.addButton(withTitle: L("Allow"))
+        a.addButton(withTitle: L("Don't Allow"))
+        guard a.runModal() == .alertFirstButtonReturn else {
+            linksRefusedUntil = Date().addingTimeInterval(600)
+            return false
+        }
+        settings.allowLinks = true
+        model.allowLinks = true
+        return true
     }
 
     private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String) {
@@ -5491,7 +5698,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             log.notice("alert from \(a.from, privacy: .public) muted until \(until, privacy: .public)")
             return
         }
-        let away = forced ?? (System.idleSeconds >= 20 || dimPlan != nil)
+        let away = forced ?? (idleNow >= 20 || dimPlan != nil || (screenOffMode && screenGate.fired))
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
         if !repeated && !test {                          // "Recent alerts"
             settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date())]
@@ -5522,7 +5729,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         var count = 0
         let t = Timer(timeInterval: Double(minutes * 60), repeats: true) { [weak self] t in
             count += 1
-            guard let self, count * minutes <= 30, System.idleSeconds >= Double(minutes * 60 - 10),
+            guard let self, count * minutes <= 30, self.idleNow >= Double(minutes * 60 - 10),
                   self.settings.alertRepeatMinutes == minutes else { t.invalidate(); return }
             self.alert(a, away: true, repeated: true)
         }
@@ -5703,7 +5910,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         ticks += 1
         let on = System.cocaineOn
+        idleNow = realIdle.update(systemIdle: System.idleSeconds, now: Date())
         if on != lastOn {
+            // Turned on or off from outside (`cocaine on|off`, `cocaine remote`, another tool): that's the user's choice,
+            // just like the switch, so a Smart Trigger doesn't undo it at once.
+            if Self.isOutsideChange(last: lastOn, now: on, requested: requestedOn, pending: wantOn) {
+                log.notice("turned \(on ? "on" : "off", privacy: .public) from outside")
+                autoOn.userToggled(to: on, triggerActive: triggerActive)
+                requestedOn = on
+            }
             lastOn = on
             refreshIcon(on: on)
             if on { superviseHold() }
@@ -5712,13 +5927,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if wantOn == nil && model.on != on { model.on = on }   // don't fight a switch the user just flipped
         if panel.isVisible && ticks % 4 == 0 { refreshPanelState() }
-        if alerter.isShowing, let at = alerter.shownAt, Date().timeIntervalSince(at) > 1.5, System.idleSeconds < 0.6 {
+        if alerter.isShowing, let at = alerter.shownAt, Date().timeIntervalSince(at) > 1.5, idleNow < 0.6 {
             alerter.close(animated: true)            // the user is back
         }
         updateDimming(on: on)
         if ticks % 4 == 0 { checkTimer(on) }                     // every 2 s
         if ticks % 10 == 0 { evaluateTriggers(on) }              // every 5 s
-        if ticks % 20 == 0 { checkBattery(on); writeBoard(); presenceTick() }    // every 10 s
+        if ticks % 20 == 0 { checkBattery(on); checkHeat(on); writeBoard(); presenceTick() }    // every 10 s
         if ticks % 4 == 0 { watchPower() }                       // every 2 s
     }
 
@@ -5777,12 +5992,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             model.presenceActive = want
             updatePink()                                           // the pink powder follows
         }
+        // In screen-off mode (Cocaine on) the displays are meant to go dark: no display hold, and never input to a
+        // sleeping display, which would light it up again (chat apps may then show you away).
+        let dark = screenOffMode && System.cocaineOn
         if want {
-            if presenceAssertion == 0 {
+            if dark, presenceAssertion != 0 { IOPMAssertionRelease(presenceAssertion); presenceAssertion = 0 }
+            if !dark && presenceAssertion == 0 {
                 IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                             "Cocaine keeps you available in chat apps" as CFString, &presenceAssertion)
             }
-            if System.idleSeconds > 45 { Presence.nudge() }
+            if System.idleSeconds > 45 && !PowerState.displaysAsleep && !(dark && screenGate.fired) && Presence.nudge() {
+                realIdle.lastNudge = Date()
+            }
         } else if presenceAssertion != 0 {
             IOPMAssertionRelease(presenceAssertion); presenceAssertion = 0
         }
@@ -5866,16 +6087,39 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Smart Triggers: an AI at work (from the hooks), or a chosen program running, keeps Cocaine on.
+    /// Lid closed, on battery, getting hot (a Mac in a bag): turn Cocaine off so it can sleep and cool down.
+    private func checkHeat(_ on: Bool) {
+        let onAC = PowerState.onAC
+        guard heatGuard.check(lidClosed: System.lidClosed, onAC: onAC, thermal: ProcessInfo.processInfo.thermalState), on else { return }
+        log.notice("hot with the lid closed on battery: Cocaine off")
+        autoOn.userToggled(to: false, triggerActive: triggerActive)
+        setCocaine(false, auto: true)
+        alert(Notice(from: "Cocaine", message: L("Too hot with the lid closed: Cocaine is off"), project: nil), away: true)
+    }
+
+    /// The Battery Guard has turned Cocaine off for a low battery: no trigger turns it back on until it recovers.
+    private var lowBattery: Bool { settings.batteryTurnsOff && batteryGuard.tripped }
+
+    /// Smart Triggers: an AI at work (from the hooks), a chosen program, the power source, an external display or the
+    /// schedule keeps Cocaine on; "Any" or "All" of them, as chosen.
     private func evaluateTriggers(_ on: Bool) {
-        var active = settings.triggerAgents && board.anyLive()
+        guard !launchedForAlert else { return }                 // started only to show an alert: change nothing
+        var states: [TriggerKind: Bool] = [:]
+        if settings.triggerAgents { states[.agents] = board.anyLive() }
         let apps = settings.triggerApps.map { $0.lowercased() }
-        if !active && !apps.isEmpty {
+        if !apps.isEmpty {
             let names = System.runningNames()
-            active = apps.contains { names.contains($0) }
+            states[.apps] = apps.contains { names.contains($0) }
         }
+        let b = System.battery
+        states[.power] = PowerRule.met(rule: settings.triggerPower, onAC: b?.onAC ?? PowerState.onAC, battery: b?.percent,
+                                       minimum: settings.triggerPowerMin)
+        states[.display] = DisplayRule.met(rule: settings.triggerDisplay, external: PowerState.externalDisplays)
+        if settings.triggerSchedule { states[.schedule] = settings.schedule.contains(Date(), calendar: .autoupdatingCurrent) }
+        let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: lowBattery || heatGuard.tripped)
+        if !active { triggerGrace = grace }
         triggerActive = active
-        switch autoOn.step(active: active, isOn: wantOn ?? on, now: Date()) {
+        switch autoOn.step(active: active, isOn: wantOn ?? on, now: Date(), grace: triggerGrace) {
         case .turnOn: log.notice("smart trigger: on"); setCocaine(true, auto: true)
         case .turnOff: log.notice("smart trigger: off"); setCocaine(false, auto: true)
         case .none: break
@@ -6115,9 +6359,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         applyWanted()
     }
 
+    /// A change of state Cocaine didn't make: not the first reading, nothing of ours in flight, and not what we last applied.
+    static func isOutsideChange(last: Bool?, now: Bool, requested: Bool?, pending: Bool?) -> Bool {
+        guard let last, last != now, pending == nil else { return false }
+        return requested != now
+    }
+
     private func applyWanted() {
         guard !applying, let target = wantOn else { return }
         applying = true
+        requestedOn = target
         DispatchQueue.global().async {
             let arg = target ? "on" : "off"
             var status = engine(arg)
@@ -6127,6 +6378,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             DispatchQueue.main.async {
                 self.applying = false
+                self.requestedOn = System.cocaineOn       // what our apply really left (a failed one changed nothing)
                 self.model.needsAuth = status == 2
                 if self.wantOn == target { self.wantOn = nil }
                 self.tick()                          // shows the real state (reverts the switch if it failed)
@@ -6138,10 +6390,29 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Dimming
 
+    /// "Turn the screen off instead" is chosen (it applies while Cocaine is on).
+    private var screenOffMode: Bool { settings.dimEnabled && settings.screenOff }
+
+    /// Tells the engine's display helper whether to keep the displays on (normal) or let them sleep (screen off).
+    private func syncScreenMode() {
+        let mode = screenOffMode ? "screen-off" : "normal"
+        if screenOffMode, dimPlan != nil { restore() }            // switching over while dimmed: back to normal first
+        DispatchQueue.global().async { run("/bin/zsh", [scriptPath, "mode", mode]) }
+    }
+
     private func updateDimming(on: Bool) {
         guard previewPlan == nil else { return }
-        let idle = System.idleSeconds
+        let idle = idleNow                                         // Stay active's own nudges don't count as you
         defer { lastIdle = idle }
+        if screenOffMode {
+            // Once per idle stretch, after the delay: displays off. The Mac keeps running (disablesleep); input wakes them.
+            if screenGate.step(idle: idle, delay: settings.delay, enabled: true, on: on, allowed: Date() > brightUntil,
+                               asleep: PowerState.displaysAsleep) {
+                log.notice("screens off after \(Int(idle), privacy: .public)s idle")
+                DispatchQueue.global().async { PowerState.sleepDisplays() }
+            }
+            return
+        }
         if let plan = dimPlan {
             let unplugged = !plan.displays.isSubset(of: Set(screens.online))
             if idle < lastIdle || !on || !settings.dimEnabled || unplugged { restore(); return }   // input since last tick
@@ -6244,6 +6515,135 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.loginEnabled = svc.status == .enabled
     }
+}
+
+/// Smart Triggers on power, displays and schedules; screen-off mode; control links (part of --selftest).
+private func powerSelfTest(_ check: (String, Bool) -> Void) {
+    func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
+    var rome = Calendar(identifier: .gregorian); rome.timeZone = TimeZone(identifier: "Europe/Rome")!
+    var tokyo = Calendar(identifier: .gregorian); tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+    let work = TimeWindow(days: [2, 3, 4, 5, 6], start: 9 * 60, end: 18 * 60)
+    check("schedule: Monday 10:00 is inside 9–18 on weekdays", work.contains(at("2026-10-05T08:00:00Z"), calendar: rome))
+    check("schedule: the end time itself is outside", !work.contains(at("2026-10-05T16:00:00Z"), calendar: rome))
+    check("schedule: one minute before the start is outside", !work.contains(at("2026-10-05T06:59:00Z"), calendar: rome))
+    check("schedule: Saturday is outside", !work.contains(at("2026-10-10T08:00:00Z"), calendar: rome))
+    let night = TimeWindow(days: [6], start: 22 * 60, end: 6 * 60)       // Friday night
+    check("schedule: past midnight, Friday 23:00 is inside", night.contains(at("2026-10-09T21:00:00Z"), calendar: rome))
+    check("schedule: past midnight, Saturday 02:00 still belongs to Friday", night.contains(at("2026-10-10T00:00:00Z"), calendar: rome))
+    check("schedule: past midnight, Saturday 23:00 is outside", !night.contains(at("2026-10-10T21:00:00Z"), calendar: rome))
+    check("schedule: past midnight, Friday 02:00 belongs to Thursday (not chosen)", !night.contains(at("2026-10-09T00:00:00Z"), calendar: rome))
+    check("schedule: start == end is the whole day", TimeWindow(days: [2], start: 600, end: 600).contains(at("2026-10-05T02:00:00Z"), calendar: rome))
+    check("schedule: no day chosen, never", !TimeWindow(days: [], start: 0, end: 600).contains(at("2026-10-05T02:00:00Z"), calendar: rome))
+    // DST in Rome: 29 March 2026 02:00 → 03:00, 25 October 2026 03:00 → 02:00.
+    let early = TimeWindow(days: [1], start: 150, end: 240)                 // Sunday 02:30–04:00
+    check("schedule: DST spring forward, a window starting in the skipped hour still runs (03:10)", early.contains(at("2026-03-29T01:10:00Z"), calendar: rome))
+    check("schedule: DST spring forward, 01:59 is before it", !early.contains(at("2026-03-29T00:59:00Z"), calendar: rome))
+    let fall = TimeWindow(days: [1], start: 120, end: 180)                  // Sunday 02:00–03:00
+    check("schedule: DST fall back, 02:30 summer time is inside", fall.contains(at("2026-10-25T00:30:00Z"), calendar: rome))
+    check("schedule: DST fall back, 02:30 winter time (the repeated hour) is inside too", fall.contains(at("2026-10-25T01:30:00Z"), calendar: rome))
+    check("schedule: DST fall back, 03:05 winter time is outside", !fall.contains(at("2026-10-25T02:05:00Z"), calendar: rome))
+    check("schedule: read on the local wall clock (time zone)", work.contains(at("2026-10-05T10:00:00Z"), calendar: rome)
+          && !work.contains(at("2026-10-05T10:00:00Z"), calendar: tokyo))
+
+    var arb = TriggerArbiter()
+    check("arbiter: any, one is enough", arb.evaluate([.agents: false, .schedule: true], all: false).active)
+    check("arbiter: all, one false is not enough", !arb.evaluate([.agents: false, .schedule: true], all: true).active)
+    check("arbiter: all, every one true", arb.evaluate([.agents: true, .schedule: true], all: true).active)
+    check("arbiter: nothing enabled is never active", !arb.evaluate([:], all: true).active && !arb.evaluate([:], all: false).active)
+    var g1 = TriggerArbiter(); _ = g1.evaluate([.apps: true, .schedule: true], all: false)
+    check("arbiter: any, the longest grace of what was holding it", g1.evaluate([.apps: false, .schedule: false], all: false).grace == 180)
+    var g2 = TriggerArbiter(); _ = g2.evaluate([.apps: true, .schedule: true], all: true)
+    check("arbiter: all, a schedule ending ends it at once", g2.evaluate([.apps: true, .schedule: false], all: true).grace == 0)
+    var g3 = TriggerArbiter(); _ = g3.evaluate([.apps: true, .schedule: true], all: true)
+    check("arbiter: all, an app closing gets its grace", g3.evaluate([.apps: false, .schedule: true], all: true).grace == 180)
+    var g4 = TriggerArbiter()
+    let blocked = g4.evaluate([.power: true], all: false, blocked: true)
+    check("arbiter: a low battery blocks every trigger", !blocked.active && blocked.grace == 0)
+    // A schedule turns Cocaine on and off on time; the user's OFF wins until the window ends.
+    var s = AutoOn(); let t0 = Date()
+    check("schedule trigger: on at the start", s.step(active: true, isOn: false, now: t0, grace: 0) == .turnOn)
+    check("schedule trigger: off right at the end", s.step(active: false, isOn: true, now: t0 + 3600, grace: 0) == .turnOff)
+    var u = AutoOn()
+    _ = u.step(active: true, isOn: false, now: t0, grace: 0)
+    u.userToggled(to: false, triggerActive: true)
+    check("schedule trigger: the user's OFF holds for the rest of the window", u.step(active: true, isOn: false, now: t0 + 60, grace: 0) == .none)
+    check("schedule trigger: …and the next window turns it on again", u.step(active: false, isOn: false, now: t0 + 3600, grace: 0) == .none
+          && u.step(active: true, isOn: false, now: t0 + 86400, grace: 0) == .turnOn)
+    // Turned off from outside (`cocaine off`, `cocaine remote off`) while a trigger holds it: counts as the user's OFF.
+    check("outside change: an OFF Cocaine didn't make is seen", AppDelegate.isOutsideChange(last: true, now: false, requested: true, pending: nil))
+    check("outside change: our own OFF is not", !AppDelegate.isOutsideChange(last: true, now: false, requested: false, pending: nil)
+          && !AppDelegate.isOutsideChange(last: true, now: false, requested: true, pending: false))
+    check("outside change: the first reading is not a change", !AppDelegate.isOutsideChange(last: nil, now: true, requested: nil, pending: nil))
+    var x = AutoOn()
+    _ = x.step(active: true, isOn: false, now: t0)
+    if AppDelegate.isOutsideChange(last: true, now: false, requested: true, pending: nil) { x.userToggled(to: false, triggerActive: true) }
+    check("outside change: a trigger doesn't turn it back on at once", x.step(active: true, isOn: false, now: t0 + 5) == .none)
+
+    check("power: on the charger", PowerRule.met(rule: "ac", onAC: true, battery: 50, minimum: 20) == true
+          && PowerRule.met(rule: "ac", onAC: false, battery: 50, minimum: 20) == false)
+    check("power: on battery above the level", PowerRule.met(rule: "battery", onAC: false, battery: 50, minimum: 20) == true)
+    check("power: on battery at or below the level lets go", PowerRule.met(rule: "battery", onAC: false, battery: 20, minimum: 20) == false)
+    check("power: on battery, but plugged in, or no battery", PowerRule.met(rule: "battery", onAC: true, battery: 90, minimum: 20) == false
+          && PowerRule.met(rule: "battery", onAC: true, battery: nil, minimum: 20) == false)
+    check("power: off is not a trigger", PowerRule.met(rule: "", onAC: true, battery: 50, minimum: 20) == nil)
+    check("display: connected / not connected", DisplayRule.met(rule: "connected", external: 1) == true && DisplayRule.met(rule: "connected", external: 0) == false
+          && DisplayRule.met(rule: "disconnected", external: 0) == true && DisplayRule.met(rule: "", external: 2) == nil)
+
+    // Stay active nudges every ~10 s after 45 s idle: the system idle never passes ~55 s, so a 1-minute dim never came.
+    var ri = RealIdle(); var sysLast = t0; var maxSys = 0.0, real = 0.0
+    for sec in stride(from: 0.0, through: 300, by: 1) {
+        let now = t0 + sec
+        var sys = now.timeIntervalSince(sysLast)
+        if sys > 45 && Int(sec) % 10 == 0 { sysLast = now; ri.lastNudge = now; sys = 0 }
+        maxSys = max(maxSys, sys)
+        real = ri.update(systemIdle: sys, now: now)
+    }
+    check("idle: with Stay active the system idle stays under a minute (the old dimming never fired)", maxSys < 60)
+    check("idle: the user's own idle keeps counting through the nudges", real >= 299)
+    check("idle: real input starts it again", ri.update(systemIdle: 0, now: t0 + 400) < 1)
+
+    var gate = ScreenOffGate()
+    check("screen off: not before the delay", !gate.step(idle: 50, delay: 60, enabled: true, on: true, asleep: false))
+    check("screen off: at the delay, once", gate.step(idle: 60, delay: 60, enabled: true, on: true, asleep: false)
+          && !gate.step(idle: 90, delay: 60, enabled: true, on: true, asleep: false))
+    check("screen off: again after the user came back and left", !gate.step(idle: 1, delay: 60, enabled: true, on: true, asleep: false)
+          && gate.step(idle: 61, delay: 60, enabled: true, on: true, asleep: false))
+    var gate2 = ScreenOffGate()
+    check("screen off: only while Cocaine is on", !gate2.step(idle: 999, delay: 60, enabled: true, on: false, asleep: false))
+    check("screen off: waits while an alert keeps the screen lit", !gate2.step(idle: 999, delay: 60, enabled: true, on: true, allowed: false, asleep: false)
+          && gate2.step(idle: 999, delay: 60, enabled: true, on: true, allowed: true, asleep: false))
+    var gate3 = ScreenOffGate()
+    check("screen off: displays already asleep are left alone", !gate3.step(idle: 99, delay: 60, enabled: true, on: true, asleep: true) && gate3.fired)
+
+    var heat = HeatGuard()
+    check("heat: lid closed, on battery, serious → off, once", heat.check(lidClosed: true, onAC: false, thermal: .serious)
+          && !heat.check(lidClosed: true, onAC: false, thermal: .critical))
+    check("heat: lid open or on the charger is left alone", { var h = HeatGuard(); return !h.check(lidClosed: false, onAC: false, thermal: .critical)
+        && !h.check(lidClosed: true, onAC: true, thermal: .critical) && !h.check(lidClosed: true, onAC: false, thermal: .fair) }())
+
+    func parse(_ s: String) -> Result<ControlRequest, ControlURL.Failure> { ControlURL.parse(URL(string: s)!) }
+    check("link: on for 90 minutes", (try? parse("cocaine://on?minutes=90").get())?.action == .on(minutes: 90))
+    check("link: off, toggle and status", (try? parse("cocaine://off").get())?.action == .off && (try? parse("cocaine://TOGGLE").get())?.action == .toggle
+          && (try? parse("cocaine://status").get())?.action == .status)
+    check("link: minutes out of range or not a number are refused", [0, 1441, 99999].allSatisfy { parse("cocaine://on?minutes=\($0)") == .failure(.badMinutes) }
+          && parse("cocaine://timer?minutes=abc") == .failure(.badMinutes) && parse("cocaine://timer?minutes=-5") == .failure(.badMinutes)
+          && parse("cocaine://timer?minutes=1e3") == .failure(.badMinutes))
+    check("link: unknown commands and other schemes are refused", parse("cocaine://sleepnow") == .failure(.unknown("sleepnow"))
+          && parse("http://on") == .failure(.notOurs))
+    check("link: x-callback-url status with a Shortcuts callback",
+          (try? parse("cocaine://x-callback-url/status?x-success=shortcuts%3A%2F%2Fx-callback-url%2Fic-success%3Fid%3D1").get())?.success?.scheme == "shortcuts")
+    check("link: a callback to anything but Shortcuts is dropped",
+          (try? parse("cocaine://x-callback-url/status?x-success=https%3A%2F%2Fevil.example%2F&x-error=javascript:alert(1)").get()).map { $0.success == nil && $0.failure == nil } == true)
+    check("link: changing commands need permission, status and panel don't",
+          ControlAction.on(minutes: nil).guarded && ControlAction.off.guarded && ControlAction.pause(minutes: nil).guarded
+          && !ControlAction.status.guarded && !ControlAction.panel.guarded)
+    let reply = ControlURL.reply(URL(string: "shortcuts://x-callback-url/ic-success?id=1")!, [("state", "on&evil=1")])
+    check("link: reply values are encoded, never spliced", URLComponents(url: reply!, resolvingAgainstBaseURL: false)?.queryItems?.count == 2
+          && URLComponents(url: reply!, resolvingAgainstBaseURL: false)?.queryItems?.last?.value == "on&evil=1")
+    let st = Dictionary(uniqueKeysWithValues: ControlURL.status(on: true, until: t0 + 90.5 * 60, now: t0, screenOff: true, trigger: false))
+    check("link: status says on, minutes left (rounded up) and the mode", st["state"] == "on" && st["remaining_minutes"] == "91" && st["screen_off_mode"] == "1")
+    let off = Dictionary(uniqueKeysWithValues: ControlURL.status(on: false, until: t0 + 600, now: t0, screenOff: false, trigger: false))
+    check("link: status when off has no deadline", off["state"] == "off" && off["remaining_minutes"] == "" && off["until"] == "")
 }
 
 // MARK: - Entry point
@@ -6383,6 +6783,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     _ = d.step(active: true, isOn: false, now: t0)
     d.userToggled(to: true, triggerActive: true)
     check("trigger: user takes over an auto-on", d.step(active: false, isOn: true, now: t0 + 999) == .none)
+    powerSelfTest(check)
     let board = AgentBoard(); let now = Date()
     board.set("s1", from: "Claude Code", project: "x", state: "working", now: now)
     board.set("s2", from: "Codex", project: nil, state: "waiting", now: now)

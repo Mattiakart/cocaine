@@ -1,0 +1,30 @@
+/* Cocaine — Power (triggers, screen off, Shortcuts) — it */
+
+"Turn the screen off instead" = "Spegni lo schermo invece";
+"The Mac keeps working with the screen off." = "Il Mac continua a lavorare a schermo spento.";
+"While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Mentre Cocaine è attivo. Un tasto o un clic riaccende lo schermo. Il Mac si blocca come impostato in Blocco schermo.";
+"Now" = "Ora";
+"Turn the screens off now" = "Spegni subito gli schermi";
+"Power" = "Alimentazione";
+"On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Attivo con il Mac in carica, o a batteria sopra un livello; si spegne 30 secondi dopo";
+"On the charger" = "In carica";
+"Down to" = "Fino al";
+"Below this level the battery trigger lets go" = "Sotto questo livello l’attivazione a batteria si ferma";
+"External display" = "Monitor esterno";
+"On while a display is connected (or while none is); off 30 seconds after" = "Attivo con un monitor collegato (o con nessuno); si spegne 30 secondi dopo";
+"Not connected" = "Non collegato";
+"Schedule" = "Orari";
+"On during these hours on the chosen days; off when they end" = "Attivo in queste ore nei giorni scelti; si spegne alla fine";
+"Hours" = "Ore";
+"Ends the next day" = "Finisce il giorno dopo";
+"Local time; follows daylight saving and time-zone changes" = "Ora locale; segue l’ora legale e i cambi di fuso orario";
+"Turn on when" = "Attiva quando";
+"Any: one reason is enough. All: every chosen one must hold." = "Almeno uno: basta un motivo. Tutti: devono valere tutti quelli scelti.";
+"All are true" = "Valgono tutti";
+"Any is true" = "Ne vale almeno uno";
+"Shortcuts app and links" = "App Comandi Rapidi e link";
+"Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first." = "L’app Comandi Rapidi e i link cocaine:// possono attivare e disattivare Cocaine senza chiedere. Se spento, Cocaine ti chiede prima.";
+"Allow Shortcuts and links to control Cocaine?" = "Consentire a Comandi Rapidi e ai link di controllare Cocaine?";
+"Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Qualcosa ha aperto “%@”. Se non sei stato tu, scegli Non consentire. Puoi cambiarlo in Automazioni → Scorciatoie.";
+"Don't Allow" = "Non consentire";
+"Too hot with the lid closed: Cocaine is off" = "Troppo caldo a coperchio chiuso: Cocaine è spento";

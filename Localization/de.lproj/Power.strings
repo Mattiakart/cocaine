@@ -1,0 +1,30 @@
+/* Cocaine — Power (triggers, screen off, Shortcuts) — de */
+
+"Turn the screen off instead" = "Stattdessen Bildschirm ausschalten";
+"The Mac keeps working with the screen off." = "Der Mac arbeitet bei ausgeschaltetem Bildschirm weiter.";
+"While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Solange Cocaine an ist. Eine Taste oder ein Klick schaltet den Bildschirm wieder ein. Der Mac sperrt sich wie unter „Sperrbildschirm“ eingestellt.";
+"Now" = "Jetzt";
+"Turn the screens off now" = "Bildschirme jetzt ausschalten";
+"Power" = "Stromversorgung";
+"On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "An, solange der Mac am Ladegerät ist oder der Akku über einer Stufe liegt; 30 Sekunden danach aus";
+"On the charger" = "Am Ladegerät";
+"Down to" = "Bis";
+"Below this level the battery trigger lets go" = "Unter dieser Stufe endet der Akku-Auslöser";
+"External display" = "Externer Bildschirm";
+"On while a display is connected (or while none is); off 30 seconds after" = "An, solange ein Bildschirm angeschlossen ist (oder keiner); 30 Sekunden danach aus";
+"Not connected" = "Nicht angeschlossen";
+"Schedule" = "Zeitplan";
+"On during these hours on the chosen days; off when they end" = "An zu diesen Zeiten an den gewählten Tagen; aus, wenn sie enden";
+"Hours" = "Uhrzeit";
+"Ends the next day" = "Endet am nächsten Tag";
+"Local time; follows daylight saving and time-zone changes" = "Ortszeit; folgt Sommerzeit und Zeitzonenwechseln";
+"Turn on when" = "Einschalten, wenn";
+"Any: one reason is enough. All: every chosen one must hold." = "Eine: ein Grund genügt. Alle: jede gewählte muss zutreffen.";
+"All are true" = "Alle treffen zu";
+"Any is true" = "Eine trifft zu";
+"Shortcuts app and links" = "Kurzbefehle-App und Links";
+"Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first." = "Die Kurzbefehle-App und cocaine://-Links dürfen Cocaine ohne Nachfrage ein- und ausschalten. Aus: Cocaine fragt zuerst.";
+"Allow Shortcuts and links to control Cocaine?" = "Kurzbefehlen und Links erlauben, Cocaine zu steuern?";
+"Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Etwas hat „%@“ geöffnet. Wenn du es nicht warst, wähle „Nicht erlauben“. Änderbar unter Automatisierung → Kurzbefehle.";
+"Don't Allow" = "Nicht erlauben";
+"Too hot with the lid closed: Cocaine is off" = "Zu heiß bei geschlossenem Deckel: Cocaine ist aus";

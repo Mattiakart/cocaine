@@ -1,0 +1,30 @@
+/* Cocaine — Power (triggers, screen off, Shortcuts) — ja */
+
+"Turn the screen off instead" = "代わりに画面をオフ";
+"The Mac keeps working with the screen off." = "画面がオフでもMacは動き続けます。";
+"While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Cocaineがオンの間。キーかクリックで画面が戻ります。ロックは「ロック画面」設定に従います。";
+"Now" = "今すぐ";
+"Turn the screens off now" = "今すぐ画面をオフ";
+"Power" = "電源";
+"On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Macが充電中、またはバッテリーが一定以上の間オン。30秒後にオフ";
+"On the charger" = "充電中";
+"Down to" = "下限";
+"Below this level the battery trigger lets go" = "この残量を下回るとバッテリーのトリガーは解除されます";
+"External display" = "外部ディスプレイ";
+"On while a display is connected (or while none is); off 30 seconds after" = "ディスプレイ接続中（または未接続の間）オン。30秒後にオフ";
+"Not connected" = "未接続";
+"Schedule" = "スケジュール";
+"On during these hours on the chosen days; off when they end" = "選んだ曜日のこの時間帯にオン。終わるとオフ";
+"Hours" = "時間帯";
+"Ends the next day" = "翌日に終了";
+"Local time; follows daylight saving and time-zone changes" = "現地時刻。夏時間とタイムゾーンの変更に従います";
+"Turn on when" = "オンにする条件";
+"Any: one reason is enough. All: every chosen one must hold." = "いずれか：1つで十分。すべて：選んだ条件がすべて必要。";
+"All are true" = "すべて成立";
+"Any is true" = "いずれか成立";
+"Shortcuts app and links" = "ショートカットAppとリンク";
+"Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first." = "ショートカットAppとcocaine://リンクが確認なしでCocaineをオン/オフできます。オフの場合は先に確認します。";
+"Allow Shortcuts and links to control Cocaine?" = "ショートカットとリンクにCocaineの操作を許可しますか？";
+"Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "何かが「%@」を開きました。心当たりがなければ「許可しない」を選んでください。オートメーション → キーボードショートカットで変更できます。";
+"Don't Allow" = "許可しない";
+"Too hot with the lid closed: Cocaine is off" = "蓋を閉じた状態で高温：Cocaineをオフにしました";

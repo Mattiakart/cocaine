@@ -1,0 +1,30 @@
+/* Cocaine — Power (triggers, screen off, Shortcuts) — fr */
+
+"Turn the screen off instead" = "Éteindre l’écran à la place";
+"The Mac keeps working with the screen off." = "Le Mac continue de travailler écran éteint.";
+"While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Tant que Cocaine est activé. Une touche ou un clic rallume l’écran. Le Mac se verrouille selon les réglages Écran verrouillé.";
+"Now" = "Maintenant";
+"Turn the screens off now" = "Éteindre les écrans maintenant";
+"Power" = "Alimentation";
+"On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Activé quand le Mac est sur secteur, ou sur batterie au-dessus d’un niveau ; désactivé 30 secondes après";
+"On the charger" = "Sur secteur";
+"Down to" = "Jusqu’à";
+"Below this level the battery trigger lets go" = "En dessous de ce niveau, le déclencheur batterie s’arrête";
+"External display" = "Écran externe";
+"On while a display is connected (or while none is); off 30 seconds after" = "Activé quand un écran est branché (ou quand aucun ne l’est) ; désactivé 30 secondes après";
+"Not connected" = "Non branché";
+"Schedule" = "Horaire";
+"On during these hours on the chosen days; off when they end" = "Activé à ces heures les jours choisis ; désactivé à la fin";
+"Hours" = "Heures";
+"Ends the next day" = "Se termine le lendemain";
+"Local time; follows daylight saving and time-zone changes" = "Heure locale ; suit l’heure d’été et les changements de fuseau";
+"Turn on when" = "Activer quand";
+"Any: one reason is enough. All: every chosen one must hold." = "Au moins un : une raison suffit. Tous : chacun des choix doit être vrai.";
+"All are true" = "Tous sont vrais";
+"Any is true" = "Au moins un est vrai";
+"Shortcuts app and links" = "App Raccourcis et liens";
+"Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first." = "L’app Raccourcis et les liens cocaine:// peuvent activer et désactiver Cocaine sans demander. Désactivé : Cocaine vous demande d’abord.";
+"Allow Shortcuts and links to control Cocaine?" = "Autoriser Raccourcis et les liens à contrôler Cocaine ?";
+"Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Quelque chose a ouvert « %@ ». Si ce n’était pas vous, choisissez Ne pas autoriser. Modifiable dans Automatisations → Raccourcis clavier.";
+"Don't Allow" = "Ne pas autoriser";
+"Too hot with the lid closed: Cocaine is off" = "Trop chaud capot fermé : Cocaine est désactivé";
