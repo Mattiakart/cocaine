@@ -298,31 +298,65 @@ private enum Permissions {
     enum State { case granted, denied, notAsked }
     static let musicApps = ["com.apple.Music", "com.spotify.client"]
 
+    /// Never blocks: Files and Music/Spotify can only be known by trying (a folder listing that waits for the user's answer while
+    /// macOS asks; an Apple-event check that can wait on the other app), so those two come from `probe`, run off the main thread.
     static func state(_ p: Permission) -> State {
         switch p {
-        case .accessibility: return AXIsProcessTrusted() ? .granted : .denied
-        case .camera:
-            switch AVCaptureDevice.authorizationStatus(for: .video) { case .authorized: return .granted; case .notDetermined: return .notAsked; default: return .denied }
-        case .calendar:
-            switch EKEventStore.authorizationStatus(for: .event) { case .fullAccess: return .granted; case .notDetermined: return .notAsked; default: return .denied }
-        case .automation:
-            var worst = State.granted
-            for b in runningMusicApps() {
-                switch automation(b, ask: false) {
-                case 0: break
-                case -1744: if worst == .granted { worst = .notAsked }
-                case -1743: worst = .denied
-                default: break
-                }
-            }
-            return worst
-        case .files:
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            for dir in ["Downloads", "Desktop"] {
-                do { _ = try FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(dir).path) } catch { return .denied }
-            }
-            return .granted
+        case .accessibility:
+            // Stay active posts events (PostEvent) and the HUD keys need an event tap (Accessibility): both are the one switch
+            // under Privacy & Security → Accessibility, but they are checked separately, so both must be there.
+            return AXIsProcessTrusted() && CGPreflightPostEventAccess() ? .granted : .denied
+        case .camera: return cameraState(AVCaptureDevice.authorizationStatus(for: .video))
+        case .calendar: return calendarState(EKEventStore.authorizationStatus(for: .event))
+        case .automation: return automationState
+        case .files: return filesState
         }
+    }
+
+    static func cameraState(_ s: AVAuthorizationStatus) -> State {
+        switch s { case .authorized: return .granted; case .notDetermined: return .notAsked; default: return .denied }
+    }
+    /// Full access only: "add events only" (write-only) can't show your events, so it counts as refused.
+    static func calendarState(_ s: EKAuthorizationStatus) -> State {
+        switch s { case .fullAccess: return .granted; case .notDetermined: return .notAsked; default: return .denied }
+    }
+    /// The answers of AEDeterminePermissionToAutomateTarget for the running music apps: the worst one counts; an app that isn't
+    /// running (-600) or any other error says nothing.
+    static func automationState(_ codes: [OSStatus]) -> State {
+        codes.contains(-1743) ? .denied : codes.contains(-1744) ? .notAsked : .granted
+    }
+
+    private(set) static var automationState = State.granted
+    private(set) static var filesState = State.notAsked
+    private static let probeQueue = DispatchQueue(label: "local.cocaine.permissions")
+    private static var waiting: [(Bool) -> Void]?          // non-nil while a probe runs
+
+    /// Re-checks Files (Downloads and the screenshots folder) and Music/Spotify off the main thread; `done` on the main queue,
+    /// with true when something changed. Listing a folder the first time is also what makes macOS ask (once) for it: only
+    /// called while the island, whose Files page reads them, is on. One probe at a time (one may wait for an answer); a call
+    /// while one runs just waits for it.
+    static func probe(files: Bool, done: @escaping (Bool) -> Void = { _ in }) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if waiting != nil { waiting?.append(done); return }
+        waiting = [done]
+        let apps = runningMusicApps()
+        probeQueue.async {
+            let auto = automationState(apps.map { automation($0, ask: false) })
+            var f: State?
+            if files { f = canList(FileShelf.downloadsFolder) && canList(FileShelf.screenshotsFolder) ? .granted : .denied }
+            DispatchQueue.main.async {
+                let changed = auto != automationState || (f != nil && f != filesState)
+                automationState = auto; if let f { filesState = f }
+                let w = waiting ?? []
+                waiting = nil
+                w.forEach { $0(changed) }
+            }
+        }
+    }
+
+    private static func canList(_ dir: URL) -> Bool {
+        do { _ = try FileManager.default.contentsOfDirectory(atPath: dir.path); return true }
+        catch let e as NSError { return !(e.domain == NSCocoaErrorDomain && e.code == NSFileReadNoPermissionError) && (e.underlyingErrorCode != Int(EPERM)) && (e.underlyingErrorCode != Int(EACCES)) }
     }
 
     static func runningMusicApps() -> [String] {
@@ -330,7 +364,7 @@ private enum Permissions {
         return musicApps.filter { running.contains($0) }
     }
 
-    /// 0 allowed, -1743 refused, -1744 not asked yet, -600 the app isn't running.
+    /// 0 allowed, -1743 refused, -1744 not asked yet, -600 the app isn't running. Never on the main thread (it can block).
     static func automation(_ bundle: String, ask: Bool) -> OSStatus {
         guard let desc = NSAppleEventDescriptor(bundleIdentifier: bundle).aeDesc else { return -600 }
         return AEDeterminePermissionToAutomateTarget(desc, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
@@ -340,31 +374,54 @@ private enum Permissions {
         if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(p.pane)") { NSWorkspace.shared.open(u) }
     }
 
+    /// Kept alive while macOS asks: a store that goes away cancels its own request.
+    private static var asking: EKEventStore?
+
     /// Asks for it the right way: the system's own question when it was never asked, the Settings pane when it was refused.
-    /// `done` is called on the main queue once the answer is known (when it is asked now).
-    static func request(_ p: Permission, done: (() -> Void)? = nil) {
-        NSApp.activate()
+    /// `done` is called on the main queue once the answer is known (at once when nothing could be asked). `explicit`: the user
+    /// pressed Allow, so Accessibility also opens its Settings pane (the system's dialog may not come up a second time).
+    static func request(_ p: Permission, explicit: Bool = false, done: (() -> Void)? = nil) {
         let st = state(p)
         guard st != .granted else { done?(); return }
         switch p {
         case .accessibility:
-            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)          // the system's dialog, with its button to Settings
+            // The system's dialog (it also puts Cocaine in the Accessibility list, switched off), then the posting right if that
+            // alone is missing. Settings opens too when the user asked.
+            let ax = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            let post = ax ? CGRequestPostEventAccess() : CGPreflightPostEventAccess()
+            if explicit && !(ax && post) { openPane(p) }
+            done?()
         case .camera:
-            if st == .notAsked { AVCaptureDevice.requestAccess(for: .video) { _ in DispatchQueue.main.async { done?() } } } else { openPane(p) }
+            if st == .notAsked {
+                NSApp.activate()                                             // the question comes up in front
+                AVCaptureDevice.requestAccess(for: .video) { _ in DispatchQueue.main.async { done?() } }
+            } else { openPane(p); done?() }
         case .calendar:
-            if st == .notAsked { EKEventStore().requestFullAccessToEvents { _, _ in DispatchQueue.main.async { done?() } } } else { openPane(p) }
+            if st == .notAsked {
+                NSApp.activate()
+                let store = EKEventStore()
+                asking = store
+                store.requestFullAccessToEvents { _, _ in DispatchQueue.main.async { asking = nil; done?() } }
+            } else { openPane(p); done?() }
         case .automation:
             if st == .notAsked {
-                DispatchQueue.global().async {
-                    for b in runningMusicApps() { _ = automation(b, ask: true) }
-                    DispatchQueue.main.async { done?() }
+                NSApp.activate()
+                let apps = runningMusicApps()
+                probeQueue.async {
+                    let codes = apps.map { automation($0, ask: true) }
+                    DispatchQueue.main.async { automationState = automationState(codes); done?() }
                 }
-            } else { openPane(p) }
+            } else { openPane(p); done?() }
         case .files:
-            _ = try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path)
-            openPane(p)
+            if st == .notAsked {                                             // listing them is the question
+                probe(files: true) { _ in if filesState != .granted { openPane(p) }; done?() }
+            } else { openPane(p); done?() }
         }
     }
+}
+
+private extension NSError {
+    var underlyingErrorCode: Int { (userInfo[NSUnderlyingErrorKey] as? NSError)?.code ?? 0 }
 }
 
 // MARK: - Haptic feedback
@@ -3229,8 +3286,15 @@ private final class FileShelf: ObservableObject {
     }
     func stop() { timer?.invalidate(); timer = nil; primed = false }
 
+    private let queue = DispatchQueue(label: "local.cocaine.files")
+    private var busy = false
+
     private func poll() {
-        DispatchQueue.global().async {
+        // One listing at a time: the first one can wait (macOS asking for the folder) and must not pile up threads behind it.
+        guard !busy else { return }
+        busy = true
+        queue.async {
+            defer { DispatchQueue.main.async { self.busy = false } }
             let dl = Self.list(Self.downloadsFolder) { !Self.partial.contains($0.pathExtension.lowercased()) }
             let shotDir = Self.screenshotsFolder
             let sh = Self.list(shotDir) { u in
@@ -3331,11 +3395,13 @@ private final class CalendarWatch: ObservableObject {
     @Published var events: [Ev] = []
     @Published var access = EKEventStore.authorizationStatus(for: .event) == .fullAccess
     @Published var asked = EKEventStore.authorizationStatus(for: .event) != .notDetermined
-    private let store = EKEventStore()
+    private var store = EKEventStore()
+    private var storeHasAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
 
     func refresh() {
         access = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         guard access else { return }
+        if !storeHasAccess { store = EKEventStore(); storeHasAccess = true }     // a store made before the permission sees no events
         let now = Date(), end = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
         let found = store.events(matching: store.predicateForEvents(withStart: Calendar.current.startOfDay(for: now), end: end, calendars: nil))
             .filter { $0.endDate > now }.sorted { $0.startDate < $1.startDate }.prefix(6)
@@ -3512,7 +3578,8 @@ private final class MusicWatch: ObservableObject {
     private func script(_ source: String) -> String? {
         var err: NSDictionary?
         let r = NSAppleScript(source: source)?.executeAndReturnError(&err)
-        if let e = err, (e[NSAppleScript.errorNumber] as? Int) == -1743 { DispatchQueue.main.async { self.denied = true } }
+        let refused = (err?[NSAppleScript.errorNumber] as? Int) == -1743
+        if refused || (err == nil && denied) { DispatchQueue.main.async { if self.denied != refused { self.denied = refused } } }   // allowed later: back
         return r?.stringValue
     }
 
@@ -3534,8 +3601,10 @@ private final class MusicWatch: ObservableObject {
             for a in candidates {
                 if !self.askedAutomation.contains(a.bundle) {                         // the first time this app is seen running: check, and ask if needed
                     self.askedAutomation.insert(a.bundle)
-                    DispatchQueue.main.sync { NSApp.activate() }
-                    _ = Permissions.automation(a.bundle, ask: true)
+                    if Permissions.automation(a.bundle, ask: false) == -1744 {         // never asked: the question, in front
+                        DispatchQueue.main.sync { NSApp.activate() }
+                        _ = Permissions.automation(a.bundle, ask: true)
+                    }
                 }
                 let isSpotify = a.name == "Spotify"
                 let extra = isSpotify
@@ -3783,12 +3852,19 @@ private final class MirrorController: NSObject, ObservableObject, AVCaptureVideo
     /// Checks the camera permission, asks for it if it was never asked, then starts the camera.
     func start() {
         denied = false; hasFrames = false; stalled = false
+        wanted = true
         switch Permissions.state(.camera) {
         case .granted: run()
-        case .notAsked: Permissions.request(.camera) { [weak self] in if Permissions.state(.camera) == .granted { self?.run() } else { self?.denied = true } }
+        case .notAsked:
+            Permissions.request(.camera) { [weak self] in
+                guard let self else { return }
+                if Permissions.state(.camera) != .granted { self.denied = true }
+                else if self.wanted { self.run() }               // the page may have closed while macOS asked
+            }
         case .denied: denied = true
         }
     }
+    private var wanted = false
 
     private func discover() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
@@ -3838,6 +3914,7 @@ private final class MirrorController: NSObject, ObservableObject, AVCaptureVideo
 
     func stop() {
         generation += 1
+        wanted = false
         hasFrames = false; stalled = false
         queue.async { if self.session.isRunning { self.session.stopRunning() } }
     }
@@ -4433,6 +4510,7 @@ private final class IslandController {
             p.contentView = h
             panel = p; host = h
         }
+        missed = 0
         relayout()
         panel?.orderFrontRegardless()
         watchTimer?.invalidate()
@@ -4444,13 +4522,18 @@ private final class IslandController {
     func relayout() {
         guard enabled, let g = NotchGeometry.current(), let panel else { return }
         if g != model.geometry { model.geometry = g }
-        // Closed, the window is wide enough for the widest wings and never changes (the shape animates inside it); it ignores the
-        // mouse, so it never blocks the menu bar below it.
-        let closedW = g.notchWidth + 2 * IslandModel.maxWing + 20
-        let full = model.open ? CGSize(width: Island.openSize.width + 2 * Island.slack, height: Island.openSize.height + Island.slack)
-                              : CGSize(width: closedW, height: g.height)
         panel.ignoresMouseEvents = !model.open
-        panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height + Island.overscan), display: true)
+        let f = Self.windowFrame(g, open: model.open)
+        if panel.frame != f { panel.setFrame(f, display: true) }
+    }
+
+    /// The window: closed, wide enough for the widest wings and never changing (the shape animates inside it); it ignores the
+    /// mouse then, so it never blocks the menu bar below it. Open, the open island plus room for the spring's overshoot.
+    /// Its top is `overscan` above the screen's edge, like the canvas's (see IslandView: the canvas hangs from the window's top).
+    static func windowFrame(_ g: NotchGeometry, open: Bool) -> NSRect {
+        let full = open ? CGSize(width: Island.openSize.width + 2 * Island.slack, height: Island.openSize.height + Island.slack)
+                        : CGSize(width: g.notchWidth + 2 * IslandModel.maxWing + 20, height: g.height)
+        return NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height + Island.overscan)
     }
 
     /// The open island itself (the window has some empty room around it).
@@ -4525,14 +4608,48 @@ private final class IslandController {
     }
 
     /// Once a second: hide during full-screen video and games, follow the screen, keep the closed width in step.
+    /// The failsafe too: whatever happened, an island that should be on screen is put back (closed, in place, in front); if it
+    /// can't be (no screen, or the window server won't show it), `onShowing(false)` brings the menu-bar icon back.
     private func watch() {
         guard enabled, let panel else { return }
         ticks += 1
+        if suspended && !settingsOpen() { setSuspended(false) }         // never left hidden behind a settings panel that is gone
         if ticks % 4 == 0 {
-            let covered = NotchGeometry.current().map { Self.fullScreenCovers($0.frame) } ?? false
-            if covered && panel.isVisible { panel.orderOut(nil) } else if !covered && !panel.isVisible && !suspended { panel.orderFrontRegardless() }
+            let g = NotchGeometry.current()
+            let covered = g.map { Self.fullScreenCovers($0.frame) } ?? false
+            if covered || g == nil {
+                if panel.isVisible { panel.orderOut(nil) }
+                missed = 0
+            } else if !suspended {
+                if !panel.isVisible || panel.alphaValue < 1 || !Self.onScreen(panel.windowNumber) {
+                    missed += 1
+                    if missed > 1 {                                       // a moment to settle first (just ordered in, a morph)
+                        log.notice("island was not on screen: shown again")
+                        if !model.open { closingUntil = .distantPast }
+                        panel.alphaValue = 1
+                        relayout()
+                        panel.orderFrontRegardless()
+                    }
+                } else { missed = 0 }
+            }
+            setShowing(g != nil && missed < 6)                            // ~7 s of failed repairs: the icon comes back
         }
         if !model.open && Date() >= closingUntil { relayout() }        // never shrink the window under a closing morph
+    }
+    private var missed = 0
+    private(set) var showing = true
+    var onShowing: (Bool) -> Void = { _ in }
+    var settingsOpen: () -> Bool = { false }
+    private func setShowing(_ s: Bool) {
+        guard s != showing else { return }
+        showing = s
+        onShowing(s)
+    }
+
+    /// Is the window really on screen, as the window server says (not just ordered in, as AppKit says)?
+    private static func onScreen(_ number: Int) -> Bool {
+        guard number > 0, let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(number)) as? [[String: Any]], let w = info.first else { return false }
+        return (w[kCGWindowIsOnscreen as String] as? Bool) ?? false
     }
 
     private static func fullScreenCovers(_ frame: CGRect) -> Bool {
@@ -4595,7 +4712,10 @@ private struct IslandView: View {
             }
             return true
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)        // centred on the notch whatever the window's size
+        // Exactly the window's size, the canvas hanging from its top and centred on the notch whatever that size is. (Without the
+        // zero minimums this frame takes the canvas's size, 656×228, and the hosting view centres that in the 38 pt closed window:
+        // the closed island ended up 95 pt above the window, i.e. invisible. --island-selfcheck guards it.)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
         .animation(open ? Island.openSpring : Island.closeSpring, value: open)
         .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.leftW)
         .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.rightW)
@@ -5068,9 +5188,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.islandChanged = { [weak self] in
             guard let self else { return }
             self.island.setEnabled(self.settings.island)
-            self.statusItem.isVisible = !self.settings.island        // the island replaces the menu-bar icon
+            self.statusItem.isVisible = !self.settings.island || !self.island.showing    // the island replaces the menu-bar icon
         }
         statusItem.isVisible = !settings.island
+        // …unless it can't be shown: Cocaine is never left without a sign on screen.
+        island.onShowing = { [weak self] shown in
+            guard let self else { return }
+            log.notice("island \(shown ? "on screen" : "can't be shown: menu-bar icon back", privacy: .public)")
+            self.statusItem.isVisible = !self.settings.island || !shown
+        }
+        island.settingsOpen = { [weak self] in self?.panel?.isVisible ?? false }
         island.start(panelModel: model, enabled: settings.island) { [weak self] in
             self?.island.setOpen(false)
             self?.showPanel(fromClick: false)
@@ -5079,15 +5206,33 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.autoAsked.remove(.accessibility)           // turning it on asks again, if it's still missing
             self.refreshPermissions(askMissing: true)
+            if !self.model.permissionProblems.isEmpty { self.watchPermissions() }
             self.presenceTick()
         }
-        model.requestPresence = { Permissions.request(.accessibility) }
-        model.requestPermission = { [weak self] p in Permissions.request(p) { self?.refreshPermissions() }; self?.refreshPermissions() }
+        model.requestPresence = { [weak self] in self?.model.requestPermission(.accessibility) }
+        model.requestPermission = { [weak self] p in
+            Permissions.request(p, explicit: true) { self?.refreshPermissions() }
+            self?.watchPermissions()
+        }
         mediaKeys.onStep = { [weak self] key, fine in self?.handleMediaKey(key, fine: fine) ?? false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.refreshPermissions(askMissing: true) }      // at launch: ask for what an enabled feature lacks
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in      // at launch: ask for what an enabled feature lacks
+            guard let self else { return }
+            self.refreshPermissions(askMissing: true)
+            if !self.model.permissionProblems.isEmpty { self.watchPermissions() }
+        }
+        // Back from System Settings (or anywhere): look again at once.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshPermissions()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didDeactivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
+            let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == "com.apple.systempreferences", let self else { return }
+            self.refreshPermissions()
+            if !self.model.permissionProblems.isEmpty { self.watchPermissions() }      // a switch flipped there can take a moment
+        }
         model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
         if !settings.replaceHUD { SystemHUD.cleanup() }
-        applyHUDReplacement()
+        applyHUDReplacement(atLaunch: true)
         island.model.hud.suppressBrightness = { [weak self] in
             guard let self else { return false }
             return self.dimPlan != nil || self.previewPlan != nil || self.fadeTimer != nil || Date() < self.dimQuiet
@@ -5392,6 +5537,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// so the click position, not the icon's own window, says which one.
     private func showPanel(fromClick: Bool) {
         refreshPanelState()
+        refreshPermissions()
         let mouse = NSEvent.mouseLocation
         let clicked = fromClick ? NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } : nil
         var screen = clicked ?? NSScreen.main
@@ -5547,27 +5693,46 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Checks everything. With `askMissing`, asks (once per launch each) for what an enabled feature needs and lacks; the rest is
     /// asked when you use it (camera, calendar, music) and listed under Permissions if it was refused.
+    /// Never blocks: Files and Music/Spotify are re-checked off the main thread and land here again when they change.
     private func refreshPermissions(askMissing: Bool = false) {
-        var problems: [Permission] = []
-        for p in neededPermissions() where Permissions.state(p) != .granted {
-            problems.append(p)
-            if askMissing && !autoAsked.contains(p) { autoAsked.insert(p); Permissions.request(p) }
-        }
-        if settings.island {
-            for p in [Permission.camera, .calendar, .automation, .files] where Permissions.state(p) == .denied { problems.append(p) }
+        let problems = Self.permissionProblems(needed: neededPermissions(), island: settings.island, state: Permissions.state)
+        for p in problems where askMissing && !autoAsked.contains(p) && neededPermissions().contains(p) {
+            autoAsked.insert(p); Permissions.request(p)
         }
         if model.permissionProblems != problems { model.permissionProblems = problems }
+        let access = Presence.hasAccess
+        if model.presenceAccess != access { model.presenceAccess = access }
+        // A permission just given: start what was waiting for it.
+        if settings.replaceHUD && !mediaKeys.running && AXIsProcessTrusted() { mediaKeys.start() }
+        Permissions.probe(files: settings.island) { [weak self] changed in if changed { self?.refreshPermissions() } }
+    }
+
+    /// What the Permissions card lists: what an enabled feature needs and lacks, and (with the island on) what was refused.
+    static func permissionProblems(needed: [Permission], island: Bool, state: (Permission) -> Permissions.State) -> [Permission] {
+        var problems = needed.filter { state($0) != .granted }
+        if island { problems += [Permission.camera, .calendar, .automation, .files].filter { !problems.contains($0) && state($0) == .denied } }
+        return problems
+    }
+
+    /// After asking (or sending you to Settings), look again every second for a minute, and whenever Cocaine comes to the front.
+    private var permissionWatch: Timer?
+    private func watchPermissions() {
+        permissionWatch?.invalidate()
+        var n = 0
+        permissionWatch = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            n += 1
+            guard let self, n <= 60 else { t.invalidate(); return }
+            self.refreshPermissions()
+            if self.model.permissionProblems.isEmpty { t.invalidate() }
+        }
     }
 
     // MARK: Stay active, charging, the HUD keys
 
     /// While a chat app is open (or always) and you are idle, keeps the idle clock from running out; holds the display awake.
     private func presenceTick() {
-        let access = Presence.hasAccess
-        if model.presenceAccess != access { model.presenceAccess = access }
         let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
-        if settings.replaceHUD && !mediaKeys.running && AXIsProcessTrusted() { mediaKeys.start() }    // the permission was just given
-        refreshPermissions()
+        refreshPermissions()                                    // (also starts the HUD keys once their permission is given)
         if want != model.presenceActive {
             model.presenceActive = want
             setIconLevel(max(0, iconLevel), pouring: false)        // the menu-bar bag turns pink (or back)
@@ -5609,12 +5774,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func applyHUDReplacement() {
+    private func applyHUDReplacement(atLaunch: Bool = false) {
         island.syncHUD(settings.replaceHUD)
         if settings.replaceHUD {
             systemHUD.enable()
-            autoAsked.remove(.accessibility)
-            refreshPermissions(askMissing: true)
+            if !atLaunch {                                        // just turned on: ask if it's missing (at launch: 3 s later, once)
+                autoAsked.remove(.accessibility)
+                refreshPermissions(askMissing: true)
+                if !model.permissionProblems.isEmpty { watchPermissions() }
+            }
             if AXIsProcessTrusted() { mediaKeys.start() }
         } else {
             systemHUD.disable()
@@ -6170,6 +6338,22 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     check("relay: a message event is read", PhoneListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
     check("relay: keepalives and open events are ignored", PhoneListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
           && PhoneListener.message(#"{"id":"a","time":1,"event":"open"}"#) == nil && PhoneListener.message("garbage") == nil)
+    check("permissions: camera states", Permissions.cameraState(.authorized) == .granted && Permissions.cameraState(.notDetermined) == .notAsked
+          && Permissions.cameraState(.denied) == .denied && Permissions.cameraState(.restricted) == .denied)
+    check("permissions: calendar needs full access (write-only counts as refused)", Permissions.calendarState(.fullAccess) == .granted
+          && Permissions.calendarState(.writeOnly) == .denied && Permissions.calendarState(.notDetermined) == .notAsked && Permissions.calendarState(.denied) == .denied)
+    check("permissions: music apps, the worst answer counts", Permissions.automationState([]) == .granted && Permissions.automationState([0, -600]) == .granted
+          && Permissions.automationState([0, -1744]) == .notAsked && Permissions.automationState([-1744, -1743]) == .denied)
+    do {
+        func st(_ m: [Permission: Permissions.State]) -> (Permission) -> Permissions.State { { m[$0] ?? .granted } }
+        check("permissions: nothing listed when all is allowed", AppDelegate.permissionProblems(needed: [.accessibility], island: true, state: st([:])).isEmpty)
+        check("permissions: a needed one that is missing is listed", AppDelegate.permissionProblems(needed: [.accessibility], island: false, state: st([.accessibility: .denied])) == [.accessibility])
+        check("permissions: page permissions only when refused, only with the island",
+              AppDelegate.permissionProblems(needed: [], island: true, state: st([.camera: .denied, .calendar: .notAsked, .files: .denied])) == [.camera, .files]
+              && AppDelegate.permissionProblems(needed: [], island: false, state: st([.camera: .denied])).isEmpty)
+    }
+    _ = NSApplication.shared
+    if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
@@ -6191,8 +6375,22 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
     }
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" {
-    // The state of every permission for this app, without asking for any.
-    for p in Permission.allCases { print("\(p.rawValue):", "\(Permissions.state(p))") }
+    // The state of every permission for this app, without asking for any (Files: listing the folders is the only check, and it
+    // makes macOS ask if it never did; given 3 s, else "notAsked (macOS is asking)"). Then the raw values behind them.
+    _ = NSApplication.shared
+    var probed = false
+    Permissions.probe(files: true) { _ in probed = true }
+    let until = Date().addingTimeInterval(3)
+    while !probed && Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    for p in Permission.allCases {
+        print("\(p.rawValue):", p == .files && !probed ? "notAsked (macOS is asking)" : "\(Permissions.state(p))")
+    }
+    let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: 1 << 14,
+                                callback: { _, _, e, _ in Unmanaged.passUnretained(e) }, userInfo: nil)
+    if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+    print("raw: AXIsProcessTrusted \(AXIsProcessTrusted()), post events \(CGPreflightPostEventAccess()), listen events (Input Monitoring) \(CGPreflightListenEventAccess()),",
+          "HUD-key tap \(tap != nil ? "ok" : "refused"), camera \(AVCaptureDevice.authorizationStatus(for: .video).rawValue), calendar \(EKEventStore.authorizationStatus(for: .event).rawValue),",
+          "music apps \(Permissions.runningMusicApps().map { "\($0)=\(Permissions.automation($0, ask: false))" })")
     exit(0)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--camera-test" {
@@ -6230,9 +6428,108 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-tes
     print(sent && after < before ? "PASS  the nudge resets the idle time" : "FAIL  no effect (permission missing?)")
     exit(0)
 }
+/// The render tools fill a PanelModel with sample values, which writes some into the real settings: this puts back exactly what
+/// was there (removing them instead wiped the user's own Stay active, HUD and timer choices).
+private struct SavedSettings {
+    static let keys = ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
+                       "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD", "haptics", "alertDone", "alertInput", "alertFlash", "alertSpeak", "alertVoice",
+                       "alertPerSession", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language"]
+    let values: [String: Any] = Dictionary(uniqueKeysWithValues: keys.compactMap { k in UserDefaults.standard.object(forKey: k).map { (k, $0) } })
+    func restore() {
+        for k in Self.keys { if let v = values[k] { UserDefaults.standard.set(v, forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) } }
+        UserDefaults.standard.synchronize()
+    }
+}
+
+/// Offscreen checks of the island exactly as the live window holds it: the real IslandView in a hosting view of the real window
+/// frame (IslandController.windowFrame), so a canvas that ends up outside the window shows up as missing pixels.
+private enum IslandCheck {
+    static func render(_ im: IslandModel, _ pm: PanelModel, frame: NSRect) -> NSBitmapImageRep {
+        let host = NSHostingView(rootView: IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage))
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: frame.size), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isOpaque = false; window.backgroundColor = .clear
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        host.frame = NSRect(origin: .zero, size: frame.size)
+        host.layoutSubtreeIfNeeded()
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+
+    /// Pixels in a box (points, from the top left) that are clearly not black: (bright, pinkish).
+    static func count(_ rep: NSBitmapImageRep, _ box: NSRect, pointWidth: CGFloat) -> (bright: Int, pink: Int) {
+        let s = CGFloat(rep.pixelsWide) / pointWidth
+        var bright = 0, pink = 0
+        for y in max(0, Int(box.minY * s))..<min(rep.pixelsHigh, Int(box.maxY * s)) {
+            for x in max(0, Int(box.minX * s))..<min(rep.pixelsWide, Int(box.maxX * s)) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.alphaComponent > 0.3 else { continue }
+                if max(c.redComponent, c.greenComponent, c.blueComponent) > 0.35 { bright += 1 }
+                if c.redComponent > 0.6 && c.redComponent - c.greenComponent > 0.2 { pink += 1 }
+            }
+        }
+        return (bright, pink)
+    }
+
+    static func alpha(_ rep: NSBitmapImageRep, _ pt: CGPoint, pointWidth: CGFloat) -> CGFloat {
+        let s = CGFloat(rep.pixelsWide) / pointWidth
+        return rep.colorAt(x: min(rep.pixelsWide - 1, Int(pt.x * s)), y: min(rep.pixelsHigh - 1, Int(pt.y * s)))?.alphaComponent ?? 0
+    }
+
+    static func run() -> Int32 {
+        var failed = 0
+        func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+        let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
+        let closed = IslandController.windowFrame(g, open: false), opened = IslandController.windowFrame(g, open: true)
+        check("island: the closed window holds both wings", closed.minX <= g.centerX - g.notchWidth / 2 - IslandModel.maxWing
+              && closed.maxX >= g.centerX + g.notchWidth / 2 + IslandModel.maxWing)
+        check("island: the window hangs from the top edge", closed.maxY == g.frame.maxY + Island.overscan && opened.maxY == g.frame.maxY + Island.overscan)
+        // The bag's box in the closed window (from its top left): left of the notch, in the middle of the menu bar's height.
+        let bagX = closed.width / 2 - g.notchWidth / 2 - Island.wing / 2, midY = Island.overscan + g.height / 2
+        let bagBox = NSRect(x: bagX - 11, y: midY - 11, width: 22, height: 22)
+        var offBright = 0
+        for state in ["off", "on", "pink"] {
+            let pm = PanelModel()
+            pm.persistLanguage = false
+            pm.on = state == "on"; pm.fillLevel = pm.on ? 1 : 0; pm.presenceActive = state == "pink"
+            let im = IslandModel()
+            im.pm = pm; im.geometry = g                 // renderProgress nil: the live path, driven by `open` alone
+            let rep = render(im, pm, frame: closed)
+            let bag = count(rep, bagBox, pointWidth: closed.width)
+            check("island closed (\(state)): the bag is drawn left of the notch (\(bag.bright) px)", bag.bright > 20)
+            if state == "off" { offBright = bag.bright }
+            if state == "on" { check("island closed (on): the bag is full of powder (\(bag.bright) > \(offBright) px)", bag.bright > offBright) }
+            if state == "pink" { check("island closed (Stay active only): the bag is pink (\(bag.pink) px)", bag.pink > 20) }
+            check("island closed (\(state)): the notch is filled black", alpha(rep, CGPoint(x: closed.width / 2, y: midY), pointWidth: closed.width) > 0.9)
+            let right = count(rep, NSRect(x: closed.width / 2 + g.notchWidth / 2 + 4, y: midY - 10, width: Island.wing - 8, height: 20), pointWidth: closed.width)
+            check("island closed (\(state)): the right wing shows what is live only when something is (\(right.bright) px)", state != "off" ? right.bright > 10 : right.bright == 0)
+        }
+        // Open: the bag has become the Home tab, the page is there.
+        let pm = PanelModel()
+        pm.persistLanguage = false
+        pm.on = true; pm.fillLevel = 1
+        let im = IslandModel()
+        im.pm = pm; im.geometry = g; im.open = true
+        let rep = render(im, pm, frame: opened)
+        let l = IslandLayout(notch: g.notchWidth, notchH: g.height)
+        let cell: CGFloat = Island.tabs(external: Island.external).count >= 11 ? 28 : 31
+        let homeX = opened.width / 2 - IslandLayout.openBody / 2 + 16 + cell / 2
+        let home = count(rep, NSRect(x: homeX - 11, y: midY - 11, width: 22, height: 22), pointWidth: opened.width)
+        check("island open: the Home tab is in the strip (\(home.bright) px)", home.bright > 20)
+        let page = count(rep, NSRect(x: opened.width / 2 - IslandLayout.openBody / 2, y: l.top + g.height + 8, width: IslandLayout.openBody, height: 150), pointWidth: opened.width)
+        check("island open: the page is drawn (\(page.bright) px)", page.bright > 300)
+        return failed == 0 ? 0 : 1
+    }
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--island-selfcheck" {
+    _ = NSApplication.shared
+    exit(IslandCheck.run())
+}
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" {
     // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
     _ = NSApplication.shared
+    let sampleSettings = SavedSettings()
     let args = CommandLine.arguments
     let pm = PanelModel()
     pm.persistLanguage = false
@@ -6276,6 +6573,17 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     }
     if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true }        // Stay active alone: the pink bag
     Island.forceExternal = args.contains("--external")
+    if args.contains("--live-window") {
+        // What the real window shows: the IslandView alone in a hosting view of the live window's size (closed: 465×38 on a
+        // 185 pt notch), not the roomy canvas above. --island-selfcheck runs the same thing and checks the pixels.
+        let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
+        im.geometry = g
+        if let p = progress?.first { im.renderProgress = p; im.open = p > 0 }
+        let rep = IslandCheck.render(im, pm, frame: IslandController.windowFrame(g, open: im.open))
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+        sampleSettings.restore()
+        exit(0)
+    }
     let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
     func frame(_ p: CGFloat?) -> NSBitmapImageRep {
         if let p { im.renderProgress = p; im.open = p > 0 }
@@ -6308,11 +6616,13 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
         reps = [NSBitmapImageRep(data: sheet.tiffRepresentation!)!]
     }
     try? reps[0].representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+    sampleSettings.restore()
     exit(0)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
+    let sampleSettings = SavedSettings()
     let model = PanelModel()
     model.persistLanguage = false
     let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
@@ -6373,9 +6683,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         let ok = right <= Layout.width - 14 + 0.5
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
-    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island", "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD"] {
-        UserDefaults.standard.removeObject(forKey: key)     // the sample values above must not stay in the real settings
-    }
+    sampleSettings.restore()                                // the sample values above must not stay in the real settings
     print(Bundle.main.preferredLocalizations.first ?? "?")
     exit(0)
 }
