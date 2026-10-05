@@ -24,6 +24,7 @@ import IOKit.ps
 import Security
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 import os
 
 private let log = Logger(subsystem: "local.cocaine.toggle", category: "app")
@@ -356,6 +357,10 @@ private extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
+    var stayActiveAlways: Bool { get { flag("stayActiveAlways", false) } nonmutating set { d.set(newValue, forKey: "stayActiveAlways") } }
+    var stayActiveApps: [String] { get { d.stringArray(forKey: "stayActiveApps") ?? Presence.defaultApps } nonmutating set { d.set(newValue, forKey: "stayActiveApps") } }
+    var replaceHUD: Bool { get { flag("replaceHUD", false) } nonmutating set { d.set(newValue, forKey: "replaceHUD") } }
     var island: Bool { get { flag("island", true) } nonmutating set { d.set(newValue, forKey: "island") } }
     var wakeForPhone: Bool { get { flag("wakeForPhone", false) } nonmutating set { d.set(newValue, forKey: "wakeForPhone") } }
     /// A random value the app keeps for its own tools (`cocaine remote notify test`); URLs need it for `test=` flags.
@@ -1162,6 +1167,12 @@ private final class PanelModel: ObservableObject {
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var wakeForPhone: Bool { didSet { settings.wakeForPhone = wakeForPhone; wakeChanged() } }
     @Published var island: Bool { didSet { settings.island = island; islandChanged() } }
+    @Published var stayActive: Bool { didSet { settings.stayActive = stayActive; presenceChanged() } }
+    @Published var stayActiveAlways: Bool { didSet { settings.stayActiveAlways = stayActiveAlways } }
+    @Published var stayActiveApps: [String] { didSet { settings.stayActiveApps = stayActiveApps } }
+    @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
+    @Published var presenceAccess = Presence.hasAccess
+    @Published var presenceActive = false
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
     @Published var phoneCount = 0                    // iPhones paired for remote control
@@ -1203,6 +1214,9 @@ private final class PanelModel: ObservableObject {
     var hotkeysChanged: () -> Void = {}
     var wakeChanged: () -> Void = {}
     var islandChanged: () -> Void = {}
+    var presenceChanged: () -> Void = {}
+    var hudReplaceChanged: () -> Void = {}
+    var requestPresence: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1233,6 +1247,10 @@ private final class PanelModel: ObservableObject {
         hotkeys = settings.hotkeys
         wakeForPhone = settings.wakeForPhone
         island = settings.island
+        stayActive = settings.stayActive
+        stayActiveAlways = settings.stayActiveAlways
+        stayActiveApps = settings.stayActiveApps
+        replaceHUD = settings.replaceHUD
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
@@ -1603,6 +1621,9 @@ private struct PanelView: View {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
             row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
+            row(L("Replace system HUD"), tip: L("Shows the volume and brightness bars in the island instead of macOS's own. Needs the Accessibility permission.")) {
+                toggle(L("Replace system HUD"), $m.replaceHUD)
+            }
             row(L("Language")) {
                 let code = m.language.isEmpty ? Language.system : m.language
                 Menu {
@@ -1732,6 +1753,39 @@ private struct PanelView: View {
                     .menuIndicator(.visible)
                 }
             }
+            card("person.crop.circle.badge.checkmark", L("Stay active")) {
+                row(L("Stay available in chat apps"), tip: L("Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then")) {
+                    toggle(L("Stay available in chat apps"), $m.stayActive)
+                }
+                row(L("When"), tip: L("Only while one of the chosen apps is open, or all the time")) {
+                    choice(L("When"), $m.stayActiveAlways, [false, true]) { $0 ? L("Always") : L("While these apps are open") }
+                }
+                .disabled(!m.stayActive).opacity(m.stayActive ? 1 : 0.45)
+                row(L("Apps"), tip: L("The chat apps to keep available")) {
+                    Menu {
+                        ForEach(Array(Set(Presence.defaultApps + m.stayActiveApps)).sorted(), id: \.self) { app in
+                            Button { if m.stayActiveApps.contains(app) { m.stayActiveApps.removeAll { $0 == app } } else { m.stayActiveApps.append(app) } } label: {
+                                if m.stayActiveApps.contains(app) { Label(app, systemImage: "checkmark") } else { Text(app) }
+                            }
+                        }
+                        Section(L("Open now")) {
+                            ForEach(System.runningAppNames().filter { n in !Presence.defaultApps.contains(n) && !m.stayActiveApps.contains(n) }, id: \.self) { app in
+                                Button(app) { m.stayActiveApps.append(app) }
+                            }
+                        }
+                    } label: {
+                        Text(m.stayActiveApps.isEmpty ? L("Choose") : (m.stayActiveApps.count == 1 ? m.stayActiveApps[0] : "\(m.stayActiveApps[0]) +\(m.stayActiveApps.count - 1)")).font(UI.value).lineLimit(1)
+                            .frame(maxWidth: 190, alignment: .trailing)
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.visible)
+                }
+                .disabled(!m.stayActive).opacity(m.stayActive ? 1 : 0.45)
+                if m.stayActive && !m.presenceAccess {
+                    row(L("Needs permission to send input"), detail: L("Allow Cocaine in Privacy & Security → Accessibility"), warning: true) {
+                        Button(L("Allow")) { m.requestPresence() }.controlSize(.small)
+                    }
+                }
+            }
             card("battery.50", L("Battery Guard")) {
                 row(L("When the battery reaches"), detail: m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
                     EmptyView()
@@ -1763,15 +1817,10 @@ private struct PanelView: View {
             }
             card("keyboard", L("Shortcuts")) {
                 row(L("Global shortcuts"), tip: L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach([("C", L("Turn Cocaine on or off")), ("O", L("Open the panel")), ("P", L("Pause or resume alerts"))], id: \.0) { k in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(k.1).font(UI.detail).frame(maxWidth: .infinity, alignment: .leading)
-                            Text("⌃⌥⌘\(k.0)").font(UI.detail.monospaced()).foregroundStyle(.secondary).fixedSize()
-                        }
-                    }
-                }
-                .opacity(m.hotkeys ? 1 : 0.45)
+                Text("⌃⌥⌘C  \(L("on/off"))  ·  ⌃⌥⌘O  \(L("panel"))  ·  ⌃⌥⌘P  \(L("pause alerts"))").font(UI.detail).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .help("⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts"))
+                    .opacity(m.hotkeys ? 1 : 0.45)
             }
         }
     }
@@ -2529,12 +2578,12 @@ private final class ClosureItem: NSMenuItem {
 
 private enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
-    static let openSize = CGSize(width: 700, height: 214)
+    static let openSize = CGSize(width: 720, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
     static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
         var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
-                 ("files", "tray.full.fill", L("Files")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
+                 ("files", "tray.full.fill", L("Files")), ("shelf", "tray.and.arrow.down.fill", L("Shelf")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
                  ("battery", "battery.100", L("Batteries")), ("usage", "chart.bar.fill", L("Usage")), ("mirror", "person.crop.square", L("Mirror"))]
         if external { t.append(("display", "display", L("Monitors"))) }
         return t
@@ -3460,6 +3509,170 @@ private struct Visualizer: View {
     }
 }
 
+// MARK: - Stay active: chat apps (Teams, Slack, Zoom…) keep showing you as available
+
+/// Teams and similar apps mark you "Away" from the system's idle time. While you are idle this sends an invisible mouse event
+/// (no movement) now and then, which resets that clock. Sending input needs the Accessibility permission.
+private enum Presence {
+    static let defaultApps = ["Microsoft Teams", "Teams", "Slack", "zoom.us", "Webex", "Skype"]
+    static var hasAccess: Bool { CGPreflightPostEventAccess() }
+
+    static func requestAccess() {
+        if !CGRequestPostEventAccess() {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        }
+    }
+
+    /// An event as if the mouse "moved" by zero: the cursor stays put, the idle time restarts.
+    @discardableResult
+    static func nudge() -> Bool {
+        guard hasAccess else { return false }
+        let here = CGEvent(source: nil)?.location ?? .zero
+        let e = CGEvent(mouseEventSource: CGEventSource(stateID: .hidSystemState), mouseType: .mouseMoved, mouseCursorPosition: here, mouseButton: .left)
+        e?.setIntegerValueField(.mouseEventDeltaX, value: 0)
+        e?.setIntegerValueField(.mouseEventDeltaY, value: 0)
+        e?.post(tap: .cghidEventTap)
+        return e != nil
+    }
+
+    /// Is any of the named apps running? (Matched on a part of the name, ignoring case.)
+    static func anyRunning(_ names: [String]) -> Bool {
+        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)
+        return names.contains { n in running.contains { $0.lowercased().contains(n.lowercased()) } }
+    }
+}
+
+// MARK: - The macOS volume and brightness keys, shown in the island instead of macOS's own HUD
+
+/// Intercepts the volume, mute and brightness keys (needs Accessibility), applies them itself and shows the island's bar.
+private final class MediaKeys {
+    var onStep: ((Int, Bool) -> Bool)?             // key code, fine step (⌥⇧): return true when it was handled
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+
+    /// NX_KEYTYPE_*: 0 volume up, 1 volume down, 2 brightness up, 3 brightness down, 7 mute.
+    static func decode(data1: Int) -> (key: Int, down: Bool)? {
+        let key = (data1 & 0xFFFF0000) >> 16, flags = data1 & 0x0000FFFF
+        guard [0, 1, 2, 3, 7].contains(key) else { return nil }
+        return (key, ((flags & 0xFF00) >> 8) == 0xA)
+    }
+
+    var running: Bool { tap != nil }
+
+    @discardableResult
+    func start() -> Bool {
+        guard tap == nil, AXIsProcessTrusted() else { return tap != nil }
+        let mask: CGEventMask = 1 << 14                                    // NX_SYSDEFINED
+        guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
+                                        callback: { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let me = Unmanaged<MediaKeys>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }; return Unmanaged.passUnretained(event) }
+            guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8, let k = MediaKeys.decode(data1: ns.data1) else { return Unmanaged.passUnretained(event) }
+            if !k.down { return me.onStep == nil ? Unmanaged.passUnretained(event) : nil }   // swallow the release of a key we handled
+            let fine = ns.modifierFlags.contains([.option, .shift])
+            return (me.onStep?(k.key, fine) ?? false) ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
+        tap = t
+        source = CFMachPortCreateRunLoopSource(nil, t, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: t, enable: true)
+        return true
+    }
+
+    func stop() {
+        if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
+        if let s = source { CFRunLoopRemoveSource(CFRunLoopGetMain(), s, .commonModes) }
+        tap = nil; source = nil
+    }
+
+    // MARK: acting on the keys
+
+    private static func outputDevice() -> AudioDeviceID? {
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var d = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &d) == noErr && d != 0 ? d : nil
+    }
+
+    /// Volume up/down/mute. Returns the new level and whether it's muted, or nil when this output has no volume control.
+    static func changeVolume(key: Int, fine: Bool) -> (level: Float, muted: Bool)? {
+        guard let dev = outputDevice() else { return nil }
+        var va = AudioObjectPropertyAddress(mSelector: 0x766D_7663, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var ma = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(dev, &va, 0, nil, &size, &v) == noErr else { return nil }
+        var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
+        let hasMute = AudioObjectGetPropertyData(dev, &ma, 0, nil, &msize, &mute) == noErr
+        let step: Float32 = fine ? 1.0 / 64 : 1.0 / 16
+        if key == 7 {
+            guard hasMute else { return nil }
+            mute = mute == 0 ? 1 : 0
+            AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute)
+            return (v, mute != 0)
+        }
+        v = min(1, max(0, v + (key == 0 ? step : -step)))
+        AudioObjectSetPropertyData(dev, &va, 0, nil, size, &v)
+        if hasMute && mute != 0 && key == 0 { mute = 0; AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute) }
+        return (v, mute != 0 && key != 0)
+    }
+}
+
+// MARK: Island, part 4: a shelf for files, and the charging activity
+
+/// Files dropped on the island, held (as references, never copied) until you drag them out, AirDrop them or clear the shelf.
+private final class ShelfStore: ObservableObject {
+    @Published var urls: [URL] = []
+    func add(_ u: URL) { if !urls.contains(u) { urls.append(u) } }
+    func remove(_ u: URL) { urls.removeAll { $0 == u } }
+    func clear() { urls = [] }
+}
+
+extension IslandView {
+    fileprivate var shelfTab: some View {
+        HStack(alignment: .top, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Shelf")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                if model.shelf.urls.isEmpty {
+                    RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])).foregroundStyle(.white.opacity(0.25))
+                        .overlay(Text(L("Drop files here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)))
+                        .frame(height: 96)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 10), count: 5), alignment: .leading, spacing: 8) {
+                        ForEach(model.shelf.urls.prefix(10), id: \.self) { u in
+                            VStack(spacing: 3) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: u.path)).resizable().frame(width: 40, height: 40)
+                                Text(u.lastPathComponent).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundStyle(.white.opacity(0.75))
+                            }
+                            .frame(width: 84)
+                            .overlay(alignment: .topTrailing) {
+                                Button { model.shelf.remove(u) } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)) }
+                                    .buttonStyle(.plain).accessibilityLabel(L("Remove"))
+                            }
+                            .onDrag { NSItemProvider(object: u as NSURL) }
+                            .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([u]) }
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 8) {
+                Button { model.airDrop(model.shelf.urls) } label: {
+                    Label("AirDrop", systemImage: "airplayaudio").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                }
+                .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
+                Button { model.shelf.clear() } label: {
+                    Text(L("Clear")).font(.system(size: 12)).padding(.horizontal, 14).padding(.vertical, 6).background(Capsule().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 110)
+        }
+    }
+}
+
 // MARK: Island model and controller
 
 private final class IslandModel: ObservableObject {
@@ -3474,6 +3687,9 @@ private final class IslandModel: ObservableObject {
     let usage = UsageWatch()
     let files = FileShelf()
     let clipboard = ClipboardWatch()
+    let shelf = ShelfStore()
+    var airDrop: ([URL]) -> Void = { _ in }
+    var dropTargeted: (Bool) -> Void = { _ in }
     let calendar = CalendarWatch()
     let music = MusicWatch()
     let mirror = MirrorController()
@@ -3484,7 +3700,7 @@ private final class IslandModel: ObservableObject {
     private var flashWork: DispatchWorkItem?
 
     init() {
-        forwards = [files.objectWillChange, clipboard.objectWillChange, calendar.objectWillChange, focus.objectWillChange, mic.objectWillChange,
+        forwards = [files.objectWillChange, clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange, focus.objectWillChange, mic.objectWillChange,
                     music.objectWillChange, mirror.objectWillChange, ddc.objectWillChange]
             .map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
     }
@@ -3530,6 +3746,16 @@ private final class IslandController {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
         model.mic.start()
         model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
+        model.airDrop = { urls in
+            guard !urls.isEmpty else { return }
+            NSApp.activate()
+            NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
+        }
+        model.dropTargeted = { [weak self] t in
+            guard t, let self else { return }
+            self.model.tab = "shelf"
+            self.setOpen(true)
+        }
         model.hud.onChange = { [weak model] icon, text, level in DispatchQueue.main.async { model?.flashNotice(icon, text, level: level) } }
         setEnabled(enabled)
     }
@@ -3639,6 +3865,14 @@ private struct IslandView: View {
         .contentShape(Rectangle())
         .onHover { model.hover($0) }
         .onTapGesture { if !model.open { model.toggleOpen() } }
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { model.dropTargeted($0) })) { providers in
+            for provider in providers {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) { DispatchQueue.main.async { model.shelf.add(u) } }
+                }
+            }
+            return true
+        }
         .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height), alignment: .top)
         .animation(.spring(response: 0.42, dampingFraction: 0.8), value: model.open)
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: live)
@@ -3705,6 +3939,7 @@ private struct IslandView: View {
                 case "mirror": mirrorTab
                 case "display": displayTab
                 case "files": filesTab
+                case "shelf": shelfTab
                 case "clipboard": clipboardTab
                 case "battery": batteryTab
                 case "usage": usageTab
@@ -3768,6 +4003,12 @@ private struct IslandView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L("Stay on for")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
                     EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices) { $0 == 0 ? "∞" : ($0 < 60 ? "\($0)m" : "\($0 / 60)h") }
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 12)).foregroundStyle(m.presenceActive ? Island.accent : .white.opacity(0.5))
+                    Text(L("Stay active")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    CocaineSwitch($m.stayActive)
                 }
             }
             .frame(width: 270)
@@ -3978,6 +4219,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var repeatTimer: Timer?
     private let speech = AVSpeechSynthesizer()
     private let island = IslandController()
+    private let mediaKeys = MediaKeys()
+    private var presenceAssertion: IOPMAssertionID = 0
+    private var lastOnAC: Bool?
     private let board = AgentBoard()                 // what each AI session is doing, from the hooks
     private var batteryGuard = BatteryGuard()
     private var autoOn = AutoOn()
@@ -4012,6 +4256,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
         model.islandChanged = { [weak self] in self?.island.setEnabled(self?.settings.island ?? false) }
         island.start(panelModel: model, enabled: settings.island) { [weak self] in self?.showPanel(fromClick: false) }
+        model.presenceChanged = { [weak self] in
+            guard let self else { return }
+            if self.settings.stayActive && !Presence.hasAccess { Presence.requestAccess() }
+            self.presenceTick()
+        }
+        model.requestPresence = { Presence.requestAccess() }
+        model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
+        mediaKeys.onStep = { [weak self] key, fine in self?.handleMediaKey(key, fine: fine) ?? false }
+        applyHUDReplacement()
         island.model.hud.suppressBrightness = { [weak self] in
             guard let self else { return false }
             return self.dimPlan != nil || self.previewPlan != nil || self.fadeTimer != nil || Date() < self.dimQuiet
@@ -4447,7 +4700,63 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         updateDimming(on: on)
         if ticks % 4 == 0 { checkTimer(on) }                     // every 2 s
         if ticks % 10 == 0 { evaluateTriggers(on) }              // every 5 s
-        if ticks % 20 == 0 { checkBattery(on); writeBoard() }    // every 10 s
+        if ticks % 20 == 0 { checkBattery(on); writeBoard(); presenceTick() }    // every 10 s
+        if ticks % 4 == 0 { watchPower() }                       // every 2 s
+    }
+
+    // MARK: Stay active, charging, the HUD keys
+
+    /// While a chat app is open (or always) and you are idle, keeps the idle clock from running out; holds the display awake.
+    private func presenceTick() {
+        let access = Presence.hasAccess
+        if model.presenceAccess != access { model.presenceAccess = access }
+        if settings.replaceHUD && !mediaKeys.running { mediaKeys.start() }
+        let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
+        if want != model.presenceActive { model.presenceActive = want }
+        if want {
+            if presenceAssertion == 0 {
+                IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                                            "Cocaine keeps you available in chat apps" as CFString, &presenceAssertion)
+            }
+            if System.idleSeconds > 45 { Presence.nudge() }
+        } else if presenceAssertion != 0 {
+            IOPMAssertionRelease(presenceAssertion); presenceAssertion = 0
+        }
+    }
+
+    /// A message in the island when the charger is plugged in or out.
+    private func watchPower() {
+        guard let b = System.battery else { return }
+        if let last = lastOnAC, last != b.onAC {
+            island.model.flashNotice(b.onAC ? "bolt.fill" : "battery.50", (b.onAC ? L("Charging") : L("On battery")) + " \(b.percent)%")
+        }
+        lastOnAC = b.onAC
+    }
+
+    private func applyHUDReplacement() {
+        if settings.replaceHUD {
+            if !AXIsProcessTrusted() { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
+            mediaKeys.start()
+        } else {
+            mediaKeys.stop()
+        }
+    }
+
+    /// Volume, mute and brightness keys: applied here, shown in the island. False leaves the key to macOS.
+    private func handleMediaKey(_ key: Int, fine: Bool) -> Bool {
+        if key == 0 || key == 1 || key == 7 {
+            guard let r = MediaKeys.changeVolume(key: key, fine: fine) else { return false }
+            let icon = r.muted || r.level == 0 ? "speaker.slash.fill" : r.level < 0.34 ? "speaker.wave.1.fill" : r.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+            island.model.flashNotice(icon, L("Volume"), level: r.muted ? 0 : Double(r.level))
+            return true
+        }
+        guard dimPlan == nil, previewPlan == nil, let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) else { return false }
+        let step: Float = fine ? 1.0 / 64 : 1.0 / 16
+        let new = min(1, max(0, b + (key == 2 ? step : -step)))
+        dimQuiet = Date().addingTimeInterval(1)
+        screens.setBrightness(id, new)
+        island.model.flashNotice("sun.max.fill", L("Brightness"), level: Double(new))
+        return true
     }
 
     // MARK: Timer, Battery Guard, Smart Triggers, hotkeys
@@ -4986,6 +5295,9 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     board.set("s3", from: "Gemini CLI", project: nil, state: "working", now: now)
     board.prune(now.addingTimeInterval(7300))
     check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
+    check("hud: volume-up key down is decoded", MediaKeys.decode(data1: (0 << 16) | (0xA << 8))?.down == true)
+    check("hud: brightness-down key up is decoded", { let k = MediaKeys.decode(data1: (3 << 16) | (0xB << 8)); return k?.key == 3 && k?.down == false }())
+    check("hud: other keys are ignored", MediaKeys.decode(data1: (16 << 16) | (0xA << 8)) == nil)
     check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
     check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
           Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
@@ -5012,6 +5324,18 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
         print("codex needs trust: \(s.codexNeedsTrust)")
         exit(0)
     }
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-test" {
+    // Does a presence nudge reset the system idle time? Prints the permission state and the idle time before and after.
+    print("post-event access:", Presence.hasAccess, " accessibility:", AXIsProcessTrusted())
+    Thread.sleep(forTimeInterval: 3)
+    let before = System.idleSeconds
+    let sent = Presence.nudge()
+    Thread.sleep(forTimeInterval: 0.3)
+    let after = System.idleSeconds
+    print(String(format: "idle before %.1f s, nudge sent: %@, idle after %.1f s", before, sent ? "yes" : "no", after))
+    print(sent && after < before ? "PASS  the nudge resets the idle time" : "FAIL  no effect (permission missing?)")
+    exit(0)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" {
     // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
@@ -5045,6 +5369,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     im.clipboard.items = [ClipboardWatch.Clip(text: "brew upgrade --cask cocaine", date: Date()), ClipboardWatch.Clip(text: "https://github.com/Mattiakart/cocaine", date: Date()),
                           ClipboardWatch.Clip(text: "Ciao Mario, ti mando il file domani mattina", date: Date())]
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
+    if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
     let full = im.open ? Island.openSize : CGSize(width: 185 + (im.live ? 2 * Island.wing : 0), height: 32)
     im.panelSize = full
@@ -5124,7 +5449,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         let ok = right <= Layout.width - 14 + 0.5
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
-    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island"] {
+    for key in ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island", "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD"] {
         UserDefaults.standard.removeObject(forKey: key)     // the sample values above must not stay in the real settings
     }
     print(Bundle.main.preferredLocalizations.first ?? "?")

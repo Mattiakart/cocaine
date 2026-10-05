@@ -111,6 +111,7 @@ opens, with these pages:
   synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent). Needs the Automation permission.
 - **Calendar**: today and your next events, two weeks ahead (asks for Calendar access when you press the button).
 - **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake.
+- **Shelf**: drop files on the island (it opens by itself) and keep them there, then drag them out or send them all by AirDrop.
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
 - **Clipboard**: what you copied lately, kept in memory only and never from password managers; click to copy again.
 - **Batteries**: the Mac, AirPods and other Bluetooth devices.
@@ -119,8 +120,9 @@ opens, with these pages:
 - **Monitors** (only with an external monitor): brightness, contrast, volume and input of the monitor itself over DDC/CI,
   Apple silicon only; not every monitor supports it, and it can't read values back.
 
-The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
-and brightness bars appear in addition to macOS's own HUD (replacing it would need an Accessibility permission).
+Plugging the charger in or out is announced too. The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
+and brightness bars appear in addition to macOS's own HUD; turn on *Cocaine → Replace system HUD* (needs the Accessibility
+permission) and the volume, mute and brightness keys are handled by Cocaine and shown only in the island (⌥⇧ for fine steps).
 
 ## Remote work
 
@@ -196,6 +198,10 @@ Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app need
 `cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.
 
 ### Automation
+
+**Stay active** (Automation tab): Teams, Slack, Zoom and similar apps mark you "Away" from the Mac's idle time. While you are
+idle, with one of the chosen apps open (or always), Cocaine sends an invisible mouse event now and then, which restarts that
+clock, and keeps the display awake. It needs the Accessibility permission; check that your workplace allows it.
 
 The panel has three tabs: *General* (the **Timer** right under the switch: ∞, 30 minutes … 8 hours, or any length you set in steps of 15 minutes up to 24 hours, then it turns off; plus dimming and the agents at work), *AI alerts* and *Automation*: **Battery Guard** (on battery, at
 10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, or while chosen programs

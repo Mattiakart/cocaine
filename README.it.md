@@ -111,6 +111,7 @@ o ci clicchi e si apre, con queste pagine:
   testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro). Serve il permesso Automazione.
 - **Calendario**: oggi e i prossimi eventi, fino a due settimane (chiede l'accesso a Calendario quando premi il pulsante).
 - **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio.
+- **Scaffale**: trascina dei file sull'isola (si apre da sola) e tienili lì, poi trascinali fuori o mandali tutti con AirDrop.
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo avvisa quando ne arriva uno.
 - **Appunti**: ciò che hai copiato da poco, solo in memoria e mai dai gestori di password; clicca per copiare di nuovo.
 - **Batterie**: il Mac, gli AirPods e altri dispositivi Bluetooth.
@@ -119,8 +120,9 @@ o ci clicchi e si apre, con queste pagine:
 - **Monitor** (solo con un monitor esterno): luminosità, contrasto, volume e ingresso del monitor stesso via DDC/CI, solo Apple
   silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
 
-L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
-giochi. Le barre di volume e luminosità compaiono in aggiunta all'HUD di macOS (sostituirlo richiederebbe il permesso Accessibilità).
+Anche il caricatore collegato o scollegato viene annunciato. L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
+giochi. Le barre di volume e luminosità compaiono in aggiunta all'HUD di macOS; attiva *Cocaine → Sostituisci l'HUD di sistema* (serve il
+permesso Accessibilità) e i tasti di volume, muto e luminosità li gestisce Cocaine, mostrati solo nell'isola (⌥⇧ per passi fini).
 
 ## Lavoro da remoto
 
@@ -199,6 +201,10 @@ a un'app Wake-on-LAN, da usare sulla rete di casa.)
 `cocaine://timer?minutes=90`, `cocaine://pause?minutes=60`, `cocaine://resume`, `cocaine://panel`.
 
 ### Automazioni
+
+**Resta attivo** (scheda Automazioni): Teams, Slack, Zoom e app simili ti segnano "Assente" in base all'inattività del Mac. Mentre
+sei inattivo, con una delle app scelte aperta (o sempre), Cocaine invia ogni tanto un evento di mouse invisibile, che riavvia
+quell'orologio, e tiene lo schermo acceso. Serve il permesso Accessibilità; verifica che nel tuo lavoro sia consentito.
 
 Il pannello ha tre schede: *Generale* (il **Timer** subito sotto l'interruttore: ∞, da 30 minuti a 8 ore, o qualsiasi durata a passi di 15 minuti fino a 24 ore, poi si spegne; più luminosità e agent al lavoro), *Avvisi AI* e *Automazioni*: **Battery Guard** (a batteria,
 al 10–30 % spegne Cocaine o ti avvisa soltanto), **Smart Triggers** (attivo mentre un'AI lavora o aspetta te, o mentre
