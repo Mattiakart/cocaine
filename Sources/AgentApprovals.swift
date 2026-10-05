@@ -195,8 +195,8 @@ struct ApprovalRequest: Equatable, Identifiable {
         return r
     }
 
-    /// The longest text the notch shows whole (it wraps over a few lines, never cut).
-    static let shownLimit = 180
+    /// The longest text the notch shows whole (about four lines of the island's row, never cut).
+    static let shownLimit = 120
     /// Fields that only describe or tune a call (a Bash command's label and timeout, a Read's range).
     static let incidental: Set<String> = ["description", "timeout", "run_in_background", "offset", "limit"]
 

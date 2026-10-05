@@ -50,6 +50,11 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--selftest" "$BIN" --selftest
   run "--update-test" "$BIN" --update-test
   run "--signature-test" "$BIN" --signature-test
+  run "--agents-test" "$BIN" --agents-test
+  run "--clipboard-test" "$BIN" --clipboard-test
+  run "--remote-test" "$BIN" --remote-test
+  run "--recovery-test (stand-ins, temporary folders)" "$BIN" --recovery-test
+  run "tests/engine-test.zsh (engine and remote.zsh on stubs)" zsh tests/engine-test.zsh
   run "--layout-test" zsh -c "$BIN --layout-test | grep -c 'inside that screen: true' | grep -qx 4"
   run "--l10n-check" "$BIN" --l10n-check Localization main.swift Sources/*.swift
   if [ "${CI:-}" = true ]; then skipped "--auth-selftest" "CI: osascript in a headless session"
