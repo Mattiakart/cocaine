@@ -3,7 +3,9 @@
 #
 # Why: an ad-hoc signature's identity is the hash of each build, so every update looks like a different app to macOS, which then
 # forgets the permissions you gave (Accessibility, Camera, Calendar, Automation, Files). Signed with this identity, every build has
-# the same requirement ("identifier local.cocaine.toggle and this certificate"), so the permissions survive updates.
+# the same requirement ("identifier local.cocaine.toggle and this certificate"), which is what macOS checks before reusing a
+# permission; tools/verify-permissions-persistence.sh shows whether two builds pass that check. A new identity (another Mac,
+# or this file deleted) is a different app to macOS. Not trusted by Gatekeeper: that takes Developer ID (tools/sign.sh).
 # The key never leaves this Mac's keychain file; the keychain password is not a secret (it protects nothing but this build identity).
 set -euo pipefail
 DIR="$HOME/.cocaine-signing"

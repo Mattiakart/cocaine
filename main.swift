@@ -91,6 +91,8 @@ private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShort
 
 /// UI text in the current language (Localization/*.lproj).
 private func L(_ key: String) -> String { Language.text(key) }
+/// The same lookup for the updater and signature code in Sources/ (L is private to this file).
+func updatesText(_ key: String) -> String { Language.text(key) }
 
 @discardableResult
 private func run(_ path: String, _ args: [String]) -> Int32 {
@@ -1650,6 +1652,7 @@ private struct EqualSegments<T: Hashable>: NSViewRepresentable {
 
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
+    @ObservedObject var up = Updater.shared
 
     private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
     static func timeString(_ d: Date) -> String { time.string(from: d) }
@@ -1868,6 +1871,10 @@ private struct PanelView: View {
             row(L("Open at login")) {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
+            row(L("Updates"), detail: up.statusText, warning: { if case .failed = up.phase { return true }; return false }()) { updateControl }
+            row(L("Check for updates automatically"), tip: L("Once a day. Nothing is downloaded until you press Install.")) {
+                toggle(L("Check for updates automatically"), $up.autoCheck)
+            }
             row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
             row(L("Haptic feedback"), tip: L("A light tap on the trackpad when you change a timer, switch a page or toggle something")) { toggle(L("Haptic feedback"), $m.haptics) }
             row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
@@ -1893,6 +1900,22 @@ private struct PanelView: View {
         }
     }
 
+    /// Check, Install (or the Homebrew command / the download page when this copy can't update itself), Cancel, Retry.
+    @ViewBuilder private var updateControl: some View {
+        switch up.phase {
+        case .checking, .installing: ProgressView().controlSize(.small)
+        case .downloading: Button(L("Cancel")) { up.cancel() }.controlSize(.small)
+        case .available:
+            if up.eligibility == .homebrew {
+                Button(L("Copy command")) { up.copyBrewCommand() }.controlSize(.small).help(Homebrew.upgradeCommand)
+            } else {
+                Button(up.eligibility == .ok ? L("Install") : L("Download")) { up.install() }.controlSize(.small)
+            }
+        case .failed(_, let retry): Button(retry ? L("Retry") : L("Check now")) { retry ? up.retry() : up.check() }.controlSize(.small)
+        default: Button(L("Check now")) { up.check() }.controlSize(.small)
+        }
+    }
+
     /// Only what is missing, with a button; one calm line when everything is in place.
     private var permissionsCard: some View {
         card("lock.shield", L("Permissions")) {
@@ -1903,6 +1926,8 @@ private struct PanelView: View {
                     row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.controlSize(.small) }
                 }
             }
+            Text(SigningTier.current.panelLine).font(UI.detail).foregroundStyle(.secondary)   // what the permissions are tied to
+                .lineLimit(3).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -5319,6 +5344,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
             return
         }
+        Updater.shared.start()                       // leftovers of an update, then a check at most once a day
         if !System.cocaineOn { toggleCocaine() }     // opening the app turns Cocaine on
         pendingCommands.forEach(command)             // then whatever was asked for while it started
         pendingCommands = []
@@ -6248,6 +6274,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Entry point
 
+if let status = DistCLI.run(CommandLine.arguments) { exit(status) }   // release tooling and updater/signature tests
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftest" {
     // Runs the exact install pipeline (AppleScript quoting, printf, visudo, install) without admin rights,
     // writing the rule to the given file instead of /etc/sudoers.d.

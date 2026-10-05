@@ -1,0 +1,50 @@
+#!/bin/zsh
+# Makes the signed update manifest for a release DMG: dist/Cocaine-<v>.dmg.manifest.json. Publishes nothing.
+#   tools/release-sign.sh dist/Cocaine-<version>.dmg <local|developer-id|notarized>
+# The tier is declared, then checked against what the app inside the DMG really is (its own reading of its signature);
+# a mismatch, an ad hoc or unverifiable app, or a version/build that differs from Info.plist stops here.
+# The Ed25519 private key is read from COCAINE_UPDATE_KEY (default ~/.cocaine-signing/update-ed25519.key), never from the
+# repository and never printed.
+set -euo pipefail
+ROOT="${0:A:h:h}"
+die() { print -u2 -- "release-sign.sh: $*"; exit 1; }
+[ $# -eq 2 ] || die "usage: tools/release-sign.sh <Cocaine-x.y.z.dmg> <local|developer-id|notarized>"
+DMG="${1:A}" DECLARED="$2"
+case "$DECLARED" in local) WANT=local ;; developer-id) WANT=developerID ;; notarized) WANT=notarized ;;
+  *) die "declare the tier: local, developer-id or notarized (ad hoc releases aren't allowed)" ;; esac
+KEY="${COCAINE_UPDATE_KEY:-$HOME/.cocaine-signing/update-ed25519.key}"
+[ -f "$KEY" ] || die "no release key at $KEY (tools/update-key.sh init makes one)"
+case "${KEY:A}" in "$ROOT"/*) die "the release key must live outside the repository" ;; esac
+[ -f "$DMG" ] || die "no such DMG: $DMG"
+
+MNT=$(mktemp -d)
+chmod 700 "$MNT"
+cleanup() { hdiutil detach "$MNT" >/dev/null 2>&1 || hdiutil detach -force "$MNT" >/dev/null 2>&1 || true; rmdir "$MNT" 2>/dev/null || true; }
+trap cleanup EXIT
+hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MNT" "$DMG" >/dev/null || die "can't mount $DMG"
+APP="$MNT/Cocaine.app"
+[ -d "$APP" ] && [ ! -L "$APP" ] || die "the DMG doesn't contain Cocaine.app at its root"
+BIN="$APP/Contents/MacOS/Cocaine"
+
+codesign --verify --deep --strict "$APP" 2>/dev/null || die "the app in the DMG fails strict signature verification"
+TIER=$("$BIN" --signature-tier "$APP" | sed -n 's/^tier=\([A-Za-z]*\).*/\1/p') || die "the app couldn't read its own signature"
+[ "$TIER" = "$WANT" ] || die "declared tier \"$DECLARED\" but the app is \"$TIER\""
+if [ "$WANT" != local ]; then
+  spctl --assess --type execute "$APP" 2>/dev/null || die "Gatekeeper rejects the app"
+fi
+if [ "$WANT" = notarized ]; then
+  xcrun stapler validate "$DMG" >/dev/null || die "the DMG has no valid stapled ticket"
+fi
+
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+BUILDNO=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")
+[ "$VERSION" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Info.plist")" ] || die "the DMG's version ($VERSION) isn't Info.plist's"
+[ "$BUILDNO" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/Info.plist")" ] || die "the DMG's build ($BUILDNO) isn't Info.plist's"
+[ "${DMG:t}" = "Cocaine-$VERSION.dmg" ] || die "the DMG must be named Cocaine-$VERSION.dmg"
+
+OUT="$DMG.manifest.json"
+# The app in the DMG signs with its own embedded public key check: a key that doesn't match it is refused.
+"$BIN" --update-sign "$KEY" "$DMG" "$VERSION" "$BUILDNO" "$TIER" "$OUT" || die "signing the manifest failed"
+"$BIN" --update-verify "$OUT" "$DMG" >/dev/null || die "the manifest doesn't verify"
+print -- "made $OUT (tier $TIER, version $VERSION, build $BUILDNO)."
+print -- "Upload BOTH $DMG:t and $OUT:t to the GitHub release v$VERSION. Nothing was published."
