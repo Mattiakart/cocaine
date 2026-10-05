@@ -102,11 +102,25 @@ Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattia
 ## Isola
 
 Cocaine vive anche nel notch (o, su uno schermo senza, in una sottile pillola in alto). Chiusa, mostra accanto al notch ciò che
-è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, il microfono in uso. Ci
-passi sopra o ci clicchi e si apre: **Home** (l'interruttore, il timer, gli agent AI al lavoro), **Focus** (un timer
-focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio), **Batterie** (il Mac, gli AirPods e altri
-dispositivi Bluetooth) e **Utilizzo** (i limiti di Codex e i token di Claude Code, letti dai loro file locali). L'ingranaggio
-apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e giochi.
+è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, il microfono in uso, il
+brano in riproduzione e brevi messaggi ("Scaricato", "Screenshot", "Copiato", le barre di volume e luminosità). Ci passi sopra
+o ci clicchi e si apre, con queste pagine:
+
+- **Home**: l'interruttore, il timer, gli agent AI al lavoro.
+- **Musica**: Musica e Spotify, con copertina, barra di avanzamento, play/pausa/avanti/indietro/casuale e, se li attivi, i
+  testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro). Serve il permesso Automazione.
+- **Calendario**: oggi e i prossimi eventi, fino a due settimane (chiede l'accesso a Calendario quando premi il pulsante).
+- **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio.
+- **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo avvisa quando ne arriva uno.
+- **Appunti**: ciò che hai copiato da poco, solo in memoria e mai dai gestori di password; clicca per copiare di nuovo.
+- **Batterie**: il Mac, gli AirPods e altri dispositivi Bluetooth.
+- **Utilizzo**: i limiti di Codex e i token di Claude Code, letti dai loro file locali.
+- **Specchio**: la vista dal vivo della fotocamera, accesa solo mentre quella pagina è aperta.
+- **Monitor** (solo con un monitor esterno): luminosità, contrasto, volume e ingresso del monitor stesso via DDC/CI, solo Apple
+  silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
+
+L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
+giochi. Le barre di volume e luminosità compaiono in aggiunta all'HUD di macOS (sostituirlo richiederebbe il permesso Accessibilità).
 
 ## Lavoro da remoto
 

@@ -12,7 +12,9 @@
 
 import AppKit
 import AVFoundation
+import Combine
 import CoreAudio
+import EventKit
 import Carbon.HIToolbox
 import Darwin
 import ImageIO
@@ -2527,12 +2529,15 @@ private final class ClosureItem: NSMenuItem {
 
 private enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
-    static let openSize = CGSize(width: 600, height: 214)
+    static let openSize = CGSize(width: 700, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
-    static var tabs: [(id: String, icon: String, title: String)] {
-        [("home", "house.fill", L("Home")), ("focus", "timer", L("Focus")),
-         ("battery", "battery.100", L("Batteries")), ("usage", "chart.bar.fill", L("Usage"))]
+    static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
+        var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
+                 ("files", "tray.full.fill", L("Files")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
+                 ("battery", "battery.100", L("Batteries")), ("usage", "chart.bar.fill", L("Usage")), ("mirror", "person.crop.square", L("Mirror"))]
+        if external { t.append(("display", "display", L("Monitors"))) }
+        return t
     }
 }
 
@@ -2769,6 +2774,692 @@ private final class UsageWatch: ObservableObject {
     }
 }
 
+// MARK: Island, part 2: files and screenshots, clipboard, calendar
+
+/// Recent downloads and screenshots, found by looking at the two folders every couple of seconds.
+private final class FileShelf: ObservableObject {
+    struct Item: Identifiable, Equatable {
+        var url: URL
+        var id: URL { url }
+        var name: String { url.lastPathComponent }
+        var date: Date
+        var size: Int64
+    }
+    @Published var downloads: [Item] = []
+    @Published var shots: [Item] = []
+    var onNew: ((String, String) -> Void)?        // symbol, text: a file just arrived
+    private var known = Set<URL>()
+    private var primed = false
+    private var timer: Timer?
+
+    static var downloadsFolder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads") }
+    static var screenshotsFolder: URL {
+        if let p = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"), !p.isEmpty {
+            return URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+    }
+    private static let shotPrefixes = ["Screenshot", "Screen Shot", "Schermata", "Captura", "Capture", "Bildschirmfoto", "スクリーンショット", "截屏", "屏幕快照", "螢幕快照"]
+    private static let partial: Set<String> = ["crdownload", "download", "part", "opdownload", "tmp"]
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in self?.poll() }
+        poll()
+    }
+    func stop() { timer?.invalidate(); timer = nil; primed = false }
+
+    private func poll() {
+        DispatchQueue.global().async {
+            let dl = Self.list(Self.downloadsFolder) { !Self.partial.contains($0.pathExtension.lowercased()) }
+            let shotDir = Self.screenshotsFolder
+            let sh = Self.list(shotDir) { u in
+                let n = u.lastPathComponent
+                return ["png", "jpg", "jpeg", "heic", "mov"].contains(u.pathExtension.lowercased())
+                    && (shotDir.path != Self.downloadsFolder.path) && Self.shotPrefixes.contains { n.hasPrefix($0) }
+            }
+            DispatchQueue.main.async {
+                let all = Set((dl + sh).map(\.url))
+                if self.primed {
+                    for it in dl where !self.known.contains(it.url) && Date().timeIntervalSince(it.date) < 120 { self.onNew?("arrow.down.circle.fill", it.name) }
+                    for it in sh where !self.known.contains(it.url) && Date().timeIntervalSince(it.date) < 120 { self.onNew?("camera.viewfinder", L("Screenshot")) }
+                }
+                self.known.formUnion(all); self.primed = true
+                if dl != self.downloads { self.downloads = dl }
+                if sh != self.shots { self.shots = sh }
+            }
+        }
+    }
+
+    private static func list(_ dir: URL, where keep: (URL) -> Bool) -> [Item] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return [] }
+        return urls.compactMap { u -> Item? in
+            guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true, keep(u) else { return nil }
+            return Item(url: u, date: v.contentModificationDate ?? .distantPast, size: Int64(v.fileSize ?? 0))
+        }.sorted { $0.date > $1.date }.prefix(6).map { $0 }
+    }
+}
+
+/// A small image for a file, made off the main thread.
+private final class Thumb: ObservableObject {
+    @Published var image: NSImage?
+    private static var cache: [URL: NSImage] = [:]
+    func load(_ url: URL, side: CGFloat) {
+        if let c = Self.cache[url] { image = c; return }
+        DispatchQueue.global().async {
+            var img: NSImage?
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side * 2] as CFDictionary) {
+                img = NSImage(cgImage: cg, size: NSSize(width: cg.width / 2, height: cg.height / 2))
+            } else {
+                img = NSWorkspace.shared.icon(forFile: url.path)
+            }
+            DispatchQueue.main.async { if let img { Self.cache[url] = img }; self.image = img }
+        }
+    }
+}
+
+private struct FileThumb: View {
+    let url: URL
+    let side: CGFloat
+    @StateObject private var thumb = Thumb()
+    var body: some View {
+        Group {
+            if let i = thumb.image { Image(nsImage: i).resizable().aspectRatio(contentMode: .fill) } else { Color.white.opacity(0.08) }
+        }
+        .frame(width: side * 1.5, height: side).clipShape(RoundedRectangle(cornerRadius: 8))
+        .onAppear { thumb.load(url, side: side) }
+    }
+}
+
+/// What was copied lately, kept in memory only (never written anywhere) and never from password managers.
+private final class ClipboardWatch: ObservableObject {
+    struct Clip: Identifiable, Equatable { let id = UUID(); var text: String; var date: Date }
+    @Published var items: [Clip] = []
+    private var count = NSPasteboard.general.changeCount
+    private var timer: Timer?
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in self?.poll() }
+    }
+    func stop() { timer?.invalidate(); timer = nil; items = [] }
+
+    private func poll() {
+        let pb = NSPasteboard.general
+        guard pb.changeCount != count else { return }
+        count = pb.changeCount
+        let secret = Set(["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType", "com.agilebits.onepassword"])
+        if let types = pb.types, types.contains(where: { secret.contains($0.rawValue) }) { return }
+        guard let t = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty, t.count < 5000 else { return }
+        items.removeAll { $0.text == t }
+        items.insert(Clip(text: t, date: Date()), at: 0)
+        if items.count > 12 { items.removeLast() }
+    }
+
+    func copy(_ c: Clip) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(c.text, forType: .string)
+        count = NSPasteboard.general.changeCount
+    }
+}
+
+/// Today and the next events (up to two weeks ahead) from the Calendar app, with the user's permission.
+private final class CalendarWatch: ObservableObject {
+    struct Ev: Identifiable { var id: String; var title: String; var start: Date; var end: Date; var allDay: Bool; var color: Color }
+    @Published var events: [Ev] = []
+    @Published var access = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+    @Published var asked = EKEventStore.authorizationStatus(for: .event) != .notDetermined
+    private let store = EKEventStore()
+
+    func refresh() {
+        access = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        guard access else { return }
+        let now = Date(), end = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
+        let found = store.events(matching: store.predicateForEvents(withStart: Calendar.current.startOfDay(for: now), end: end, calendars: nil))
+            .filter { $0.endDate > now }.sorted { $0.startDate < $1.startDate }.prefix(6)
+        events = found.map { e in Ev(id: e.eventIdentifier ?? UUID().uuidString, title: e.title ?? "", start: e.startDate, end: e.endDate, allDay: e.isAllDay,
+                                     color: Color(nsColor: e.calendar.color ?? .systemBlue)) }
+    }
+
+    func requestAccess() {
+        store.requestFullAccessToEvents { [weak self] granted, _ in
+            DispatchQueue.main.async { self?.asked = true; self?.access = granted; if granted { self?.refresh() } }
+        }
+    }
+}
+
+extension IslandView {
+    // MARK: files
+
+    fileprivate var filesTab: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Downloads")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                if files.downloads.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
+                ForEach(files.downloads.prefix(4)) { it in
+                    Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
+                        HStack(spacing: 8) {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: it.url.path)).resizable().frame(width: 20, height: 20)
+                            Text(it.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(ByteCountFormatter.string(fromByteCount: it.size, countStyle: .file)).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onDrag { NSItemProvider(object: it.url as NSURL) }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Screenshots")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                if files.shots.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
+                HStack(spacing: 8) {
+                    ForEach(files.shots.prefix(3)) { it in
+                        FileThumb(url: it.url, side: 62)
+                            .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([it.url]) }
+                            .onDrag { NSItemProvider(object: it.url as NSURL) }
+                            .help(it.name)
+                    }
+                }
+                Text(L("Drag a file out to drop it anywhere")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+                Spacer(minLength: 0)
+            }
+            .frame(width: 290, alignment: .leading)
+        }
+    }
+
+    // MARK: clipboard
+
+    fileprivate var clipboardTab: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if clipboard.items.isEmpty { Text(L("What you copy will show up here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
+                ForEach(clipboard.items.prefix(8)) { c in
+                    Button { clipboard.copy(c); model.flashNotice("doc.on.clipboard.fill", L("Copied")) } label: {
+                        HStack(spacing: 8) {
+                            Text(c.text.replacingOccurrences(of: "\n", with: " ")).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer(minLength: 0)
+            Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+        }
+    }
+
+    // MARK: calendar
+
+    fileprivate var calendarTab: some View {
+        HStack(alignment: .top, spacing: 22) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(Date().formatted(.dateTime.weekday(.wide)).capitalized).font(.system(size: 12, weight: .medium)).foregroundStyle(Island.accent)
+                Text(Date().formatted(.dateTime.day())).font(.system(size: 54, weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(Date().formatted(.dateTime.month(.wide).year())).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+            }
+            .frame(width: 170, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                if !calendar.access {
+                    Text(L("Show your next events here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    if calendar.asked {
+                        Text(L("Allow it in System Settings → Privacy & Security → Calendars")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                    } else {
+                        Button { calendar.requestAccess() } label: {
+                            Text(L("Allow Calendar")).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                                .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                        }.buttonStyle(.plain)
+                    }
+                } else if calendar.events.isEmpty {
+                    Text(L("No events in the next two weeks")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                } else {
+                    ForEach(calendar.events.prefix(4)) { e in
+                        HStack(spacing: 9) {
+                            Capsule().fill(e.color).frame(width: 3, height: 28)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(e.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Text(e.allDay ? e.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + " · " + L("All day")
+                                     : e.start.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
+                                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { calendar.refresh() }
+    }
+}
+
+// MARK: Island, part 3: music with lyrics, volume/brightness HUDs, camera mirror, external monitors
+
+/// Apple Music and Spotify, through their own scripting: title, artwork, a scrubber and the transport buttons, and (only if
+/// switched on) synced lyrics looked up on lrclib.net by title and artist.
+private final class MusicWatch: ObservableObject {
+    struct Track: Equatable { var id: String; var title: String; var artist: String; var album: String; var duration: Double; var app: String }
+    struct Line { var time: Double; var text: String }
+    @Published var track: Track?
+    @Published var playing = false
+    @Published var shuffle = false
+    @Published var artwork: NSImage?
+    @Published var lyrics: [Line] = []
+    @Published var denied = false
+    @Published var lyricsOn = UserDefaults.standard.bool(forKey: "islandLyrics")
+    private(set) var position = 0.0
+    private(set) var fetched = Date()
+    private var timer: Timer?
+    private let queue = DispatchQueue(label: "local.cocaine.music")
+    private var busy = false
+    private var lyricsFor = ""
+
+    private static let apps: [(name: String, bundle: String)] = [("Music", "com.apple.Music"), ("Spotify", "com.spotify.client")]
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
+        poll()
+    }
+    func stop() { timer?.invalidate(); timer = nil; track = nil; playing = false }
+
+    /// Where the song is now, in seconds (the scripting value, carried on by the clock between polls).
+    var now: Double { min(track?.duration ?? 0, position + (playing ? Date().timeIntervalSince(fetched) : 0)) }
+
+    var currentLine: String? {
+        guard lyricsOn, !lyrics.isEmpty else { return nil }
+        let t = now + 0.2
+        return lyrics.last(where: { $0.time <= t })?.text
+    }
+
+    func setLyrics(_ on: Bool) {
+        lyricsOn = on
+        UserDefaults.standard.set(on, forKey: "islandLyrics")
+        lyricsFor = ""
+        if on, let t = track { loadLyrics(t) } else { lyrics = [] }
+    }
+
+    private func script(_ source: String) -> String? {
+        var err: NSDictionary?
+        let r = NSAppleScript(source: source)?.executeAndReturnError(&err)
+        if let e = err, (e[NSAppleScript.errorNumber] as? Int) == -1743 { DispatchQueue.main.async { self.denied = true } }
+        return r?.stringValue
+    }
+
+    func setSample(title: String, artist: String, album: String) {
+        track = Track(id: "x", title: title, artist: artist, album: album, duration: 200, app: "Music"); playing = true; position = 74; lyricsOn = true
+        lyrics = [Line(time: 70, text: "I'm running out of time")]
+    }
+
+    private func poll() {
+        guard !busy else { return }
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let candidates = Self.apps.filter { running.contains($0.bundle) }
+        guard !candidates.isEmpty else { if track != nil { track = nil; playing = false; artwork = nil; lyrics = [] }; return }
+        busy = true
+        queue.async {
+            var found: (Track, Bool, Double, Bool)?
+            for a in candidates {
+                let isSpotify = a.name == "Spotify"
+                let extra = isSpotify
+                    ? "set dur to (duration of t) / 1000\n  set shuf to (shuffling as text)\n  set tid to (id of t)"
+                    : "set dur to (duration of t)\n  set shuf to (shuffle enabled as text)\n  set tid to ((database ID of t) as text)"
+                let src = """
+                tell application "\(a.name)"
+                  if player state is stopped then return ""
+                  set t to current track
+                  set pstate to (player state as text)
+                  \(extra)
+                  return pstate & "\\t" & (name of t) & "\\t" & (artist of t) & "\\t" & (album of t) & "\\t" & dur & "\\t" & (player position) & "\\t" & shuf & "\\t" & tid
+                end tell
+                """
+                guard let out = self.script(src), !out.isEmpty else { continue }
+                let f = out.components(separatedBy: "\t")
+                guard f.count >= 8 else { continue }
+                func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+                let playing = f[0].lowercased().contains("play")
+                let t = Track(id: a.name + f[7], title: f[1], artist: f[2], album: f[3], duration: num(f[4]), app: a.name)
+                if found == nil || playing { found = (t, playing, num(f[5]), f[6].lowercased() == "true") }
+                if playing { break }
+            }
+            DispatchQueue.main.async {
+                self.busy = false
+                guard let (t, playing, pos, shuffle) = found else { self.track = nil; self.playing = false; return }
+                self.position = pos; self.fetched = Date()
+                if self.playing != playing { self.playing = playing }
+                if self.shuffle != shuffle { self.shuffle = shuffle }
+                if self.track != t {
+                    self.track = t; self.artwork = nil; self.lyrics = []
+                    self.loadArtwork(t)
+                    if self.lyricsOn { self.loadLyrics(t) }
+                }
+            }
+        }
+    }
+
+    private func loadArtwork(_ t: Track) {
+        queue.async {
+            var image: NSImage?
+            if t.app == "Spotify" {
+                if let u = self.script("tell application \"Spotify\" to return artwork url of current track"), let url = URL(string: u),
+                   let d = try? Data(contentsOf: url) { image = NSImage(data: d) }
+            } else {
+                var err: NSDictionary?
+                let r = NSAppleScript(source: "tell application \"Music\" to return raw data of artwork 1 of current track")?.executeAndReturnError(&err)
+                if let d = r?.data, d.count > 100 { image = NSImage(data: d) }
+            }
+            DispatchQueue.main.async { if self.track == t { self.artwork = image } }
+        }
+    }
+
+    private func loadLyrics(_ t: Track) {
+        guard lyricsFor != t.id else { return }
+        lyricsFor = t.id
+        var c = URLComponents(string: "https://lrclib.net/api/get")!
+        c.queryItems = [URLQueryItem(name: "artist_name", value: t.artist), URLQueryItem(name: "track_name", value: t.title),
+                        URLQueryItem(name: "album_name", value: t.album), URLQueryItem(name: "duration", value: String(Int(t.duration.rounded())))]
+        guard let url = c.url else { return }
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.setValue("Cocaine (github.com/Mattiakart/cocaine)", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data, let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let synced = json["syncedLyrics"] as? String else { return }
+            let re = try? NSRegularExpression(pattern: #"^\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$"#)
+            let lines: [Line] = synced.components(separatedBy: "\n").compactMap { l in
+                guard let m = re?.firstMatch(in: l, range: NSRange(l.startIndex..., in: l)), let a = Range(m.range(at: 1), in: l), let b = Range(m.range(at: 2), in: l),
+                      let c = Range(m.range(at: 3), in: l), let min = Double(l[a]), let sec = Double(l[b]) else { return nil }
+                return Line(time: min * 60 + sec, text: String(l[c]))
+            }
+            DispatchQueue.main.async { if self.track == t { self.lyrics = lines } }
+        }.resume()
+    }
+
+    // transport
+    func playPause() { run("playpause") }
+    func next() { run("next track") }
+    func previous() { run("previous track") }
+    func seek(_ seconds: Double) { position = seconds; fetched = Date(); run("set player position to \(Int(seconds))") }
+    func toggleShuffle() { run(track?.app == "Spotify" ? "set shuffling to not shuffling" : "set shuffle enabled to not shuffle enabled"); shuffle.toggle() }
+    private func run(_ command: String) {
+        guard let app = track?.app else { return }
+        queue.async { _ = self.script("tell application \"\(app)\" to \(command)") }
+        if command == "playpause" { playing.toggle(); position = now; fetched = Date() }
+    }
+}
+
+/// Volume and brightness changes (the keyboard keys, the menu bar, the Control Center) as a short message in the island.
+private final class HUDWatch {
+    var onChange: ((String, String, Double) -> Void)?
+    var suppressBrightness: () -> Bool = { false }
+    private var timer: Timer?
+    private var lastVolume: Float?, lastMute: Bool?, lastBrightness: Float?
+    private let screens = Screens()
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
+    }
+    func stop() { timer?.invalidate(); timer = nil; lastVolume = nil; lastMute = nil; lastBrightness = nil }
+
+    private func outputDevice() -> AudioDeviceID? {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var d = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &d) == noErr && d != 0 ? d : nil
+    }
+
+    private func poll() {
+        if let dev = outputDevice() {
+            var addr = AudioObjectPropertyAddress(mSelector: 0x766D_7663 /* 'vmvc': the virtual main volume */, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
+            if AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &v) == noErr {
+                var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
+                var maddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+                let muted = AudioObjectGetPropertyData(dev, &maddr, 0, nil, &msize, &mute) == noErr && mute != 0
+                if let l = lastVolume, abs(l - v) > 0.004 || lastMute != muted {
+                    let icon = muted || v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+                    onChange?(icon, L("Volume"), muted ? 0 : Double(v))
+                }
+                lastVolume = v; lastMute = muted
+            }
+        }
+        if let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) {
+            if let l = lastBrightness, abs(l - b) > 0.004, !suppressBrightness() { onChange?("sun.max.fill", L("Brightness"), Double(b)) }
+            lastBrightness = b
+        }
+    }
+}
+
+/// A live view of the front camera, mirrored like a mirror. The camera runs only while it is on screen.
+private final class MirrorController: NSObject, ObservableObject {
+    @Published var denied = false
+    let session = AVCaptureSession()
+    private var configured = false
+
+    func start() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: run()
+        case .notDetermined: AVCaptureDevice.requestAccess(for: .video) { ok in DispatchQueue.main.async { if ok { self.run() } else { self.denied = true } } }
+        default: denied = true
+        }
+    }
+
+    private func run() {
+        denied = false
+        DispatchQueue.global().async {
+            if !self.configured, let cam = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam), self.session.canAddInput(input) {
+                self.session.addInput(input); self.configured = true
+            }
+            if self.configured && !self.session.isRunning { self.session.startRunning() }
+        }
+    }
+
+    func stop() { DispatchQueue.global().async { if self.session.isRunning { self.session.stopRunning() } } }
+}
+
+private struct MirrorPreview: NSViewRepresentable {
+    let session: AVCaptureSession
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        v.wantsLayer = true
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        layer.cornerRadius = 12; layer.masksToBounds = true
+        layer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))      // a mirror, not a camera
+        v.layer = layer
+        return v
+    }
+    func updateNSView(_ v: NSView, context: Context) {}
+}
+
+/// External monitors' own controls over DDC/CI (brightness, contrast, volume, input), written straight to the display's I2C
+/// bus. Apple silicon only; the monitor has to support DDC/CI. Nothing here can read a value back, so sliders start at 50.
+private final class DDCDisplays: ObservableObject {
+    struct Monitor: Identifiable { var id: Int; var name: String; var service: UnsafeMutableRawPointer }
+    @Published var monitors: [Monitor] = []
+    @Published var values: [String: Double] = [:]
+    private typealias CreateFn = @convention(c) (CFAllocator?, io_service_t) -> Unmanaged<CFTypeRef>?
+    private typealias WriteFn = @convention(c) (CFTypeRef, UInt32, UInt32, UnsafeMutableRawPointer, UInt32) -> Int32
+    private var create: CreateFn?, write: WriteFn?
+
+    init() {
+        guard let h = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY) else { return }
+        create = dlsym(h, "IOAVServiceCreateWithService").map { unsafeBitCast($0, to: CreateFn.self) }
+        write = dlsym(h, "IOAVServiceWriteI2C").map { unsafeBitCast($0, to: WriteFn.self) }
+    }
+
+    var available: Bool { create != nil && write != nil }
+    static var externalNames: [String] { NSScreen.screens.filter { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID).map { CGDisplayIsBuiltin($0) == 0 } ?? false }.map(\.localizedName) }
+
+    func refresh() {
+        guard available else { return }
+        var found: [Monitor] = []
+        var it: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("DCPAVServiceProxy"), &it) == KERN_SUCCESS else { return }
+        defer { IOObjectRelease(it) }
+        let names = Self.externalNames
+        var svc = IOIteratorNext(it)
+        while svc != 0 {
+            let loc = IORegistryEntryCreateCFProperty(svc, "Location" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String
+            if loc == "External", let ref = create?(kCFAllocatorDefault, svc) {
+                let i = found.count
+                found.append(Monitor(id: i, name: i < names.count ? names[i] : "Monitor \(i + 1)", service: Unmanaged.passRetained(ref.takeRetainedValue()).toOpaque()))
+            }
+            IOObjectRelease(svc)
+            svc = IOIteratorNext(it)
+        }
+        monitors = found
+    }
+
+    /// VCP codes: 0x10 brightness, 0x12 contrast, 0x62 volume, 0x60 input source.
+    func set(_ m: Monitor, code: UInt8, value: Int) {
+        guard let write else { return }
+        var d: [UInt8] = [0x84, 0x03, code, UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF), 0]
+        d[5] = 0x6E ^ 0x51 ^ d[0] ^ d[1] ^ d[2] ^ d[3] ^ d[4]
+        let ref = Unmanaged<CFTypeRef>.fromOpaque(m.service).takeUnretainedValue()
+        DispatchQueue.global().async { for _ in 0..<2 { _ = write(ref, 0x37, 0x51, &d, 6); usleep(15_000) } }
+    }
+}
+
+extension IslandView {
+    // MARK: music
+
+    fileprivate var musicTab: some View {
+        let mu = model.music
+        return HStack(alignment: .top, spacing: 18) {
+            Group {
+                if let a = mu.artwork { Image(nsImage: a).resizable().aspectRatio(contentMode: .fill) }
+                else { ZStack { Color.white.opacity(0.08); Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(.white.opacity(0.35)) } }
+            }
+            .frame(width: 128, height: 128).clipShape(RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 5) {
+                if let t = mu.track {
+                    Text(t.title).font(.system(size: 16, weight: .bold)).lineLimit(1)
+                    Text(t.artist + (t.album.isEmpty ? "" : " — " + t.album)).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                        VStack(spacing: 2) {
+                            Scrubber(value: mu.now, total: max(1, t.duration)) { mu.seek($0) }
+                            HStack { Text(Self.clock(mu.now)); Spacer(); Text("-" + Self.clock(max(0, t.duration - mu.now))) }
+                                .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
+                    HStack(spacing: 20) {
+                        Button { mu.toggleShuffle() } label: { Image(systemName: "shuffle").foregroundStyle(mu.shuffle ? Island.accent : .white.opacity(0.5)) }
+                        Button { mu.previous() } label: { Image(systemName: "backward.fill") }
+                        Button { mu.playPause() } label: { Image(systemName: mu.playing ? "pause.fill" : "play.fill").font(.system(size: 20)) }
+                        Button { mu.next() } label: { Image(systemName: "forward.fill") }
+                        Spacer(minLength: 0)
+                        Button { mu.setLyrics(!mu.lyricsOn) } label: { Image(systemName: "quote.bubble").foregroundStyle(mu.lyricsOn ? Island.accent : .white.opacity(0.5)) }
+                            .help(mu.lyricsOn ? L("Hide lyrics") : L("Show lyrics (looks up the title and artist on lrclib.net)"))
+                    }
+                    .buttonStyle(.plain).font(.system(size: 14))
+                    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                        Text(mu.currentLine ?? (mu.lyricsOn ? (mu.lyrics.isEmpty ? L("No synced lyrics found") : "♪") : ""))
+                            .font(.system(size: 13, weight: .medium)).foregroundStyle(Island.accent).lineLimit(1)
+                    }
+                } else {
+                    Text(mu.denied ? L("Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation") : L("Play something in Music or Spotify"))
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    fileprivate static func clock(_ s: Double) -> String { let i = Int(s); return String(format: "%d:%02d", i / 60, i % 60) }
+
+    // MARK: mirror
+
+    fileprivate var mirrorTab: some View {
+        HStack(alignment: .top, spacing: 18) {
+            ZStack {
+                Color.white.opacity(0.08)
+                if model.mirror.denied { Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(.system(size: 11)).padding(10).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.5)) }
+                else { MirrorPreview(session: model.mirror.session) }
+            }
+            .frame(width: 210, height: 130).clipShape(RoundedRectangle(cornerRadius: 12))
+            Text(L("A mirror: the camera runs only while this page is open.")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { model.mirror.start() }
+        .onDisappear { model.mirror.stop() }
+    }
+
+    // MARK: external monitors
+
+    fileprivate var displayTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.ddc.monitors.isEmpty {
+                Text(L("No external monitor found, or it doesn't support DDC/CI")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
+            }
+            ForEach(model.ddc.monitors.prefix(2)) { mon in
+                HStack(spacing: 14) {
+                    Text(mon.name).font(.system(size: 12, weight: .semibold)).lineLimit(1).frame(width: 130, alignment: .leading)
+                    ForEach([("sun.max.fill", UInt8(0x10), "b"), ("circle.lefthalf.filled", UInt8(0x12), "c"), ("speaker.wave.2.fill", UInt8(0x62), "v")], id: \.1) { k in
+                        HStack(spacing: 6) {
+                            Image(systemName: k.0).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).frame(width: 14)
+                            Slider(value: Binding(get: { model.ddc.values["\(mon.id)\(k.2)"] ?? 50 },
+                                                  set: { model.ddc.values["\(mon.id)\(k.2)"] = $0; model.ddc.set(mon, code: k.1, value: Int($0)) }), in: 0...100)
+                                .controlSize(.mini).frame(width: 80)
+                        }
+                    }
+                    Menu {
+                        ForEach([("HDMI 1", 0x11), ("HDMI 2", 0x12), ("DisplayPort 1", 0x0F), ("DisplayPort 2", 0x10), ("USB-C", 0x1B)], id: \.1) { i in
+                            Button(i.0) { model.ddc.set(mon, code: 0x60, value: i.1) }
+                        }
+                    } label: { Label(L("Input"), systemImage: "cable.connector").font(.system(size: 11)) }
+                        .menuStyle(.borderlessButton).fixedSize()
+                }
+            }
+            Text(L("Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+            Spacer(minLength: 0)
+        }
+        .onAppear { model.ddc.refresh() }
+    }
+}
+
+/// A thin scrubber: drag or click to seek.
+private struct Scrubber: View {
+    let value: Double, total: Double
+    let seek: (Double) -> Void
+    var body: some View {
+        GeometryReader { r in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.15)).frame(height: 4)
+                Capsule().fill(Color.white.opacity(0.85)).frame(width: r.size.width * min(1, value / total), height: 4)
+                Circle().fill(.white).frame(width: 9, height: 9).offset(x: max(0, r.size.width * min(1, value / total) - 4.5))
+            }
+            .frame(height: 12)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onEnded { g in seek(min(total, max(0, g.location.x / r.size.width * total))) })
+        }
+        .frame(height: 12)
+    }
+}
+
+/// Four bars that dance while music plays (a little, not a spectrum).
+private struct Visualizer: View {
+    let playing: Bool
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.08, paused: !playing)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(0..<4, id: \.self) { i in
+                    Capsule().fill(Island.accent).frame(width: 2.5, height: playing ? 5 + 9 * abs(sin(t * (3 + Double(i) * 1.3) + Double(i))) : 4)
+                }
+            }
+            .frame(height: 16)
+        }
+    }
+}
+
 // MARK: Island model and controller
 
 private final class IslandModel: ObservableObject {
@@ -2781,9 +3472,35 @@ private final class IslandModel: ObservableObject {
     let batteries = BatteryWatch()
     let mic = MicWatch()
     let usage = UsageWatch()
+    let files = FileShelf()
+    let clipboard = ClipboardWatch()
+    let calendar = CalendarWatch()
+    let music = MusicWatch()
+    let mirror = MirrorController()
+    let ddc = DDCDisplays()
+    let hud = HUDWatch()
+    @Published var flash: (icon: String, text: String, level: Double?)?
+    private var forwards: [AnyCancellable] = []
+    private var flashWork: DispatchWorkItem?
+
+    init() {
+        forwards = [files.objectWillChange, clipboard.objectWillChange, calendar.objectWillChange, focus.objectWillChange, mic.objectWillChange,
+                    music.objectWillChange, mirror.objectWillChange, ddc.objectWillChange]
+            .map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
+    }
+
+    /// A short message in the closed island: "Downloaded", "Copied"…
+    func flashNotice(_ icon: String, _ text: String, level: Double? = nil) {
+        flash = (icon, text, level)
+        flashWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.flash = nil }
+        flashWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + (level == nil ? 3.2 : 1.6), execute: w)
+    }
+    var wing: CGFloat { flash != nil ? 130 : Island.wing }
     /// Is anything live (so the closed island shows wings beside the notch)?
     var live: Bool {
-        focus.active || mic.active || (pm?.on ?? false) || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
+        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
     }
     var hover: (Bool) -> Void = { _ in }
     var toggleOpen: () -> Void = {}
@@ -2812,12 +3529,15 @@ private final class IslandController {
         model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
         model.mic.start()
+        model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
+        model.hud.onChange = { [weak model] icon, text, level in DispatchQueue.main.async { model?.flashNotice(icon, text, level: level) } }
         setEnabled(enabled)
     }
 
     func setEnabled(_ on: Bool) {
         enabled = on
-        guard on else { panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; return }
+        guard on else { panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop(); return }
+        model.files.start(); model.clipboard.start(); model.music.start(); model.hud.start()
         if panel == nil, let pm = panelModel {
             let p = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
@@ -2840,7 +3560,7 @@ private final class IslandController {
     func relayout() {
         guard enabled, let g = NotchGeometry.current(), let panel else { return }
         if g != model.geometry { model.geometry = g }
-        let closedW = g.notchWidth + (model.live ? 2 * Island.wing : 0)
+        let closedW = g.notchWidth + (model.live ? 2 * model.wing : 0)
         let full = model.open ? Island.openSize : CGSize(width: closedW, height: g.height)
         model.panelSize = full
         panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height), display: true)
@@ -2900,10 +3620,13 @@ private struct IslandView: View {
     @ObservedObject var usage: UsageWatch
 
     private var g: NotchGeometry { model.geometry }
+    fileprivate var files: FileShelf { model.files }
+    fileprivate var clipboard: ClipboardWatch { model.clipboard }
+    fileprivate var calendar: CalendarWatch { model.calendar }
     private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
     private var working: Bool { m.board.contains { $0.state == "working" } }
     private var live: Bool { model.live }
-    private var closedWidth: CGFloat { g.notchWidth + (live ? 2 * Island.wing : 0) }
+    private var closedWidth: CGFloat { g.notchWidth + (live ? 2 * model.wing : 0) }
 
     var body: some View {
         let size = model.open ? Island.openSize : CGSize(width: closedWidth, height: g.height)
@@ -2927,27 +3650,39 @@ private struct IslandView: View {
 
     private var closedContent: some View {
         HStack(spacing: 0) {
-            leftWing.frame(width: Island.wing, alignment: .center)
+            leftWing.frame(width: model.wing, alignment: .center)
             Color.clear.frame(width: g.notchWidth)
-            rightWing.frame(width: Island.wing, alignment: .center)
+            rightWing.frame(width: model.wing, alignment: .center)
         }
         .frame(height: g.height)
         .opacity(live ? 1 : 0)
     }
 
     @ViewBuilder private var leftWing: some View {
-        if focus.running { Image(systemName: focus.isBreak ? "cup.and.saucer.fill" : "timer").foregroundStyle(Island.accent) }
+        if let f = model.flash { Image(systemName: f.icon).foregroundStyle(Island.accent) }
+        else if focus.running { Image(systemName: focus.isBreak ? "cup.and.saucer.fill" : "timer").foregroundStyle(Island.accent) }
         else if waiting != nil { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
         else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
         else if working { Image(systemName: "gearshape.fill").foregroundStyle(Island.accent) }
+        else if model.music.playing { Group { if let a = model.music.artwork { Image(nsImage: a).resizable().aspectRatio(contentMode: .fill) } else { Image(systemName: "music.note") } }
+            .frame(width: 22, height: 22).clipShape(RoundedRectangle(cornerRadius: 5)) }
         else if m.on { Image(systemName: "bolt.fill").foregroundStyle(Island.accent) }
     }
 
     @ViewBuilder private var rightWing: some View {
-        if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
+        if let f = model.flash {
+            if let l = f.level {
+                Capsule().fill(Color.white.opacity(0.2)).frame(width: 78, height: 5)
+                    .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: 78 * min(1, max(0, l)), height: 5) }
+            } else {
+                Text(f.text).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle).padding(.horizontal, 8)
+            }
+        }
+        else if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
         else if let w = waiting { Text(w.from.prefix(7)).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)) }
         else if mic.active { Circle().fill(.orange).frame(width: 7, height: 7) }
         else if working { ProgressView().controlSize(.mini).tint(.white) }
+        else if model.music.playing { Visualizer(playing: true) }
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
     }
 
@@ -2965,6 +3700,12 @@ private struct IslandView: View {
             Group {
                 switch model.tab {
                 case "focus": focusTab
+                case "calendar": calendarTab
+                case "music": musicTab
+                case "mirror": mirrorTab
+                case "display": displayTab
+                case "files": filesTab
+                case "clipboard": clipboardTab
                 case "battery": batteryTab
                 case "usage": usageTab
                 default: homeTab
@@ -2980,23 +3721,23 @@ private struct IslandView: View {
         Button { model.tab = t.id } label: {
             Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
                 .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
-                .frame(width: 30, height: 24)
+                .frame(width: 28, height: 24)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)))
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
     }
 
     private var topStrip: some View {
-        let tabs = Island.tabs, half = (tabs.count + 1) / 2
+        let tabs = Island.tabs(external: !DDCDisplays.externalNames.isEmpty), half = (tabs.count + 1) / 2
         return HStack(spacing: 0) {
-            HStack(spacing: 4) { ForEach(tabs.prefix(half), id: \.id) { tabButton($0) } }
+            HStack(spacing: 2) { ForEach(tabs.prefix(half), id: \.id) { tabButton($0) } }
                 .padding(.leading, 22).frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
                 if mic.active { Image(systemName: "mic.fill").font(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 4) }
                 Button { model.showSettings() } label: {
-                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 30, height: 24)
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5)).frame(width: 28, height: 24)
                 }
                 .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
             }
@@ -3225,6 +3966,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastIdle = 0.0
     private let screens = Screens()
     private var dimPlan: DimPlan?       // screens lowered after idle time; nil when not lowered
+    private var dimQuiet = Date.distantPast   // the island ignores brightness changes until then (they are Cocaine's own)
     private var previewPlan: DimPlan?   // same, during "Preview"
     private var dimT: Float = 0         // how far the current plan is applied (0 = normal, 1 = fully dimmed)
     private var supervising = false
@@ -3270,6 +4012,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
         model.islandChanged = { [weak self] in self?.island.setEnabled(self?.settings.island ?? false) }
         island.start(panelModel: model, enabled: settings.island) { [weak self] in self?.showPanel(fromClick: false) }
+        island.model.hud.suppressBrightness = { [weak self] in
+            guard let self else { return false }
+            return self.dimPlan != nil || self.previewPlan != nil || self.fadeTimer != nil || Date() < self.dimQuiet
+        }
         island.model.focus.onStart = { [weak self] minutes in
             guard let self, !System.cocaineOn else { return }
             self.setCocaine(true, forMinutes: minutes)
@@ -4019,12 +4765,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         dimPlan = plan                                              // even if empty, so we don't retry every tick
         settings.savedBrightness = Dictionary(uniqueKeysWithValues: plan.backlit.map { ($0.id, $0.from) })
         log.notice("dim \(plan.backlit.count, privacy: .public) backlit + \(plan.gamma.count, privacy: .public) gamma screens after \(Int(idle), privacy: .public)s idle")
+        dimQuiet = Date().addingTimeInterval(3)
         fade(plan, to: 1, over: 1.5)
     }
 
     private func restore() {
         guard let plan = dimPlan else { return }
         dimPlan = nil
+        dimQuiet = Date().addingTimeInterval(3)
         settings.savedBrightness = [:]
         log.notice("restore \(plan.displays.count, privacy: .public) screens")
         fade(plan, to: 0, over: 0.25) { if !plan.gamma.isEmpty { self.screens.restoreGamma() } }
@@ -4291,13 +5039,19 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
                           BatteryItem(id: "a", name: "AirPods Pro", icon: "airpodspro", parts: [("L", 71), ("R", 64), ("↳", 90)]),
                           BatteryItem(id: "k", name: "Magic Keyboard", icon: "keyboard", parts: [("", 22)])]
     im.usage.codex = [UsageWatch.Limit(id: "w", name: L("Week"), percent: 5, resets: Date().addingTimeInterval(86400 * 5))]
+    im.files.downloads = [FileShelf.Item(url: URL(fileURLWithPath: "/Applications/Cocaine.app"), date: Date(), size: 5_200_000),
+                          FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), date: Date(), size: 120_000_000)]
+    im.files.shots = []
+    im.clipboard.items = [ClipboardWatch.Clip(text: "brew upgrade --cask cocaine", date: Date()), ClipboardWatch.Clip(text: "https://github.com/Mattiakart/cocaine", date: Date()),
+                          ClipboardWatch.Clip(text: "Ciao Mario, ti mando il file domani mattina", date: Date())]
+    im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
     let full = im.open ? Island.openSize : CGSize(width: 185 + (im.live ? 2 * Island.wing : 0), height: 32)
     im.panelSize = full
     let view = ZStack(alignment: .top) {
         LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
         IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
-    }.frame(width: 680, height: im.open ? 290 : 70)
+    }.frame(width: 760, height: im.open ? 290 : 70)
     let host = NSHostingView(rootView: view)
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
     window.contentView = host

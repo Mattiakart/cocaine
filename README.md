@@ -102,11 +102,25 @@ in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattia
 ## Island
 
 Cocaine also lives in the notch (or, on a screen without one, in a slim pill at the top). Closed, it shows what is live beside
-the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, the microphone in use. Point at it, or click
-it, and it opens: **Home** (the switch, the timer, the AI agents at work), **Focus** (a focus/break timer with a minute ruler;
-starting a focus keeps the Mac awake), **Batteries** (the Mac, AirPods and other Bluetooth devices) and **Usage** (Codex's
-limits, and Claude Code's tokens, both read from their own local files). The gear opens the settings panel; *Cocaine →
-Island* turns it off. It hides during full-screen video and games.
+the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, the microphone in use, the song playing, and
+short messages ("Downloaded", "Screenshot", "Copied", and the volume and brightness bars). Point at it, or click it, and it
+opens, with these pages:
+
+- **Home**: the switch, the timer, the AI agents at work.
+- **Music**: Apple Music and Spotify, with artwork, scrubber, play/pause/next/previous/shuffle and, if you switch them on,
+  synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent). Needs the Automation permission.
+- **Calendar**: today and your next events, two weeks ahead (asks for Calendar access when you press the button).
+- **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake.
+- **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
+- **Clipboard**: what you copied lately, kept in memory only and never from password managers; click to copy again.
+- **Batteries**: the Mac, AirPods and other Bluetooth devices.
+- **Usage**: Codex's limits and Claude Code's tokens, both read from their own local files.
+- **Mirror**: a live view of the camera, on only while that page is open.
+- **Monitors** (only with an external monitor): brightness, contrast, volume and input of the monitor itself over DDC/CI,
+  Apple silicon only; not every monitor supports it, and it can't read values back.
+
+The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
+and brightness bars appear in addition to macOS's own HUD (replacing it would need an Accessibility permission).
 
 ## Remote work
 
