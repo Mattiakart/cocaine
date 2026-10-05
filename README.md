@@ -115,13 +115,18 @@ opens, with these pages:
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
 - **Clipboard**: what you copied lately, kept in memory only and never from password managers; click to copy again.
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices, and the usage of Codex (its limits) and Claude Code (tokens), read from their own local files.
-- **Mirror**: a live view of the camera, on only while that page is open.
+- **Media**: Apple Music, Spotify, YouTube Music, Netflix, Prime Video, YouTube, Disney+, Apple TV, Twitch, DAZN: a tap opens the app if it
+  is installed, else the website in your default browser.
+- **Mirror**: the camera live, on only while that page is open; a switch flips it like a mirror (or shows you as others see you), and
+  you can pick the camera.
 - **Monitors** (only with an external monitor): brightness, contrast, volume and input of the monitor itself over DDC/CI,
   Apple silicon only; not every monitor supports it, and it can't read values back.
 
-Plugging the charger in or out is announced too. The island replaces the menu-bar icon (the bag of Cocaine on its left fills and empties as the icon did); turn it off and the icon comes back. The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
-and brightness bars appear in addition to macOS's own HUD; turn on *Cocaine → Replace system HUD* (needs the Accessibility
-permission) and the volume, mute and brightness keys are handled by Cocaine and shown only in the island (⌥⇧ for fine steps).
+Plugging the charger in or out is announced too. The island replaces the menu-bar icon: the bag of Cocaine, always on its left, fills and empties as the icon did (white powder: Cocaine is on;
+pink powder: Cocaine is off but *Stay active* is working). Turn the island off and the icon comes back. It opens and closes by following the
+lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; *Cocaine → Haptic feedback* turns it off). The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. With *Cocaine →
+Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
+returns as soon as you turn the option off or quit Cocaine. No special permission is needed.
 
 ## Remote work
 

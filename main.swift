@@ -259,6 +259,21 @@ private struct DimPlan {
     var displays: Set<CGDirectDisplayID> { Set(backlit.map(\.id) + gamma.map(\.id)) }
 }
 
+// MARK: - Haptic feedback
+
+/// A light tap on the trackpad (Force Touch) when you change something; nothing on a mouse. Can be turned off in the panel.
+private enum Haptic {
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "haptics") as? Bool ?? true }
+    static func tap(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
+        guard enabled else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
+    }
+    /// Three quick taps: something finished.
+    static func finished() {
+        for i in 0..<3 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.14) { tap(.levelChange) } }
+    }
+}
+
 // MARK: - Settings
 
 /// One alert, for the "Recent alerts" list.
@@ -357,6 +372,7 @@ private extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var haptics: Bool { get { flag("haptics", true) } nonmutating set { d.set(newValue, forKey: "haptics") } }
     var presenceAsked: Bool { get { flag("presenceAsked", false) } nonmutating set { d.set(newValue, forKey: "presenceAsked") } }
     var hudAsked: Bool { get { flag("hudAsked", false) } nonmutating set { d.set(newValue, forKey: "hudAsked") } }
     var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
@@ -1031,27 +1047,29 @@ private enum Baggie {
     }
 
     /// Clear plastic bag with white powder, tuned for a light or a dark menu bar; no color.
-    static func palette(dark: Bool) -> Palette {
-        dark
+    /// With `pink`, the powder is pink: Cocaine itself is off but "Stay active" is working.
+    static func palette(dark: Bool, pink: Bool = false) -> Palette {
+        let rose = NSColor(red: 1.0, green: 0.50, blue: 0.72, alpha: 1)
+        return dark
             ? Palette(outline: NSColor.white.withAlphaComponent(0.78), fill: NSColor.white.withAlphaComponent(0.14),
-                      powder: .white, powderEdge: nil)
+                      powder: pink ? rose : .white, powderEdge: nil)
             : Palette(outline: NSColor.black.withAlphaComponent(0.55), fill: NSColor.black.withAlphaComponent(0.07),
-                      powder: .white, powderEdge: NSColor.black.withAlphaComponent(0.38))
+                      powder: pink ? rose : .white, powderEdge: NSColor.black.withAlphaComponent(0.38))
     }
 
     /// The same bag in its light-on-dark colors, for the black island and panel.
-    static func imageOnDark(level: CGFloat, pouring: Bool = false, size: CGFloat = 18) -> NSImage {
+    static func imageOnDark(level: CGFloat, pouring: Bool = false, size: CGFloat = 18, pink: Bool = false) -> NSImage {
         NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            draw(in: rect, level: level, pouring: pouring, palette: palette(dark: true))
+            draw(in: rect, level: level, pouring: pouring, palette: palette(dark: true, pink: pink))
             return true
         }
     }
 
     /// Menu-bar glyph; it redraws for the bar's current (light/dark) appearance.
-    static func image(level: CGFloat, pouring: Bool = false, size: CGFloat = 18) -> NSImage {
+    static func image(level: CGFloat, pouring: Bool = false, size: CGFloat = 18, pink: Bool = false) -> NSImage {
         NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            draw(in: rect, level: level, pouring: pouring, palette: palette(dark: dark))
+            draw(in: rect, level: level, pouring: pouring, palette: palette(dark: dark, pink: pink))
             return true
         }
     }
@@ -1177,12 +1195,14 @@ private final class PanelModel: ObservableObject {
     @Published var hotkeys: Bool { didSet { settings.hotkeys = hotkeys; hotkeysChanged() } }
     @Published var wakeForPhone: Bool { didSet { settings.wakeForPhone = wakeForPhone; wakeChanged() } }
     @Published var island: Bool { didSet { settings.island = island; islandChanged() } }
+    @Published var haptics: Bool { didSet { settings.haptics = haptics } }
     @Published var stayActive: Bool { didSet { settings.stayActive = stayActive; presenceChanged() } }
     @Published var stayActiveAlways: Bool { didSet { settings.stayActiveAlways = stayActiveAlways } }
     @Published var stayActiveApps: [String] { didSet { settings.stayActiveApps = stayActiveApps } }
     @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
     @Published var presenceAccess = Presence.hasAccess
-    @Published var hudAccess = AXIsProcessTrusted()
+    /// Cocaine is off but Stay active is working: the bag is full of pink powder.
+    var bagPink: Bool { !on && presenceActive && fillLevel < 0.05 }
     @Published var presenceActive = false
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
@@ -1228,7 +1248,6 @@ private final class PanelModel: ObservableObject {
     var presenceChanged: () -> Void = {}
     var hudReplaceChanged: () -> Void = {}
     var requestPresence: () -> Void = {}
-    var requestHUDAccess: () -> Void = {}
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
@@ -1259,6 +1278,7 @@ private final class PanelModel: ObservableObject {
         hotkeys = settings.hotkeys
         wakeForPhone = settings.wakeForPhone
         island = settings.island
+        haptics = settings.haptics
         stayActive = settings.stayActive
         stayActiveAlways = settings.stayActiveAlways
         stayActiveApps = settings.stayActiveApps
@@ -1312,7 +1332,7 @@ private struct CocaineSwitch: View {
 
     var body: some View {
         let w = UI.switchSize.width, h = UI.switchSize.height
-        Button(action: action) {
+        Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
                 Capsule().fill(on ? Island.accent : Color.white.opacity(0.18))
                 if let powder { Canvas { g, size in PowderLine.draw(g, size, level: powder) } }
@@ -1418,6 +1438,7 @@ private struct EqualSegments<T: Hashable>: NSViewRepresentable {
         init(_ parent: EqualSegments) { self.parent = parent }
         @objc func changed(_ c: NSSegmentedControl) {
             guard c.selectedSegment >= 0, c.selectedSegment < parent.values.count else { return }
+            Haptic.tap(.alignment)
             parent.selection = parent.values[c.selectedSegment]
         }
     }
@@ -1531,7 +1552,7 @@ private struct PanelView: View {
     // MARK: General
 
     private func stepButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptic.tap(.alignment); action() }) {
             Image(systemName: symbol).font(UI.chevron).frame(width: 24, height: 20).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1644,11 +1665,9 @@ private struct PanelView: View {
                 CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
             }
             row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
+            row(L("Haptic feedback"), tip: L("A light tap on the trackpad when you change a timer, switch a page or toggle something")) { toggle(L("Haptic feedback"), $m.haptics) }
             row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
                 toggle(L("Replace system HUD"), $m.replaceHUD)
-            }
-            if m.replaceHUD && !m.hudAccess {
-                row(L("Needs the Accessibility permission"), warning: true) { Button(L("Allow")) { m.requestHUDAccess() }.controlSize(.small) }
             }
             row(L("Language")) {
                 let code = m.language.isEmpty ? Language.system : m.language
@@ -1874,7 +1893,7 @@ private struct PanelView: View {
     private var tabs: [String] { m.ai.available ? ["", "ai", "auto"] : ["", "auto"] }
 
     private func stripButton(_ icon: String, _ title: String, selected: Bool = false, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
                 Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
@@ -1905,7 +1924,7 @@ private struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {                                // header and footer sit on the content edge
-            Image(nsImage: Baggie.imageOnDark(level: m.fillLevel, pouring: m.pouring, size: 28))
+            Image(nsImage: Baggie.imageOnDark(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, size: 28, pink: m.bagPink))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("Cocaine").font(.headline)
@@ -2656,7 +2675,7 @@ private enum Island {
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
     static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
-        var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
+        var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("media", "play.rectangle.fill", L("Media")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
                  ("files", "tray.full.fill", L("Files")), ("shelf", "tray.and.arrow.down.fill", L("Shelf")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
                  ("status", "gauge.with.needle", L("Status")), ("mirror", "person.crop.square", L("Mirror"))]
         if external { t.append(("display", "display", L("Monitors"))) }
@@ -2683,18 +2702,30 @@ private struct NotchGeometry: Equatable {
     }
 }
 
+/// The notch's outline: concave "ears" where it meets the screen's top edge, vertical sides, rounded bottom corners. Everything
+/// animates, so opening and closing morph one into the other along the same lines. `inset` is a solid strip above the screen's edge.
 private struct NotchShape: Shape {
-    var radius: CGFloat
-    var animatableData: CGFloat { get { radius } set { radius = newValue } }
+    var topRadius: CGFloat
+    var bottomRadius: CGFloat
+    var inset: CGFloat = 0
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(topRadius, bottomRadius) }
+        set { topRadius = newValue.first; bottomRadius = newValue.second }
+    }
     func path(in rect: CGRect) -> Path {
-        let r = min(radius, rect.height / 2, rect.width / 2)
+        let y0 = rect.minY + inset
+        let tr = max(0, min(topRadius, rect.width / 4)), br = max(0, min(bottomRadius, (rect.maxY - y0 - tr) / 2, (rect.width - 2 * tr) / 2))
         var p = Path()
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-        p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
-        p.addArc(center: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX, y: y0))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - tr, y: y0 + tr), control: CGPoint(x: rect.maxX - tr, y: y0))           // right ear
+        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.maxY - br))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - tr - br, y: rect.maxY), control: CGPoint(x: rect.maxX - tr, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + tr + br, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + tr, y: rect.maxY - br), control: CGPoint(x: rect.minX + tr, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + tr, y: y0 + tr))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: y0), control: CGPoint(x: rect.minX + tr, y: y0))                     // left ear
         p.closeSubpath()
         return p
     }
@@ -2721,14 +2752,15 @@ private final class FocusTimer: ObservableObject {
     var text: String { let s = Int(remaining.rounded(.up)); return String(format: "%d:%02d", s / 60, s % 60) }
 
     func start() {
+        Haptic.tap(.generic)
         let left = pausedLeft ?? Double(minutes) * 60
         endsAt = Date().addingTimeInterval(left); pausedLeft = nil
         if !isBreak { onStart?(Int((left / 60).rounded(.up)) + 1) }
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.step() }
     }
-    func pause() { pausedLeft = remaining; endsAt = nil; timer?.invalidate(); tick = Date() }
-    func reset() { endsAt = nil; pausedLeft = nil; timer?.invalidate(); tick = Date() }
+    func pause() { Haptic.tap(.alignment); pausedLeft = remaining; endsAt = nil; timer?.invalidate(); tick = Date() }
+    func reset() { Haptic.tap(.alignment); endsAt = nil; pausedLeft = nil; timer?.invalidate(); tick = Date() }
     func setBreak(_ b: Bool) { reset(); isBreak = b }
     private func step() {
         tick = Date()
@@ -2736,6 +2768,7 @@ private final class FocusTimer: ObservableObject {
         let wasBreak = isBreak
         reset()
         NSSound(named: "Glass")?.play()
+        Haptic.finished()
         isBreak.toggle()
         onFinish?(wasBreak)
     }
@@ -3103,7 +3136,7 @@ extension IslandView {
             if clipboard.items.isEmpty { Text(L("What you copy will show up here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
             ScrollView(.vertical, showsIndicators: false) { LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
                 ForEach(clipboard.items) { c in
-                    Button { clipboard.copy(c); model.flashNotice("doc.on.clipboard.fill", L("Copied")) } label: {
+                    Button { Haptic.tap(.generic); clipboard.copy(c); model.flashNotice("doc.on.clipboard.fill", L("Copied")) } label: {
                         HStack(spacing: 8) {
                             Text(c.text.replacingOccurrences(of: "\n", with: " ")).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 0)
@@ -3306,10 +3339,10 @@ private final class MusicWatch: ObservableObject {
     }
 
     // transport
-    func playPause() { run("playpause") }
-    func next() { run("next track") }
-    func previous() { run("previous track") }
-    func seek(_ seconds: Double) { position = seconds; fetched = Date(); run("set player position to \(Int(seconds))") }
+    func playPause() { Haptic.tap(.generic); run("playpause") }
+    func next() { Haptic.tap(.alignment); run("next track") }
+    func previous() { Haptic.tap(.alignment); run("previous track") }
+    func seek(_ seconds: Double) { Haptic.tap(.alignment); position = seconds; fetched = Date(); run("set player position to \(Int(seconds))") }
     func toggleShuffle() { run(track?.app == "Spotify" ? "set shuffling to not shuffling" : "set shuffle enabled to not shuffle enabled"); shuffle.toggle() }
     private func run(_ command: String) {
         guard let app = track?.app else { return }
@@ -3318,53 +3351,157 @@ private final class MusicWatch: ObservableObject {
     }
 }
 
-/// Volume and brightness changes (the keyboard keys, the menu bar, the Control Center) as a short message in the island.
+/// Volume and brightness changes (the keys, the menu bar, Control Center) as a message in the island, the instant they happen:
+/// CoreAudio tells us about the volume itself; the brightness is read forty times a second (a few microseconds each).
 private final class HUDWatch {
     var onChange: ((String, String, Double) -> Void)?
     var suppressBrightness: () -> Bool = { false }
     private var timer: Timer?
+    private var started = false
     private var lastVolume: Float?, lastMute: Bool?, lastBrightness: Float?
     private let screens = Screens()
+    private var device = AudioDeviceID(0)
+    private var systemListener: AudioObjectPropertyListenerBlock?
+    private var deviceListener: AudioObjectPropertyListenerBlock?
+    private static let volumeSelector: AudioObjectPropertySelector = 0x766D_7663       // 'vmvc': the virtual main volume
 
     func start() {
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
+        guard !started else { return }
+        started = true
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        let l: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.bind() }
+        systemListener = l
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l)
+        bind()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in self?.pollBrightness() }
+        RunLoop.main.add(timer!, forMode: .common)
     }
-    func stop() { timer?.invalidate(); timer = nil; lastVolume = nil; lastMute = nil; lastBrightness = nil }
 
-    private func outputDevice() -> AudioDeviceID? {
-        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    func stop() {
+        guard started else { return }
+        started = false
+        timer?.invalidate(); timer = nil
+        if let l = systemListener {
+            var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l)
+        }
+        systemListener = nil
+        unbind()
+        lastVolume = nil; lastMute = nil; lastBrightness = nil
+    }
+
+    private func addresses() -> [AudioObjectPropertyAddress] {
+        [AudioObjectPropertyAddress(mSelector: Self.volumeSelector, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain),
+         AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)]
+    }
+
+    private func unbind() {
+        if device != 0, let l = deviceListener { for var a in addresses() { AudioObjectRemovePropertyListenerBlock(device, &a, .main, l) } }
+        deviceListener = nil; device = 0
+    }
+
+    /// Follows the current output device (headphones in, a speaker out…).
+    private func bind() {
+        unbind()
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var d = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &d) == noErr && d != 0 ? d : nil
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &d) == noErr, d != 0 else { return }
+        device = d
+        let l: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.volumeChanged() }
+        deviceListener = l
+        for var addr in addresses() { AudioObjectAddPropertyListenerBlock(d, &addr, .main, l) }
+        lastVolume = nil; lastMute = nil
+        readVolume(report: false)
     }
 
-    private func poll() {
-        if let dev = outputDevice() {
-            var addr = AudioObjectPropertyAddress(mSelector: 0x766D_7663 /* 'vmvc': the virtual main volume */, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-            var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
-            if AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &v) == noErr {
-                var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
-                var maddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-                let muted = AudioObjectGetPropertyData(dev, &maddr, 0, nil, &msize, &mute) == noErr && mute != 0
-                if let l = lastVolume, abs(l - v) > 0.004 || lastMute != muted {
-                    let icon = muted || v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-                    onChange?(icon, L("Volume"), muted ? 0 : Double(v))
-                }
-                lastVolume = v; lastMute = muted
+    private func volumeChanged() { readVolume(report: true) }
+
+    private func readVolume(report: Bool) {
+        guard device != 0 else { return }
+        var va = addresses()[0], ma = addresses()[1]
+        var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(device, &va, 0, nil, &size, &v) == noErr else { return }
+        var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
+        let muted = AudioObjectGetPropertyData(device, &ma, 0, nil, &msize, &mute) == noErr && mute != 0
+        if report, lastVolume != nil, abs((lastVolume ?? v) - v) > 0.001 || (lastMute != nil && lastMute != muted) {
+            let icon = muted || v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+            onChange?(icon, L("Volume"), muted ? 0 : Double(v))
+        }
+        lastVolume = v; lastMute = muted
+    }
+
+    private func pollBrightness() {
+        guard let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) else { return }
+        if let l = lastBrightness, abs(l - b) > 0.002, !suppressBrightness() { onChange?("sun.max.fill", L("Brightness"), Double(b)) }
+        lastBrightness = b
+    }
+}
+
+/// macOS draws its volume and brightness HUD in a helper process, OSDUIHelper. While *Replace system HUD* is on, that helper is
+/// kept started but frozen, so it never draws anything; when the option is turned off (or Cocaine quits) the helper is simply ended
+/// and macOS starts a fresh one the next time it needs it.
+private final class SystemHUD {
+    private var timer: Timer?
+    private var lastKick = Date.distantPast
+    private(set) var active = false
+
+    func enable() {
+        guard !active else { return }
+        active = true
+        tick()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    func disable() {
+        guard active else { return }
+        active = false
+        timer?.invalidate(); timer = nil
+        for pid in Self.helperPIDs() { kill(pid, SIGKILL) }
+    }
+
+    /// After a crash the helper could be left frozen: end any frozen one at launch.
+    static func cleanup() { for pid in helperPIDs() where isStopped(pid) { kill(pid, SIGKILL) } }
+
+    private func tick() {
+        let pids = Self.helperPIDs()
+        if pids.isEmpty {
+            if Date().timeIntervalSince(lastKick) > 3 {                           // start it now, so the first HUD can't flash
+                lastKick = Date()
+                DispatchQueue.global().async { run("/bin/launchctl", ["kickstart", "gui/\(getuid())/com.apple.OSDUIHelper"]) }
             }
+            return
         }
-        if let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) {
-            if let l = lastBrightness, abs(l - b) > 0.004, !suppressBrightness() { onChange?("sun.max.fill", L("Brightness"), Double(b)) }
-            lastBrightness = b
+        for pid in pids where !Self.isStopped(pid) { kill(pid, SIGSTOP) }
+    }
+
+    static func helperPIDs() -> [pid_t] {
+        var pids = [pid_t](repeating: 0, count: 2048)
+        let n = Int(proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, Int32(pids.count * MemoryLayout<pid_t>.size))) / MemoryLayout<pid_t>.size
+        var found: [pid_t] = []
+        var name = [CChar](repeating: 0, count: 64)
+        for pid in pids.prefix(n) where pid > 0 {
+            if proc_name(pid, &name, UInt32(name.count)) > 0, String(cString: name) == "OSDUIHelper" { found.append(pid) }
         }
+        return found
+    }
+
+    static func isStopped(_ pid: pid_t) -> Bool {
+        var info = proc_bsdinfo()
+        let r = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+        return r > 0 && info.pbi_status == 4                                     // SSTOP
     }
 }
 
 /// A live view of the front camera, mirrored like a mirror. The camera runs only while it is on screen.
 private final class MirrorController: NSObject, ObservableObject {
+    struct Camera: Identifiable, Equatable { var id: String; var name: String }
     @Published var denied = false
+    @Published var cameras: [Camera] = []
+    @Published var selected = ""
+    @Published var flip = UserDefaults.standard.object(forKey: "mirrorFlip") as? Bool ?? true { didSet { UserDefaults.standard.set(flip, forKey: "mirrorFlip") } }
     let session = AVCaptureSession()
-    private var configured = false
+    private let queue = DispatchQueue(label: "local.cocaine.mirror")
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -3374,32 +3511,50 @@ private final class MirrorController: NSObject, ObservableObject {
         }
     }
 
+    private func discover() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
+    }
+
     private func run() {
         denied = false
-        DispatchQueue.global().async {
-            if !self.configured, let cam = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam), self.session.canAddInput(input) {
-                self.session.addInput(input); self.configured = true
-            }
-            if self.configured && !self.session.isRunning { self.session.startRunning() }
+        let devices = discover()
+        cameras = devices.map { Camera(id: $0.uniqueID, name: $0.localizedName) }
+        if selected.isEmpty || !cameras.contains(where: { $0.id == selected }) { selected = (AVCaptureDevice.default(for: .video)?.uniqueID ?? cameras.first?.id) ?? "" }
+        configure(selected)
+    }
+
+    /// Points the session at that camera (replacing the previous one) and starts it.
+    func configure(_ id: String) {
+        selected = id
+        queue.async {
+            guard let cam = AVCaptureDevice(uniqueID: id) ?? AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam) else { return }
+            self.session.beginConfiguration()
+            for old in self.session.inputs { self.session.removeInput(old) }
+            if self.session.canAddInput(input) { self.session.addInput(input) }
+            self.session.commitConfiguration()
+            if !self.session.isRunning { self.session.startRunning() }
         }
     }
 
-    func stop() { DispatchQueue.global().async { if self.session.isRunning { self.session.stopRunning() } } }
+    func stop() { queue.async { if self.session.isRunning { self.session.stopRunning() } } }
 }
 
+/// The camera's picture, live. `flip` turns it into a mirror (left and right swapped, as in a real one).
 private struct MirrorPreview: NSViewRepresentable {
     let session: AVCaptureSession
+    let flip: Bool
     func makeNSView(context: Context) -> NSView {
         let v = NSView()
-        v.wantsLayer = true
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspectFill
         layer.cornerRadius = 12; layer.masksToBounds = true
-        layer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))      // a mirror, not a camera
-        v.layer = layer
+        v.layer = layer                        // first the layer, then layer-hosting on: the other way round the view drops it
+        v.wantsLayer = true
         return v
     }
-    func updateNSView(_ v: NSView, context: Context) {}
+    func updateNSView(_ v: NSView, context: Context) {
+        v.layer?.setAffineTransform(CGAffineTransform(scaleX: flip ? -1 : 1, y: 1))
+    }
 }
 
 /// External monitors' own controls over DDC/CI (brightness, contrast, volume, input), written straight to the display's I2C
@@ -3502,18 +3657,43 @@ extension IslandView {
     // MARK: mirror
 
     fileprivate var mirrorTab: some View {
-        HStack(alignment: .top, spacing: 18) {
+        let mr = model.mirror
+        return HStack(alignment: .top, spacing: 18) {
             ZStack {
                 Color.white.opacity(0.08)
-                if model.mirror.denied { Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(.system(size: 11)).padding(10).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.5)) }
-                else { MirrorPreview(session: model.mirror.session) }
+                if mr.denied {
+                    VStack(spacing: 8) {
+                        Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(.system(size: 11)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
+                        Button { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!) } label: {
+                            Text(L("Open Settings")).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                        }.buttonStyle(.plain)
+                    }.padding(12)
+                } else {
+                    MirrorPreview(session: mr.session, flip: mr.flip)
+                }
             }
-            .frame(width: 210, height: 130).clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(L("A mirror: the camera runs only while this page is open.")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 290, height: 146).clipShape(RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill").font(.system(size: 12)).foregroundStyle(mr.flip ? Island.accent : .white.opacity(0.5)).frame(width: 18)
+                    Text(L("Mirror")).font(.system(size: 12)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    CocaineSwitch(on: mr.flip) { mr.flip.toggle() }.accessibilityLabel(L("Mirror"))
+                }
+                .help(L("On: like a mirror (left and right swapped). Off: as others see you."))
+                if mr.cameras.count > 1 {
+                    Menu {
+                        ForEach(mr.cameras) { c in Button { mr.configure(c.id) } label: { if c.id == mr.selected { Label(c.name, systemImage: "checkmark") } else { Text(c.name) } } }
+                    } label: { Label(mr.cameras.first { $0.id == mr.selected }?.name ?? L("Camera"), systemImage: "camera").font(.system(size: 11)).lineLimit(1) }
+                    .menuStyle(.borderlessButton).fixedSize()
+                }
+                Text(L("The camera runs only while this page is open.")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { model.mirror.start() }
-        .onDisappear { model.mirror.stop() }
+        .onAppear { mr.start() }
+        .onDisappear { mr.stop() }
     }
 
     // MARK: external monitors
@@ -3617,81 +3797,6 @@ private enum Presence {
     }
 }
 
-// MARK: - The macOS volume and brightness keys, shown in the island instead of macOS's own HUD
-
-/// Intercepts the volume, mute and brightness keys (needs Accessibility), applies them itself and shows the island's bar.
-private final class MediaKeys {
-    var onStep: ((Int, Bool) -> Bool)?             // key code, fine step (⌥⇧): return true when it was handled
-    private var tap: CFMachPort?
-    private var source: CFRunLoopSource?
-
-    /// NX_KEYTYPE_*: 0 volume up, 1 volume down, 2 brightness up, 3 brightness down, 7 mute.
-    static func decode(data1: Int) -> (key: Int, down: Bool)? {
-        let key = (data1 & 0xFFFF0000) >> 16, flags = data1 & 0x0000FFFF
-        guard [0, 1, 2, 3, 7].contains(key) else { return nil }
-        return (key, ((flags & 0xFF00) >> 8) == 0xA)
-    }
-
-    var running: Bool { tap != nil }
-
-    @discardableResult
-    func start() -> Bool {
-        guard tap == nil, AXIsProcessTrusted() else { return tap != nil }
-        let mask: CGEventMask = 1 << 14                                    // NX_SYSDEFINED
-        guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
-                                        callback: { _, type, event, refcon in
-            guard let refcon else { return Unmanaged.passUnretained(event) }
-            let me = Unmanaged<MediaKeys>.fromOpaque(refcon).takeUnretainedValue()
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }; return Unmanaged.passUnretained(event) }
-            guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8, let k = MediaKeys.decode(data1: ns.data1) else { return Unmanaged.passUnretained(event) }
-            if !k.down { return me.onStep == nil ? Unmanaged.passUnretained(event) : nil }   // swallow the release of a key we handled
-            let fine = ns.modifierFlags.contains([.option, .shift])
-            return (me.onStep?(k.key, fine) ?? false) ? nil : Unmanaged.passUnretained(event)
-        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
-        tap = t
-        source = CFMachPortCreateRunLoopSource(nil, t, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: t, enable: true)
-        return true
-    }
-
-    func stop() {
-        if let t = tap { CGEvent.tapEnable(tap: t, enable: false) }
-        if let s = source { CFRunLoopRemoveSource(CFRunLoopGetMain(), s, .commonModes) }
-        tap = nil; source = nil
-    }
-
-    // MARK: acting on the keys
-
-    private static func outputDevice() -> AudioDeviceID? {
-        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var d = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &d) == noErr && d != 0 ? d : nil
-    }
-
-    /// Volume up/down/mute. Returns the new level and whether it's muted, or nil when this output has no volume control.
-    static func changeVolume(key: Int, fine: Bool) -> (level: Float, muted: Bool)? {
-        guard let dev = outputDevice() else { return nil }
-        var va = AudioObjectPropertyAddress(mSelector: 0x766D_7663, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-        var ma = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-        var v = Float32(0), size = UInt32(MemoryLayout<Float32>.size)
-        guard AudioObjectGetPropertyData(dev, &va, 0, nil, &size, &v) == noErr else { return nil }
-        var mute: UInt32 = 0, msize = UInt32(MemoryLayout<UInt32>.size)
-        let hasMute = AudioObjectGetPropertyData(dev, &ma, 0, nil, &msize, &mute) == noErr
-        let step: Float32 = fine ? 1.0 / 64 : 1.0 / 16
-        if key == 7 {
-            guard hasMute else { return nil }
-            mute = mute == 0 ? 1 : 0
-            AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute)
-            return (v, mute != 0)
-        }
-        v = min(1, max(0, v + (key == 0 ? step : -step)))
-        AudioObjectSetPropertyData(dev, &va, 0, nil, size, &v)
-        if hasMute && mute != 0 && key == 0 { mute = 0; AudioObjectSetPropertyData(dev, &ma, 0, nil, msize, &mute) }
-        return (v, mute != 0 && key != 0)
-    }
-}
-
 // MARK: Island, part 4: a shelf for files, and the charging activity
 
 /// Files dropped on the island, held (as references, never copied) until you drag them out, AirDrop them or clear the shelf.
@@ -3748,6 +3853,78 @@ extension IslandView {
     }
 }
 
+// MARK: Island, part 5: media launchers
+
+/// A music or video service: opened as its app when it is installed, else as its website in the default browser.
+private struct MediaApp: Identifiable {
+    var id: String
+    var name: String
+    var symbol: String
+    var color: Color
+    var bundles: [String]
+    var apps: [String]                 // file names to look for in the Applications folders
+    var url: String
+
+    static let all: [MediaApp] = [
+        MediaApp(id: "music", name: "Apple Music", symbol: "music.note", color: Color(red: 0.98, green: 0.25, blue: 0.35), bundles: ["com.apple.Music"], apps: ["Music.app"], url: "https://music.apple.com"),
+        MediaApp(id: "spotify", name: "Spotify", symbol: "waveform", color: Color(red: 0.12, green: 0.73, blue: 0.33), bundles: ["com.spotify.client"], apps: ["Spotify.app"], url: "https://open.spotify.com"),
+        MediaApp(id: "ytmusic", name: "YouTube Music", symbol: "music.quarternote.3", color: Color(red: 0.95, green: 0.2, blue: 0.2), bundles: [], apps: ["YouTube Music.app"], url: "https://music.youtube.com"),
+        MediaApp(id: "netflix", name: "Netflix", symbol: "play.rectangle.fill", color: Color(red: 0.88, green: 0.08, blue: 0.14), bundles: ["com.netflix.Netflix"], apps: ["Netflix.app"], url: "https://www.netflix.com"),
+        MediaApp(id: "prime", name: "Prime Video", symbol: "play.tv.fill", color: Color(red: 0.0, green: 0.6, blue: 0.9), bundles: [], apps: ["Prime Video.app", "Amazon Prime Video.app"], url: "https://www.primevideo.com"),
+        MediaApp(id: "youtube", name: "YouTube", symbol: "play.rectangle.on.rectangle.fill", color: Color(red: 1.0, green: 0.1, blue: 0.1), bundles: [], apps: ["YouTube.app"], url: "https://www.youtube.com"),
+        MediaApp(id: "disney", name: "Disney+", symbol: "sparkles.tv.fill", color: Color(red: 0.2, green: 0.35, blue: 0.85), bundles: [], apps: ["Disney+.app", "Disney Plus.app"], url: "https://www.disneyplus.com"),
+        MediaApp(id: "appletv", name: "Apple TV", symbol: "appletv.fill", color: Color(red: 0.7, green: 0.7, blue: 0.75), bundles: ["com.apple.TV"], apps: ["TV.app"], url: "https://tv.apple.com"),
+        MediaApp(id: "twitch", name: "Twitch", symbol: "dot.radiowaves.left.and.right", color: Color(red: 0.57, green: 0.27, blue: 1.0), bundles: [], apps: ["Twitch.app"], url: "https://www.twitch.tv"),
+        MediaApp(id: "dazn", name: "DAZN", symbol: "sportscourt.fill", color: Color(red: 0.9, green: 0.9, blue: 0.2), bundles: [], apps: ["DAZN.app"], url: "https://www.dazn.com"),
+    ]
+
+    /// Where the app is, if it's installed.
+    var installedURL: URL? {
+        for b in bundles { if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: b) { return u } }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for dir in ["/Applications", home + "/Applications", "/System/Applications"] {
+            for a in apps where FileManager.default.fileExists(atPath: dir + "/" + a) { return URL(fileURLWithPath: dir + "/" + a) }
+        }
+        return nil
+    }
+
+    func open() {
+        if let app = installedURL { NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) }
+        else if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+    }
+}
+
+extension IslandView {
+    fileprivate var mediaTab: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(104), spacing: 8), count: 5), alignment: .leading, spacing: 8) {
+                ForEach(MediaApp.all) { app in
+                    let url = app.installedURL
+                    Button { Haptic.tap(.generic); app.open() } label: {
+                        VStack(spacing: 5) {
+                            ZStack(alignment: .bottomTrailing) {
+                                if let url { Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 38, height: 38) }
+                                else {
+                                    RoundedRectangle(cornerRadius: 9).fill(app.color.opacity(0.9)).frame(width: 38, height: 38)
+                                        .overlay(Image(systemName: app.symbol).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white))
+                                    Image(systemName: "globe").font(.system(size: 9, weight: .bold)).padding(2).background(Circle().fill(.black)).foregroundStyle(.white).offset(x: 3, y: 3)
+                                }
+                            }
+                            Text(app.name).font(.system(size: 11)).lineLimit(1).foregroundStyle(.white.opacity(0.85))
+                        }
+                        .frame(width: 104, height: 66)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))
+                }
+            }
+            Text(L("Opens the app, or the website if it isn't installed.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+        }
+    }
+}
+
 // MARK: Island model and controller
 
 private final class IslandModel: ObservableObject {
@@ -3783,18 +3960,20 @@ private final class IslandModel: ObservableObject {
     /// A short message in the closed island: "Downloaded", "Copied"…
     func flashNotice(_ icon: String, _ text: String, level: Double? = nil) {
         flash = (icon, text, level)
-        relayoutNow()                                  // widen the island right now, not at the next tick
         flashWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.flash = nil; self?.relayoutNow() }
+        let w = DispatchWorkItem { [weak self] in self?.flash = nil }
         flashWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + (level == nil ? 3.2 : 1.6), execute: w)
     }
-    var wing: CGFloat { flash != nil ? 130 : Island.wing }
+    static let maxWing: CGFloat = 130
     var relayoutNow: () -> Void = {}
-    /// Is anything live (so the closed island shows wings beside the notch)?
-    var live: Bool {
-        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.fillLevel ?? 0) > 0.02 || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
+    /// Is something worth a mark right of the notch? (The bag on the left is always there.)
+    var rightActive: Bool {
+        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.presenceActive ?? false)
+            || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
     }
+    var leftW: CGFloat { flash != nil ? 130 : Island.wing }
+    var rightW: CGFloat { rightActive ? (flash != nil ? 130 : Island.wing) : 0 }
     var hover: (Bool) -> Void = { _ in }
     var toggleOpen: () -> Void = {}
     var showSettings: () -> Void = {}
@@ -3867,9 +4046,12 @@ private final class IslandController {
     func relayout() {
         guard enabled, let g = NotchGeometry.current(), let panel else { return }
         if g != model.geometry { model.geometry = g }
-        let closedW = g.notchWidth + (model.live ? 2 * model.wing : 0)
+        // Closed, the window is wide enough for the widest wings and never changes (the shape animates inside it); it ignores the
+        // mouse, so it never blocks the menu bar below it.
+        let closedW = g.notchWidth + 2 * IslandModel.maxWing + 20
         let full = model.open ? Island.openSize : CGSize(width: closedW, height: g.height)
         model.panelSize = full
+        panel.ignoresMouseEvents = !model.open
         panel.setFrame(NSRect(x: g.centerX - full.width / 2, y: g.frame.maxY - full.height, width: full.width, height: full.height + Island.overscan), display: true)
     }
 
@@ -3877,11 +4059,13 @@ private final class IslandController {
         openTimer?.invalidate(); closeTimer?.invalidate()
         guard model.open != open else { return }
         if open {
+            Haptic.tap(.alignment)
             model.open = true
             relayout()
         } else {
             model.open = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in if self?.model.open == false { self?.relayout() } }
+            panel?.ignoresMouseEvents = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in if self?.model.open == false { self?.relayout() } }     // after the morph
         }
     }
 
@@ -3913,8 +4097,11 @@ private final class IslandController {
 
     private func pointerMoved(_ e: NSEvent) {
         guard enabled, !suspended, let panel, panel.isVisible else { return }
-        let p = NSEvent.mouseLocation, f = panel.frame
-        let margin: CGFloat = model.open ? 8 : 4                      // a little slack around it, and the very top edge of the screen
+        let p = NSEvent.mouseLocation, g = model.geometry
+        // Open: the open island. Closed: just what is drawn (the notch and its wings), and the very top edge of the screen.
+        let f: NSRect = model.open ? panel.frame
+            : NSRect(x: g.centerX - g.notchWidth / 2 - model.leftW, y: g.frame.maxY - g.height - 2, width: g.notchWidth + model.leftW + model.rightW, height: g.height + 14)
+        let margin: CGFloat = model.open ? 8 : 3
         let inside = p.x >= f.minX - margin && p.x <= f.maxX + margin && p.y >= f.minY - (model.open ? margin : 0) && p.y <= f.maxY + 2
         if inside != hovering {
             hovering = inside
@@ -3966,59 +4153,67 @@ private struct IslandView: View {
     fileprivate var calendar: CalendarWatch { model.calendar }
     private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
     private var working: Bool { m.board.contains { $0.state == "working" } }
-    private var live: Bool { model.live }
-    private var closedWidth: CGFloat { g.notchWidth + (live ? 2 * model.wing : 0) }
 
     var body: some View {
-        let size = model.open ? Island.openSize : CGSize(width: closedWidth, height: g.height)
+        let open = model.open
+        let topR: CGFloat = open ? 14 : 6, bottomR: CGFloat = open ? 26 : 11              // the real notch's lines, widened
+        let leftW = model.leftW, rightW = model.rightW
+        let bodyW = open ? Island.openSize.width - 2 * 14 : leftW + g.notchWidth + rightW
+        let h = open ? Island.openSize.height : g.height
         ZStack(alignment: .top) {
-            NotchShape(radius: model.open ? 28 : 11).fill(Color.black).frame(height: size.height + Island.overscan)    // reaches above the screen's edge
+            NotchShape(topRadius: topR, bottomRadius: bottomR, inset: Island.overscan).fill(Color.black)          // reaches above the screen's edge
             Group {
-                if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.1))) } else { closedContent }
+                if open {
+                    openContent
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)).animation(.easeOut(duration: 0.24).delay(0.07)),
+                                                removal: .opacity.animation(.easeIn(duration: 0.07))))
+                } else {
+                    closedContent(leftW, rightW).transition(.opacity.animation(.easeOut(duration: 0.16).delay(0.1)))
+                }
             }
+            .frame(width: bodyW, height: h, alignment: .top)
             .padding(.top, Island.overscan)
         }
-        .frame(width: size.width, height: size.height + Island.overscan, alignment: .top)
-        .clipShape(NotchShape(radius: model.open ? 28 : 11))
+        .frame(width: bodyW + 2 * topR, height: h + Island.overscan, alignment: .top)
+        .offset(x: open ? 0 : (rightW - leftW) / 2)                         // the notch in the shape stays over the real notch
+        .frame(width: model.panelSize.width, height: model.panelSize.height + Island.overscan, alignment: .top)
         .contentShape(Rectangle())
-        .onTapGesture { if !model.open { model.toggleOpen() } }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { model.dropTargeted($0) })) { providers in
             for provider in providers {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) { DispatchQueue.main.async { model.shelf.add(u) } }
+                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) { DispatchQueue.main.async { Haptic.tap(.generic); model.shelf.add(u) } }
                 }
             }
             return true
         }
-        .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height) + Island.overscan, alignment: .top)
-        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: model.open)
-        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: live)
+        .animation(.spring(response: 0.36, dampingFraction: 0.78), value: open)           // smooth, with a touch of give at the end
+        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: leftW)
+        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: rightW)
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
 
     // MARK: closed: what is live, in the wings beside the notch
 
-    private var closedContent: some View {
+    private func closedContent(_ leftW: CGFloat, _ rightW: CGFloat) -> some View {
         HStack(spacing: 0) {
-            leftWing.frame(width: model.wing, alignment: .center)
+            leftWing.frame(width: leftW, alignment: .center)
             Color.clear.frame(width: g.notchWidth)
-            rightWing.frame(width: model.wing, alignment: .center)
+            rightWing.frame(width: rightW, alignment: .center).opacity(rightW > 0 ? 1 : 0)
         }
         .frame(height: g.height)
-        .opacity(live ? 1 : 0)
     }
 
     /// Left of the notch: the bag of Cocaine, filling and emptying exactly like the menu-bar icon did.
     @ViewBuilder private var leftWing: some View {
         if let f = model.flash { Image(systemName: f.icon).foregroundStyle(Island.accent) }
-        else { Image(nsImage: Self.bag(level: m.fillLevel, pouring: m.pouring)).frame(width: 20, height: 20) }
+        else { Image(nsImage: Self.bag(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, pink: m.bagPink)).frame(width: 20, height: 20) }
     }
 
     /// The menu-bar bag, always in its light-on-dark colors (the island is black).
-    private static func bag(level: CGFloat, pouring: Bool) -> NSImage {
+    private static func bag(level: CGFloat, pouring: Bool, pink: Bool) -> NSImage {
         NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
-            Baggie.draw(in: rect, level: level, pouring: pouring, palette: Baggie.palette(dark: true))
+            Baggie.draw(in: rect, level: level, pouring: pouring, palette: Baggie.palette(dark: true, pink: pink))
             return true
         }
     }
@@ -4039,6 +4234,7 @@ private struct IslandView: View {
         else if working { ProgressView().controlSize(.mini).tint(.white) }
         else if model.music.playing { Visualizer(playing: true) }
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
+        else if m.presenceActive { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Color(red: 1, green: 0.5, blue: 0.72)) }
     }
 
     private static func remaining(_ until: Date) -> String {
@@ -4057,6 +4253,7 @@ private struct IslandView: View {
                 case "focus": focusTab
                 case "calendar": calendarTab
                 case "music": musicTab
+                case "media": mediaTab
                 case "mirror": mirrorTab
                 case "display": displayTab
                 case "files": filesTab
@@ -4069,17 +4266,19 @@ private struct IslandView: View {
             .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: Island.openSize.width, height: Island.openSize.height, alignment: .top)
+        .frame(width: Island.openSize.width - 28, height: Island.openSize.height, alignment: .top)
     }
 
+    private var cellWidth: CGFloat { Island.tabs(external: !DDCDisplays.externalNames.isEmpty).count >= 12 ? 28 : 31 }
+
     private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
-        Button { model.tab = t.id } label: {
+        Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: 30, height: 26)
                 Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
             }
-            .frame(width: 34, height: g.height)            // the whole cell, the full height of the strip
+            .frame(width: cellWidth, height: g.height)            // the whole cell, the full height of the strip
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
@@ -4098,7 +4297,7 @@ private struct IslandView: View {
                 ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
                 Button { model.showSettings() } label: {
                     Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
-                        .frame(width: 34, height: g.height).contentShape(Rectangle())
+                        .frame(width: cellWidth, height: g.height).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
             }
@@ -4333,7 +4532,7 @@ private struct ScrollSteps: NSViewRepresentable {
             let dx = e.scrollingDeltaX * k, dy = e.scrollingDeltaY * k
             acc += abs(dx) > abs(dy) ? -dx : -dy
             let n = Int(acc / threshold)
-            if n != 0 { acc -= CGFloat(n) * threshold; perform(n) }
+            if n != 0 { acc -= CGFloat(n) * threshold; Haptic.tap(.alignment); perform(n) }
         }
     }
 }
@@ -4368,9 +4567,11 @@ private struct MinuteRuler: View {
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0).onChanged { v in
             if drag.start == nil { drag.start = minutes }
-            minutes = min(120, max(5, (drag.start ?? minutes) - Int((v.translation.width / step).rounded())))
+            let new = min(120, max(5, (drag.start ?? minutes) - Int((v.translation.width / step).rounded())))
+            if new != minutes { Haptic.tap(new % 5 == 0 ? .levelChange : .alignment) }              // a firmer tick on every fifth minute
+            minutes = new
         }.onEnded { _ in drag.start = nil })
-        .onScrollSteps(every: 5) { minutes = min(120, max(5, minutes + $0)) }
+        .onScrollSteps(every: 5) { minutes = min(120, max(5, minutes + $0)) }       // (the tap comes from the scroll itself)
         .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
     }
 }
@@ -4405,7 +4606,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var repeatTimer: Timer?
     private let speech = AVSpeechSynthesizer()
     private let island = IslandController()
-    private let mediaKeys = MediaKeys()
+    private let systemHUD = SystemHUD()
     private var presenceAssertion: IOPMAssertionID = 0
     private var lastOnAC: Bool?
     private let board = AgentBoard()                 // what each AI session is doing, from the hooks
@@ -4459,13 +4660,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self.presenceTick()
         }
         model.requestPresence = { Presence.requestAccess() }
-        model.requestHUDAccess = {
-            if !AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-            }
-        }
         model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
-        mediaKeys.onStep = { [weak self] key, fine in self?.handleMediaKey(key, fine: fine) ?? false }
+        if !settings.replaceHUD { SystemHUD.cleanup() }
         applyHUDReplacement()
         island.model.hud.suppressBrightness = { [weak self] in
             guard let self else { return false }
@@ -4746,7 +4942,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
-        mediaKeys.stop()                         // the volume and brightness keys go back to macOS
+        systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
@@ -4920,11 +5116,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func presenceTick() {
         let access = Presence.hasAccess
         if model.presenceAccess != access { model.presenceAccess = access }
-        let ax = AXIsProcessTrusted()
-        if model.hudAccess != ax { model.hudAccess = ax }
-        if settings.replaceHUD && !mediaKeys.running { mediaKeys.start() }
         let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
-        if want != model.presenceActive { model.presenceActive = want }
+        if want != model.presenceActive {
+            model.presenceActive = want
+            setIconLevel(max(0, iconLevel), pouring: false)        // the menu-bar bag turns pink (or back)
+        }
         if want {
             if presenceAssertion == 0 {
                 IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
@@ -4947,32 +5143,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyHUDReplacement() {
         island.syncHUD(settings.replaceHUD)
-        if settings.replaceHUD {
-            if !AXIsProcessTrusted() && !settings.hudAsked {
-                settings.hudAsked = true
-                _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-            }
-            mediaKeys.start()
-        } else {
-            mediaKeys.stop()
-        }
-    }
-
-    /// Volume, mute and brightness keys: applied here, shown in the island. False leaves the key to macOS.
-    private func handleMediaKey(_ key: Int, fine: Bool) -> Bool {
-        if key == 0 || key == 1 || key == 7 {
-            guard let r = MediaKeys.changeVolume(key: key, fine: fine) else { return false }
-            let icon = r.muted || r.level == 0 ? "speaker.slash.fill" : r.level < 0.34 ? "speaker.wave.1.fill" : r.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-            island.model.flashNotice(icon, L("Volume"), level: r.muted ? 0 : Double(r.level))
-            return true
-        }
-        guard dimPlan == nil, previewPlan == nil, let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) else { return false }
-        let step: Float = fine ? 1.0 / 64 : 1.0 / 16
-        let new = min(1, max(0, b + (key == 2 ? step : -step)))
-        dimQuiet = Date().addingTimeInterval(1)
-        screens.setBrightness(id, new)
-        island.model.flashNotice("sun.max.fill", L("Brightness"), level: Double(new))
-        return true
+        if settings.replaceHUD { systemHUD.enable() } else { systemHUD.disable() }
     }
 
     // MARK: Timer, Battery Guard, Smart Triggers, hotkeys
@@ -5191,7 +5362,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setIconLevel(_ level: CGFloat, pouring: Bool) {
         iconLevel = level
-        statusItem.button?.image = Baggie.image(level: level, pouring: pouring)
+        let pink = model.bagPink
+        statusItem.button?.image = Baggie.image(level: pink ? 1 : level, pouring: pouring, pink: pink)
         model.fillLevel = level
         if model.pouring != pouring { model.pouring = pouring }
     }
@@ -5511,9 +5683,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     board.set("s3", from: "Gemini CLI", project: nil, state: "working", now: now)
     board.prune(now.addingTimeInterval(7300))
     check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
-    check("hud: volume-up key down is decoded", MediaKeys.decode(data1: (0 << 16) | (0xA << 8))?.down == true)
-    check("hud: brightness-down key up is decoded", { let k = MediaKeys.decode(data1: (3 << 16) | (0xB << 8)); return k?.key == 3 && k?.down == false }())
-    check("hud: other keys are ignored", MediaKeys.decode(data1: (16 << 16) | (0xA << 8)) == nil)
+    check("hud: this process is not mistaken for the system helper", !SystemHUD.helperPIDs().contains(getpid()))
     check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
     check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
           Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
@@ -5568,6 +5738,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
                     AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90)]
     }
     pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
+    if args.contains("--presence") { pm.presenceActive = true }
     let im = IslandModel()
     im.pm = pm
     im.geometry = NotchGeometry(frame: .zero, notchWidth: 185, height: 32, centerX: 0, hasNotch: true)
@@ -5587,7 +5758,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
-    let full = im.open ? Island.openSize : CGSize(width: 185 + (im.live ? 2 * Island.wing : 0), height: 32)
+    let full = im.open ? Island.openSize : CGSize(width: 185 + 2 * IslandModel.maxWing + 20, height: 32)
     im.panelSize = full
     let view = ZStack(alignment: .top) {
         LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)

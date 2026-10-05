@@ -202,7 +202,6 @@
 "Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation" = "请在 系统设置 → 隐私与安全性 → 自动化 中允许 Cocaine 控制音乐和 Spotify";
 "Play something in Music or Spotify" = "在音乐或 Spotify 中播放点什么";
 "Allow the camera in System Settings → Privacy & Security → Camera" = "请在 系统设置 → 隐私与安全性 → 相机 中允许";
-"A mirror: the camera runs only while this page is open." = "镜子：仅在此页面打开时相机才会运行。";
 "No external monitor found, or it doesn't support DDC/CI" = "未找到外接显示器，或其不支持 DDC/CI";
 "Input" = "输入";
 "Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back." = "通过 DDC/CI 控制显示器本身。显示器无法回读，所以数值从 50 开始。";
@@ -228,4 +227,13 @@
 "Microphone in use" = "麦克风使用中";
 "Volume and brightness bars appear in the island, not on screen." = "音量和亮度条显示在灵动岛中，而不是屏幕上。";
 "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "空闲时发送不可见的鼠标事件，让 Teams 等不会把你显示为离开。";
-"Needs the Accessibility permission" = "需要辅助功能权限";
+"Media" = "媒体";
+"Haptic feedback" = "触感反馈";
+"A light tap on the trackpad when you change a timer, switch a page or toggle something" = "更改计时器、页面或开关时，触控板会轻轻震动";
+"Opens %@" = "打开 %@";
+"Opens %@ on the web" = "在网页中打开 %@";
+"Opens the app, or the website if it isn't installed." = "打开 App；若未安装，则打开网站。";
+"Open Settings" = "打开设置";
+"Camera" = "相机";
+"On: like a mirror (left and right swapped). Off: as others see you." = "开：像镜子一样（左右翻转）。关：别人看到你的样子。";
+"The camera runs only while this page is open." = "仅在此页面打开时相机才会运行。";

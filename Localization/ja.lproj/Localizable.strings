@@ -202,7 +202,6 @@
 "Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation" = "システム設定 → プライバシーとセキュリティ → オートメーション で、Cocaine にミュージックと Spotify の操作を許可してください";
 "Play something in Music or Spotify" = "ミュージックまたは Spotify で再生してください";
 "Allow the camera in System Settings → Privacy & Security → Camera" = "システム設定 → プライバシーとセキュリティ → カメラ で許可してください";
-"A mirror: the camera runs only while this page is open." = "ミラー：このページを開いている間だけカメラが動作します。";
 "No external monitor found, or it doesn't support DDC/CI" = "外部モニタが見つからないか、DDC/CI に対応していません";
 "Input" = "入力";
 "Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back." = "DDC/CI でモニタ本体を操作します。モニタの値は読み取れないため 50 から始まります。";
@@ -228,4 +227,13 @@
 "Microphone in use" = "マイク使用中";
 "Volume and brightness bars appear in the island, not on screen." = "音量と輝度のバーは画面ではなくアイランドに表示されます。";
 "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "操作がない間、見えないマウスイベントを送り、Teams などで「退席中」にならないようにします。";
-"Needs the Accessibility permission" = "アクセシビリティの許可が必要です";
+"Media" = "メディア";
+"Haptic feedback" = "触覚フィードバック";
+"A light tap on the trackpad when you change a timer, switch a page or toggle something" = "タイマー、ページ、スイッチを変更するとトラックパッドが軽く振動します";
+"Opens %@" = "%@ を開く";
+"Opens %@ on the web" = "%@ をWebで開く";
+"Opens the app, or the website if it isn't installed." = "アプリを開きます。未インストールの場合はウェブサイトを開きます。";
+"Open Settings" = "設定を開く";
+"Camera" = "カメラ";
+"On: like a mirror (left and right swapped). Off: as others see you." = "オン：鏡のように（左右反転）。オフ：他の人から見た姿。";
+"The camera runs only while this page is open." = "このページを開いている間だけカメラが動作します。";

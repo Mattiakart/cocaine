@@ -202,7 +202,6 @@
 "Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation" = "Consenti a Cocaine di controllare Musica e Spotify in Impostazioni di Sistema → Privacy e sicurezza → Automazione";
 "Play something in Music or Spotify" = "Riproduci qualcosa in Musica o Spotify";
 "Allow the camera in System Settings → Privacy & Security → Camera" = "Consenti la fotocamera in Impostazioni di Sistema → Privacy e sicurezza → Fotocamera";
-"A mirror: the camera runs only while this page is open." = "Uno specchio: la fotocamera è accesa solo mentre questa pagina è aperta.";
 "No external monitor found, or it doesn't support DDC/CI" = "Nessun monitor esterno trovato, o non supporta DDC/CI";
 "Input" = "Ingresso";
 "Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back." = "Controlla il monitor stesso, via DDC/CI. I valori partono da 50 perché i monitor non si possono rileggere.";
@@ -228,4 +227,13 @@
 "Microphone in use" = "Microfono in uso";
 "Volume and brightness bars appear in the island, not on screen." = "Le barre di volume e luminosità compaiono nell'isola, non sullo schermo.";
 "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "Mentre sei inattivo invia un evento di mouse invisibile, così Teams e simili non ti segnano assente.";
-"Needs the Accessibility permission" = "Serve il permesso Accessibilità";
+"Media" = "Multimedia";
+"Haptic feedback" = "Feedback aptico";
+"A light tap on the trackpad when you change a timer, switch a page or toggle something" = "Un leggero tocco sul trackpad quando cambi un timer, una pagina o attivi qualcosa";
+"Opens %@" = "Apre %@";
+"Opens %@ on the web" = "Apre %@ sul web";
+"Opens the app, or the website if it isn't installed." = "Apre l'app o, se non è installata, il sito.";
+"Open Settings" = "Apri Impostazioni";
+"Camera" = "Fotocamera";
+"On: like a mirror (left and right swapped). Off: as others see you." = "Attivo: come uno specchio (destra e sinistra invertite). Spento: come ti vedono gli altri.";
+"The camera runs only while this page is open." = "La fotocamera è accesa solo mentre questa pagina è aperta.";

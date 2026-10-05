@@ -202,7 +202,6 @@
 "Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation" = "Autorisez Cocaine à contrôler Musique et Spotify dans Réglages Système → Confidentialité et sécurité → Automatisation";
 "Play something in Music or Spotify" = "Lancez quelque chose dans Musique ou Spotify";
 "Allow the camera in System Settings → Privacy & Security → Camera" = "Autorisez la caméra dans Réglages Système → Confidentialité et sécurité → Caméra";
-"A mirror: the camera runs only while this page is open." = "Un miroir : la caméra ne fonctionne que tant que cette page est ouverte.";
 "No external monitor found, or it doesn't support DDC/CI" = "Aucun moniteur externe trouvé, ou il ne prend pas en charge DDC/CI";
 "Input" = "Entrée";
 "Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back." = "Contrôle le moniteur lui-même via DDC/CI. Les valeurs partent de 50 car un moniteur ne se relit pas.";
@@ -228,4 +227,13 @@
 "Microphone in use" = "Microphone utilisé";
 "Volume and brightness bars appear in the island, not on screen." = "Les barres de volume et de luminosité s'affichent dans l'île, pas à l'écran.";
 "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "Pendant votre inactivité, envoie un événement de souris invisible pour que Teams et consorts ne vous affichent pas absent.";
-"Needs the Accessibility permission" = "Nécessite l'autorisation Accessibilité";
+"Media" = "Multimédia";
+"Haptic feedback" = "Retour haptique";
+"A light tap on the trackpad when you change a timer, switch a page or toggle something" = "Un léger tapotement sur le trackpad quand vous changez un minuteur, une page ou un réglage";
+"Opens %@" = "Ouvre %@";
+"Opens %@ on the web" = "Ouvre %@ sur le web";
+"Opens the app, or the website if it isn't installed." = "Ouvre l'app ou, si elle n'est pas installée, le site web.";
+"Open Settings" = "Ouvrir Réglages";
+"Camera" = "Caméra";
+"On: like a mirror (left and right swapped). Off: as others see you." = "Activé : comme un miroir (gauche et droite inversées). Désactivé : comme les autres vous voient.";
+"The camera runs only while this page is open." = "La caméra ne fonctionne que tant que cette page est ouverte.";

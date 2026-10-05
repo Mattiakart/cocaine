@@ -202,7 +202,6 @@
 "Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation" = "Erlaube Cocaine, Musik und Spotify zu steuern: Systemeinstellungen → Datenschutz & Sicherheit → Automation";
 "Play something in Music or Spotify" = "Spiele etwas in Musik oder Spotify ab";
 "Allow the camera in System Settings → Privacy & Security → Camera" = "Erlaube die Kamera in Systemeinstellungen → Datenschutz & Sicherheit → Kamera";
-"A mirror: the camera runs only while this page is open." = "Ein Spiegel: Die Kamera läuft nur, solange diese Seite offen ist.";
 "No external monitor found, or it doesn't support DDC/CI" = "Kein externer Monitor gefunden oder er unterstützt kein DDC/CI";
 "Input" = "Eingang";
 "Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back." = "Steuert den Monitor selbst über DDC/CI. Die Werte beginnen bei 50, weil Monitore nicht auslesbar sind.";
@@ -228,4 +227,13 @@
 "Microphone in use" = "Mikrofon in Benutzung";
 "Volume and brightness bars appear in the island, not on screen." = "Lautstärke- und Helligkeitsbalken erscheinen in der Insel, nicht auf dem Bildschirm.";
 "While you're idle it sends an invisible mouse event so Teams and the like don't show you as away." = "Im Leerlauf sendet es ein unsichtbares Mausereignis, damit Teams und Co. dich nicht als abwesend anzeigen.";
-"Needs the Accessibility permission" = "Braucht die Bedienungshilfen-Berechtigung";
+"Media" = "Medien";
+"Haptic feedback" = "Haptisches Feedback";
+"A light tap on the trackpad when you change a timer, switch a page or toggle something" = "Ein leichtes Antippen des Trackpads, wenn du einen Timer, eine Seite oder einen Schalter änderst";
+"Opens %@" = "Öffnet %@";
+"Opens %@ on the web" = "Öffnet %@ im Web";
+"Opens the app, or the website if it isn't installed." = "Öffnet die App oder, falls nicht installiert, die Website.";
+"Open Settings" = "Einstellungen öffnen";
+"Camera" = "Kamera";
+"On: like a mirror (left and right swapped). Off: as others see you." = "An: wie ein Spiegel (links und rechts vertauscht). Aus: so, wie andere dich sehen.";
+"The camera runs only while this page is open." = "Die Kamera läuft nur, solange diese Seite offen ist.";

@@ -115,13 +115,19 @@ o ci clicchi e si apre, con queste pagine:
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo avvisa quando ne arriva uno.
 - **Appunti**: ciò che hai copiato da poco, solo in memoria e mai dai gestori di password; clicca per copiare di nuovo.
 - **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth, e l'utilizzo di Codex (i limiti) e Claude Code (i token), letti dai loro file locali.
-- **Specchio**: la vista dal vivo della fotocamera, accesa solo mentre quella pagina è aperta.
+- **Multimedia**: Apple Music, Spotify, YouTube Music, Netflix, Prime Video, YouTube, Disney+, Apple TV, Twitch, DAZN: un tocco apre l'app se
+  è installata, altrimenti il sito nel browser predefinito.
+- **Specchio**: la fotocamera dal vivo, accesa solo mentre quella pagina è aperta; un interruttore la specchia (o ti mostra come ti vedono gli
+  altri) e puoi scegliere la fotocamera.
 - **Monitor** (solo con un monitor esterno): luminosità, contrasto, volume e ingresso del monitor stesso via DDC/CI, solo Apple
   silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
 
-Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu (la busta di Cocaine a sinistra si riempie e si svuota come faceva l'icona); se la disattivi, l'icona torna. L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
-giochi. Le barre di volume e luminosità compaiono in aggiunta all'HUD di macOS; attiva *Cocaine → Sostituisci l'HUD di sistema* (serve il
-permesso Accessibilità) e i tasti di volume, muto e luminosità li gestisce Cocaine, mostrati solo nell'isola (⌥⇧ per passi fini).
+Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu: la busta di Cocaine, sempre a sinistra, si riempie e si svuota come faceva l'icona (polvere
+bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta attivo* sta lavorando). Se disattivi l'isola, l'icona torna. Si apre e si chiude
+seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; *Cocaine → Feedback aptico* lo disattiva). L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
+giochi. Con *Cocaine →
+Sostituisci l'HUD di sistema* attivo, volume e luminosità compaiono solo nell'isola: l'HUD di macOS viene zittito (il suo processo di supporto resta
+congelato) e torna appena disattivi l'opzione o chiudi Cocaine. Non serve nessun permesso speciale.
 
 ## Lavoro da remoto
 
