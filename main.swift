@@ -727,23 +727,25 @@ private final class Hotkeys {
 }
 
 // MARK: - Remote control through a relay: the phone publishes a command, the Mac (outbound connection only) runs and answers
-
-/// One paired iPhone. The two topics are random secrets on the relay (ntfy): knowing them is what lets a phone in.
-private struct Pairing: Codable, Equatable {
-    var id: String
-    var cmd: String        // the phone publishes commands here
-    var reply: String      // the Mac publishes answers here
-    var tier: String       // "basic" or "agents": what the commands may do (the gate in remote.zsh enforces it)
-    var relay: String      // the server it was made for: later changes to the setting never move existing secrets
-}
+//
+// The protocol (authenticated, end-to-end encrypted, replay-proof) lives in Sources/RemoteProtocol.swift, the listener in
+// Sources/RemoteListener.swift and the Shortcut in Sources/RemoteShortcut.swift; this is the app's side of them.
 
 private enum PhoneLink {
     static let file = AgentBoard.directory.appendingPathComponent("phones.json")
+    static let store = RemoteReplayStore(url: AgentBoard.directory.appendingPathComponent("remote-state.json"))
+    static let legacyDays = 14.0
 
     /// The relay server: ntfy.sh unless the `relayURL` default points to another (https) ntfy server.
     static var relay: String {
         let v = UserDefaults.standard.string(forKey: "relayURL") ?? ""
         return v.hasPrefix("https://") ? v.trimmingCharacters(in: CharacterSet(charactersIn: "/")) : "https://ntfy.sh"
+    }
+
+    /// Until when old (plain-text, unauthenticated) Shortcuts are still answered — basic commands only. Off by default.
+    static var legacyUntil: Date? {
+        get { let v = UserDefaults.standard.double(forKey: "remoteLegacyUntil"); return v > Date().timeIntervalSince1970 ? Date(timeIntervalSince1970: v) : nil }
+        set { if let n = newValue { UserDefaults.standard.set(n.timeIntervalSince1970, forKey: "remoteLegacyUntil") } else { UserDefaults.standard.removeObject(forKey: "remoteLegacyUntil") } }
     }
 
     static func load() -> [Pairing] {
@@ -758,20 +760,11 @@ private enum PhoneLink {
         return true
     }
 
-    private static func random(_ bytes: Int) -> String? {
-        var b = [UInt8](repeating: 0, count: bytes)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes, &b) == errSecSuccess else { return nil }
-        return b.map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// 192 random bits per topic: unguessable. (ntfy topic names allow up to 64 characters.)
-    static func newPairing(tier: String) -> Pairing? {
-        guard let id = random(8), let c = random(24), let r = random(24) else { return nil }
-        return Pairing(id: id, cmd: "cc" + c, reply: "cr" + r, tier: tier == "agents" ? "agents" : "basic", relay: relay)
-    }
+    /// A new pairing: 192-bit topics and a 256-bit key, valid 180 days.
+    static func newPairing(tier: String) -> Pairing? { Pairing.make(tier: tier, relay: relay) }
 
     /// Runs one command from a phone through the gate (the same allow-list as `cocaine remote gate`) and returns what
-    /// to answer: its output, at most 3500 bytes (the relay's limit is 4096).
+    /// to answer: its output (cut to fit later). The text only ever travels in an environment variable, never in a shell line.
     static func execute(_ text: String, tier: String) -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -801,126 +794,26 @@ private enum PhoneLink {
         return text.isEmpty ? "OK" : text
     }
 
-    static func publish(_ text: String, to topic: String, relay: String, session: URLSession) async {
-        guard let url = URL(string: "\(relay)/\(topic)") else { return }
+    static func publish(_ text: String, to topic: String, relay: String, session: URLSession) async -> Bool {
+        guard let url = URL(string: "\(relay)/\(topic)") else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.httpBody = Data(text.utf8)
         req.setValue("Cocaine", forHTTPHeaderField: "Title")
         req.setValue("no", forHTTPHeaderField: "X-Firebase")       // keep it off Google's push service
-        _ = try? await session.data(for: req)
-    }
-}
-
-/// Keeps one outbound connection per paired phone to the relay and answers what arrives. Nothing listens on this Mac.
-private final class PhoneListener {
-    private var tasks: [String: (pairing: Pairing, task: Task<Void, Never>)] = [:]
-    private var up = Set<String>()
-    private var cursor: [String: Int] = [:]            // newest message time handled, per phone: a reconnect resumes there
-    private var seenIds: [String: [String]] = [:]
-    private let lock = NSLock()
-    var onChange: ((Bool) -> Void)?                    // is at least one phone's connection up?
-    /// How old a command may be and still run, in seconds: longer when the Mac wakes on a schedule to pick them up.
-    var maxAge: () -> Double = { 120 }
-
-    func sync(_ list: [Pairing]) {
-        lock.lock(); defer { lock.unlock() }
-        for (id, entry) in tasks where !list.contains(entry.pairing) { entry.task.cancel(); tasks[id] = nil; up.remove(id) }
-        for p in list where tasks[p.id] == nil {
-            if cursor[p.id] == nil { cursor[p.id] = Int(Date().timeIntervalSince1970) }
-            tasks[p.id] = (p, spawn(p))
-        }
-        notify()
+        guard let (_, response) = try? await session.data(for: req) else { return false }
+        return ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
     }
 
-    /// Drops the (stale, after sleep) connections and opens fresh ones, resuming where each phone left off.
-    func reconnect() {
-        lock.lock(); defer { lock.unlock() }
-        for (id, entry) in tasks { entry.task.cancel(); tasks[id] = (entry.pairing, spawn(entry.pairing)); up.remove(id) }
-        notify()
-    }
-
-    private func spawn(_ p: Pairing) -> Task<Void, Never> { Task.detached { [weak self] in await self?.run(p) } }
-
-    private func set(_ id: String, _ connected: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        guard tasks[id] != nil else { return }
-        if connected { up.insert(id) } else { up.remove(id) }
-        notify()
-    }
-
-    private func resumePoint(_ id: String) -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return cursor[id] ?? Int(Date().timeIntervalSince1970)
-    }
-
-    private func advance(_ id: String, to time: Int) {
-        lock.lock(); defer { lock.unlock() }
-        cursor[id] = max(cursor[id] ?? 0, time)
-    }
-
-    /// Remembers the message id; true if it was already handled.
-    private func isDuplicate(_ id: String, _ message: String) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        let seen = seenIds[id, default: []]
-        if seen.contains(message) { return true }
-        seenIds[id] = Array((seen + [message]).suffix(100))
-        return false
-    }
-
-    private func notify() {
-        let any = !up.isEmpty
-        DispatchQueue.main.async { self.onChange?(any) }
-    }
-
-    private func run(_ p: Pairing) async {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 150           // the relay sends a keepalive every 45 s
-        config.waitsForConnectivity = true
-        let session = URLSession(configuration: config)
-        defer { session.invalidateAndCancel() }
-        var recent: [Date] = []
-        var delay = 2.0
-        while !Task.isCancelled {
-            let since = resumePoint(p.id)
-            if let url = URL(string: "\(p.relay)/\(p.cmd)/json?since=\(since)") {
-                do {
-                    let (bytes, response) = try await session.bytes(from: url)
-                    if (response as? HTTPURLResponse)?.statusCode == 200 {
-                        delay = 2
-                        set(p.id, true)
-                        for try await line in bytes.lines {
-                            guard line.utf8.count <= 16_384, let m = Self.message(line) else { continue }
-                            if isDuplicate(p.id, m.id) { continue }
-                            // Old messages (the Mac was asleep) are never run, nor are ones dated in the future, and
-                            // no more than 20 a minute are.
-                            let age = Date().timeIntervalSince1970 - Double(m.time)
-                            guard age <= maxAge(), age >= -120 else { continue }
-                            advance(p.id, to: m.time)
-                            recent = recent.filter { $0.timeIntervalSinceNow > -60 }
-                            guard recent.count < 20, m.text.count <= 1000 else { continue }
-                            recent.append(Date())
-                            log.notice("phone command received (\(m.text.count, privacy: .public) characters)")
-                            DispatchQueue.main.async { WakeHold.extend(60) }     // stay awake while it runs and the answer goes out
-                            let answer = await Task.detached { PhoneLink.execute(m.text, tier: p.tier) }.value
-                            await PhoneLink.publish(answer, to: p.reply, relay: p.relay, session: session)
-                        }
-                    }
-                } catch {}
-            }
-            if Task.isCancelled { break }
-            set(p.id, false)
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            delay = min(delay * 2, 60)
-        }
-    }
-
-    /// A relay event line → the message, or nil for keepalives and anything else.
-    static func message(_ line: String) -> (id: String, time: Int, text: String)? {
-        guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-              json["event"] as? String == "message", let id = json["id"] as? String,
-              let time = json["time"] as? Int, let text = json["message"] as? String else { return nil }
-        return (id, time, text.trimmingCharacters(in: .whitespacesAndNewlines))
+    static func listener() -> RemoteListener {
+        var h = RemoteListener.Hooks(store: store, execute: { execute($0, tier: $1) },
+                                     publish: { await publish($0, to: $1, relay: $2, session: $3) })
+        h.legacyUntil = { legacyUntil }
+        h.expiredText = L("This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
+        h.noticeText = L("Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
+        h.willRun = { DispatchQueue.main.async { WakeHold.extend(60) } }      // stay awake while it runs and the answer goes out
+        h.note = { log.notice("\($0, privacy: .public)") }
+        return RemoteListener(hooks: h)
     }
 }
 
@@ -1017,62 +910,12 @@ private final class SleepWatcher {
 // MARK: - The iPhone Shortcut: a menu that sends Cocaine's remote commands through the relay and shows the answer
 
 private enum PhoneShortcut {
-    /// The shortcut as an (unsigned) property list. Sign it before sharing: an iPhone refuses unsigned files.
+    /// The shortcut as an (unsigned) property list (protocol v2, see Sources/RemoteShortcut.swift).
     static func build(_ pairing: Pairing) -> Data? {
-        func uuid() -> String { UUID().uuidString }
-        func action(_ id: String, _ params: [String: Any]) -> [String: Any] {
-            ["WFWorkflowActionIdentifier": "is.workflow.actions.\(id)", "WFWorkflowActionParameters": params]
-        }
-        /// Text with the result of an earlier action at its end ("the prefix, then that output").
-        func token(_ prefix: String, _ output: String, _ name: String) -> [String: Any] {
-            ["Value": ["string": prefix + "\u{FFFC}",
-                       "attachmentsByRange": ["{\((prefix as NSString).length), 1}": ["OutputUUID": output, "Type": "ActionOutput", "OutputName": name]]],
-             "WFSerializationType": "WFTextTokenString"]
-        }
-        func get(_ url: Any, _ id: String? = nil) -> [String: Any] {
-            var params: [String: Any] = ["WFURL": url, "WFHTTPMethod": "GET"]
-            if let id { params["UUID"] = id }
-            return action("downloadurl", params)
-        }
-        let relay = pairing.relay
-        let send = "\(relay)/\(pairing.cmd)/publish?firebase=no&message="
-        func read(_ since: String) -> String { "\(relay)/\(pairing.reply)/raw?poll=1&since=\(since)" }
-        func show(_ since: String) -> [[String: Any]] {      // fetch what the Mac answered and show it
-            let r = uuid()
-            return [get(read(since), r), action("showresult", ["Text": token("", r, "Contents of URL")])]
-        }
-        func wait() -> [String: Any] { action("delay", ["WFDelayTime": 4]) }
-
-        let fixed: [(title: String, command: String)] = [
-            (L("Status"), "status"), (L("Turn on"), "on"), (L("Turn off"), "off"), (L("Projects"), "projects"),
-        ]
-        let titles = fixed.map(\.title) + [L("Command"), L("Last reply")]
-        let group = uuid()
-        var actions: [[String: Any]] = [
-            action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine", "WFMenuItems": titles]),
-        ]
-        func item(_ title: String, _ body: [[String: Any]]) {
-            actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 1, "WFMenuItemTitle": title]))
-            actions += body
-        }
-        for f in fixed { item(f.title, [get(send + f.command), wait()] + show("20s")) }
-        let ask = uuid(), encoded = uuid()
-        item(L("Command"), [
-            action("ask", ["UUID": ask, "WFAskActionPrompt": L("Command (for example: start claude my-project Fix the tests)"), "WFInputType": "Text"]),
-            action("urlencode", ["UUID": encoded, "WFEncodeMode": "Encode",
-                                 "WFInput": ["Value": ["OutputUUID": ask, "Type": "ActionOutput", "OutputName": "Provided Input"],
-                                             "WFSerializationType": "WFTextTokenAttachment"]]),
-            get(token(send, encoded, "URL Encoded Text")), wait(),
-        ] + show("20s"))
-        item(L("Last reply"), show("30m"))
-        actions.append(action("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 2]))
-        let plist: [String: Any] = [
-            "WFWorkflowClientVersion": "900", "WFWorkflowMinimumClientVersion": 900, "WFWorkflowMinimumClientRelease": 900,
-            "WFWorkflowIcon": ["WFWorkflowIconStartColor": 4282601983, "WFWorkflowIconGlyphNumber": 59511],
-            "WFWorkflowActions": actions, "WFWorkflowInputContentItemClasses": [String](), "WFWorkflowTypes": [String](),
-            "WFWorkflowImportQuestions": [Any](),
-        ]
-        return try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
+        RemoteShortcut.build(pairing, labels: RemoteShortcutLabels(
+            status: L("Status"), turnOn: L("Turn on"), turnOff: L("Turn off"), projects: L("Projects"), command: L("Command"),
+            lastReply: L("Last reply"), prompt: L("Command (for example: start claude my-project Fix the tests)"),
+            noAnswer: L("No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes.")))
     }
 
     /// Builds and signs `Cocaine.shortcut` for that pairing in a temporary folder; nil if signing fails (it needs to be
@@ -1406,6 +1249,8 @@ private final class PanelModel: ObservableObject {
     @Published var makingShortcut = false
     @Published var phoneCount = 0                    // iPhones paired for remote control
     @Published var phoneLinkUp = false               // at least one is connected to the relay
+    @Published var oldPhones = 0                     // pairings with an old (unprotected) Shortcut, or expired
+    @Published var oldPhonesAllowedUntil: Date?      // old Shortcuts answered (basic commands only) until then
     @Published var phone = ""                        // "" = not set up; else what alerts go to
     @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
@@ -1453,6 +1298,8 @@ private final class PanelModel: ObservableObject {
     var testPhone: () -> Void = {}
     var sendShortcut: () -> Void = {}
     var revokePhones: () -> Void = {}
+    var allowOldPhones: (Bool) -> Void = { _ in }
+    var removeOldPhones: () -> Void = {}
     var quit: () -> Void = {}
 
     init() {
@@ -2230,8 +2077,20 @@ private struct PanelView: View {
                     HStack(spacing: 6) {
                         Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
                             .help(L("Send the Shortcut to your iPhone"))
-                        if m.phoneCount > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
+                        if m.phoneCount + m.oldPhones > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
                     }
+                }
+                if m.oldPhones > 0 {
+                    row(L("Old Shortcuts"), detail: m.oldPhonesAllowedUntil.map { String(format: L("Unprotected, still accepted (status, on/off) until %@"),
+                                                                                       $0.formatted(date: .abbreviated, time: .omitted)) }
+                        ?? String(format: L("%d without protection or expired: send a new Shortcut"), m.oldPhones)) {
+                        HStack(spacing: 6) {
+                            Button(m.oldPhonesAllowedUntil == nil ? L("Allow 14 days") : L("Stop")) { m.allowOldPhones(m.oldPhonesAllowedUntil == nil) }
+                                .controlSize(.small).help(L("Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them"))
+                            Button(L("Remove")) { m.removeOldPhones() }.controlSize(.small)
+                        }
+                    }
+                    .foregroundStyle(.orange)
                 }
                 row(L("Wake for iPhone"), tip: L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
                     toggle(L("Wake for iPhone"), $m.wakeForPhone)
@@ -5669,6 +5528,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
         model.revokePhones = { [weak self] in self?.revokePhones() }
+        model.allowOldPhones = { [weak self] on in
+            PhoneLink.legacyUntil = on ? Date().addingTimeInterval(PhoneLink.legacyDays * 86_400) : nil
+            self?.syncPhones()
+        }
+        model.removeOldPhones = { [weak self] in
+            let now = Date()
+            if PhoneLink.save(PhoneLink.load().filter { !$0.isLegacy && !$0.expired(at: now) }) { PhoneLink.legacyUntil = nil }
+            self?.syncPhones()
+        }
         model.testPhone = { Phone.send(L("This is a test")) }
         syncPhones()
         model.quit = { NSApp.terminate(nil) }
@@ -6521,7 +6389,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private let phoneListener = PhoneListener()
+    private let phoneListener = PhoneLink.listener()
     private let sleepWatcher = SleepWatcher()
 
     /// Applies the "Wake for iPhone" option: schedules the next wake (asking, when the user just turned it on, for the
@@ -6562,7 +6430,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Starts listening for the paired phones (at launch and whenever the list changes).
     private func syncPhones(_ given: [Pairing]? = nil) {
         let list = given ?? PhoneLink.load()
-        model.phoneCount = list.count
+        let now = Date(), allowed = PhoneLink.legacyUntil
+        // Answered: v2 pairings that haven't expired, and old ones only while the user allows them.
+        model.phoneCount = list.filter { $0.isLegacy ? allowed != nil : !$0.expired(at: now) }.count
+        model.oldPhones = list.filter { $0.isLegacy || $0.expired(at: now) }.count
+        model.oldPhonesAllowedUntil = list.contains(where: \.isLegacy) ? allowed : nil
         phoneListener.onChange = { [weak self] up in self?.model.phoneLinkUp = up }
         phoneListener.sync(list)
         applyWake(ask: false)
@@ -6617,7 +6489,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         a.addButton(withTitle: L("Revoke"))
         a.addButton(withTitle: L("Cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
-        if !PhoneLink.save([]) {                          // couldn't write: still stop answering now
+        if !PhoneLink.save([]) {                          // couldn't write: delete it, and still stop answering now
+            try? FileManager.default.removeItem(at: PhoneLink.file)
             let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
         }
         syncPhones([])
@@ -7205,39 +7078,58 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcu
     exit(0)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--relay-test" {
-    // A real round trip through the relay with throwaway topics: sends an unknown command ("ping-test"), which the gate
-    // refuses, and expects that refusal back on the reply topic. Nothing about this Mac leaves it.
-    let pairing = PhoneLink.newPairing(tier: "basic")!
-    let listener = PhoneListener()
+    // A real round trip through the relay with a throwaway pairing (and its own state file): sends an authenticated,
+    // encrypted unknown command ("ping-test"), which the gate refuses, and expects that refusal back, encrypted, for that
+    // request. Nothing about this Mac leaves it in clear.
+    let pairing = PhoneLink.newPairing(tier: "basic")!, keys = pairing.keys!
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-relay-test-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    var hooks = RemoteListener.Hooks(store: RemoteReplayStore(url: dir.appendingPathComponent("state.json")),
+                                     execute: { PhoneLink.execute($0, tier: $1) },
+                                     publish: { await PhoneLink.publish($0, to: $1, relay: $2, session: $3) })
+    hooks.firstDelay = 1
+    let listener = RemoteListener(hooks: hooks)
+    func send(_ text: String) -> String {
+        let n = (0..<3).map { _ in String(Int.random(in: 100_000_000...999_999_999)) }.joined()
+        _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=" +
+                           RemoteProtocol.sealCommand(text, pairingID: pairing.id, keys: keys, nonce: n, ts: RemoteProtocol.timestamp(Date())))
+        return n
+    }
+    func answers(_ nonce: String) -> [String] {
+        RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=120s").split(separator: "\n")
+            .compactMap { RemoteProtocol.openReply(String($0), pairingID: pairing.id, keys: keys, nonce: nonce) }
+    }
     listener.sync([pairing])
     Thread.sleep(forTimeInterval: 4)
-    _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=ping-test")
-    var answer = ""
-    for _ in 0..<12 where answer.isEmpty {
-        Thread.sleep(forTimeInterval: 1.5)
-        answer = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=60s")
-    }
-    let first = answer.contains("not allowed")
-    print(first ? "PASS  relay round trip: \(answer)" : "FAIL  relay round trip: '\(answer)'")
+    let n1 = send("ping-test")
+    var answer: [String] = []
+    for _ in 0..<12 where answer.isEmpty { Thread.sleep(forTimeInterval: 1.5); answer = answers(n1) }
+    let first = answer.count == 1 && answer[0].contains("not allowed")
+    print(first ? "PASS  relay round trip: \(answer[0])" : "FAIL  relay round trip: \(answer)")
     // What a sleeping Mac does: the connection is gone, a command arrives meanwhile, and the next wake picks it up.
-    listener.sync([])
+    listener.stop()
     Thread.sleep(forTimeInterval: 1)
-    _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=ping-while-asleep")
+    let n2 = send("ping-while-asleep")
     Thread.sleep(forTimeInterval: 2)
     listener.maxAge = { WakeSchedule.maxCommandAge }
     listener.sync([pairing])
-    var count = 0
-    for _ in 0..<12 where count < 2 {
-        Thread.sleep(forTimeInterval: 1.5)
-        count = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=60s").split(separator: "\n").count
-    }
-    print(count == 2 ? "PASS  command sent while disconnected is answered after reconnect (once)" : "FAIL  after reconnect: \(count) answers")
+    var second: [String] = []
+    for _ in 0..<12 where second.isEmpty { Thread.sleep(forTimeInterval: 1.5); second = answers(n2) }
+    print(second.count == 1 ? "PASS  command sent while disconnected is answered after reconnect (once)" : "FAIL  after reconnect: \(second.count) answers")
     Thread.sleep(forTimeInterval: 4)
     listener.reconnect()                                    // the wake-up path: no repeat of what was already handled
     Thread.sleep(forTimeInterval: 6)
-    let total = RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=90s").split(separator: "\n").count
+    let total = answers(n1).count + answers(n2).count
     print(total == 2 ? "PASS  reconnect doesn't run old commands again" : "FAIL  reconnect repeated a command: \(total) answers")
-    exit(first && count == 2 && total == 2 ? 0 : 1)
+    exit(first && second.count == 1 && total == 2 ? 0 : 1)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remote-test" {
+    // Remote control protocol, Shortcut and listener tests only (also part of --selftest).
+    var failed = 0
+    RemoteTests.run(gate: Bundle.main.path(forResource: "remote", ofType: "zsh")) { name, ok in
+        print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 }
+    }
+    exit(failed == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
@@ -7307,9 +7199,10 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
         check("auth: a user name with shell characters is refused", Authorization.installCommand(user: "a; rm -rf /") == nil)
     }
     check("wake: sleep/wake notifications can be registered", SleepWatcher().start())
-    check("relay: a message event is read", PhoneListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
-    check("relay: keepalives and open events are ignored", PhoneListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
-          && PhoneListener.message(#"{"id":"a","time":1,"event":"open"}"#) == nil && PhoneListener.message("garbage") == nil)
+    check("relay: a message event is read", RemoteListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
+    check("relay: keepalives and open events are ignored", RemoteListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
+          && RemoteListener.message(#"{"id":"a","time":1,"event":"open"}"#) == nil && RemoteListener.message("garbage") == nil)
+    RemoteTests.run(gate: Bundle.main.path(forResource: "remote", ofType: "zsh"), check)   // iPhone remote control: see Sources/RemoteTests.swift
     check("permissions: camera states", Permissions.cameraState(.authorized) == .granted && Permissions.cameraState(.notDetermined) == .notAsked
           && Permissions.cameraState(.denied) == .denied && Permissions.cameraState(.restricted) == .denied)
     check("permissions: calendar needs full access (write-only counts as refused)", Permissions.calendarState(.fullAccess) == .granted

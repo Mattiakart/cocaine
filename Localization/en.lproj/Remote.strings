@@ -1,0 +1,10 @@
+/* iPhone remote control (protocol v2, migration of old Shortcuts) */
+"This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.";
+"Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.";
+"No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes." = "No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes.";
+"Old Shortcuts" = "Old Shortcuts";
+"Unprotected, still accepted (status, on/off) until %@" = "Unprotected, still accepted (status, on/off) until %@";
+"%d without protection or expired: send a new Shortcut" = "%d without protection or expired: send a new Shortcut";
+"Allow 14 days" = "Allow 14 days";
+"Stop" = "Stop";
+"Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them" = "Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them";
