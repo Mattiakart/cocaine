@@ -844,16 +844,18 @@ private enum WakeSchedule {
     static func arm() -> Bool {
         cancel()
         let date = Date().addingTimeInterval(Double(minutes) * 60)
-        guard pmset(["schedule", "wake", format(date), owner]) else { return false }
+        RecoverySession.shared.noteWake(date.timeIntervalSince1970)   // before: a crash right after still cancels it
+        guard pmset(["schedule", "wake", format(date), owner]) else { RecoverySession.shared.noteWake(nil); return false }
         UserDefaults.standard.set(date.timeIntervalSince1970, forKey: key)
         return true
     }
 
     static func cancel() {
         let t = UserDefaults.standard.double(forKey: key)
-        guard t > 0 else { return }
+        guard t > 0 else { RecoverySession.shared.noteWake(nil); return }
         _ = pmset(["schedule", "cancel", "wake", format(Date(timeIntervalSince1970: t)), owner])
         UserDefaults.standard.removeObject(forKey: key)
+        RecoverySession.shared.noteWake(nil)
     }
 }
 
@@ -4029,7 +4031,7 @@ private final class HUDWatch {
 
 /// macOS draws its volume and brightness HUD in a helper process, OSDUIHelper. While *Replace system HUD* is on, that helper is
 /// kept started but frozen, so it never draws anything; when the option is turned off (or Cocaine quits) the helper is simply ended
-/// and macOS starts a fresh one the next time it needs it.
+/// and macOS starts a fresh one the next time it needs it. If Cocaine dies, its watchdog ends the frozen helper (Sources/Recovery.swift).
 private final class SystemHUD {
     private var timer: Timer?
     private var lastKick = Date.distantPast
@@ -4038,6 +4040,7 @@ private final class SystemHUD {
     func enable() {
         guard !active else { return }
         active = true
+        RecoverySession.shared.noteHUD(true)                                      // noted before the first freeze
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer!, forMode: .common)
@@ -4048,6 +4051,7 @@ private final class SystemHUD {
         active = false
         timer?.invalidate(); timer = nil
         for pid in Self.helperPIDs() { kill(pid, SIGKILL) }
+        RecoverySession.shared.noteHUD(false)
     }
 
     /// After a crash the helper could be left frozen: end any frozen one at launch.
@@ -5380,7 +5384,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelMonitors: [Any] = []
     private var ticker: Timer?
     private var fadeTimer: Timer?
-    private var sigterm: DispatchSourceSignal?
+    private var quitSignals: [DispatchSourceSignal] = []
     private var ticks = 0
     private var lastOn: Bool?
     private var lastIdle = 0.0
@@ -5429,6 +5433,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var iconAnim: Timer?
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // First: undo what a crashed session left (adopting its sleep), then start this session's lease and watchdog.
+        if RecoverySession.shared.start(ownsSleep: !launchedForAlert) { log.notice("recovered a previous session; its sleep setting goes on") }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
@@ -5555,16 +5561,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             scroll.reflectScrolledClipView(scroll.contentView)
         }
 
-        for (id, saved) in settings.savedBrightness {   // quit or crashed while screens were lowered
-            if let cur = screens.brightness(id), cur < saved { screens.setBrightness(id, saved) }
+        for (id, saved) in settings.savedBrightness {   // an older version quit or crashed while screens were lowered
+            if let cur = screens.brightness(id), Recovery.shouldRestoreBrightness(current: cur, from: saved, to: settings.level) {
+                screens.setBrightness(id, saved)
+            }
         }
         settings.savedBrightness = [:]
         UserDefaults.standard.removeObject(forKey: "savedBrightness")   // pre-1.6 single-display key
 
-        signal(SIGTERM, SIG_IGN)                     // quit cleanly (restoring brightness) on kill/pkill
-        sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        sigterm?.setEventHandler { NSApp.terminate(nil) }
-        sigterm?.resume()
+        // Quit cleanly (restoring everything) on kill/pkill, Ctrl-C and a closed Terminal too; kill -9 and crashes: the watchdog.
+        quitSignals = [SIGTERM, SIGINT, SIGHUP].map { sig in
+            signal(sig, SIG_IGN)
+            let s = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            s.setEventHandler { NSApp.terminate(nil) }
+            s.resume()
+            return s
+        }
 
         let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
@@ -5997,7 +6009,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshIcon(on: true)
     }
 
-    /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
+    /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on: sleep goes back
+    /// to what it was before Cocaine turned it off (unless someone changed it since), or stays for the new version during
+    /// an update (Sources/Recovery.swift).
     func applicationWillTerminate(_ n: Notification) {
         systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
         approvalServer?.stop()                   // waiting hooks see the socket close: their terminals ask as usual
@@ -6008,7 +6022,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
         settings.savedBrightness = [:]
-        if System.cocaineOn && !launchedForAlert { engine("off") }
+        RecoverySession.shared.noteDim([])
+        RecoverySession.shared.end()
     }
 
     /// Opening Cocaine again (e.g. from Spotlight) shows the panel.
@@ -6162,6 +6177,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 autoOn.userToggled(to: on, triggerActive: triggerActive)
                 requestedOn = on
             }
+            if lastOn == true && !on { DispatchQueue.global().async { engine("forget") } }   // OFF from anywhere ends our claim
             lastOn = on
             refreshIcon(on: on)
             if on { superviseHold() }
@@ -6691,7 +6707,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dim(afterIdle idle: Double) {
         let plan = makePlan(level: settings.level)
         dimPlan = plan                                              // even if empty, so we don't retry every tick
-        settings.savedBrightness = Dictionary(uniqueKeysWithValues: plan.backlit.map { ($0.id, $0.from) })
+        RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
         log.notice("dim \(plan.backlit.count, privacy: .public) backlit + \(plan.gamma.count, privacy: .public) gamma screens after \(Int(idle), privacy: .public)s idle")
         dimQuiet = Date().addingTimeInterval(3)
         fade(plan, to: 1, over: 1.5)
@@ -6701,9 +6717,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let plan = dimPlan else { return }
         dimPlan = nil
         dimQuiet = Date().addingTimeInterval(3)
-        settings.savedBrightness = [:]
         log.notice("restore \(plan.displays.count, privacy: .public) screens")
-        fade(plan, to: 0, over: 0.25) { if !plan.gamma.isEmpty { self.screens.restoreGamma() } }
+        fade(plan, to: 0, over: 0.25) {
+            if !plan.gamma.isEmpty { self.screens.restoreGamma() }
+            if self.dimPlan == nil && self.previewPlan == nil { RecoverySession.shared.noteDim([]) }   // cleared once really back
+        }
     }
 
     /// Puts every screen in `plan` at `t` (0 = as it was, 1 = fully dimmed).
@@ -6734,14 +6752,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         guard previewPlan == nil, dimPlan == nil else { return }
         let plan = makePlan(level: settings.level)
         previewPlan = plan
-        settings.savedBrightness = Dictionary(uniqueKeysWithValues: plan.backlit.map { ($0.id, $0.from) })
+        RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
         model.previewing = true
         fade(plan, to: 1, over: 0.6) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 self.fade(plan, to: 0, over: 0.4) {
                     if !plan.gamma.isEmpty { self.screens.restoreGamma() }
                     self.previewPlan = nil
-                    self.settings.savedBrightness = [:]
+                    RecoverySession.shared.noteDim([])
                     self.model.previewing = false
                 }
             }
@@ -7006,6 +7024,13 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--agents-test"
     }
     exit(failed == 0 ? 0 : 1)
 }
+if let code = RecoveryCLI.run(CommandLine.arguments) { exit(code) }   // --recover-after, --prepare-update, … (Sources/Recovery.swift)
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--recovery-test" { exit(RecoveryTest.run()) }
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--recovery-owner" { RecoveryTest.owner(Array(CommandLine.arguments.dropFirst(2))) }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--instance-check" {   // would a launch now give way? 1 = yes
+    exit(Recovery.claimSingleInstance(wait: 1) ? 0 : 1)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--recovery-standin" { while true { sleep(600) } }   // the test's OSDUIHelper
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftest" {
     // Runs the exact install pipeline (AppleScript quoting, printf, visudo, install) without admin rights,
     // writing the rule to the given file instead of /etc/sudoers.d.
@@ -7220,6 +7245,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     if ClipboardTests.run() != 0 { failed += 1 }           // the clipboard history (its own PASS/FAIL lines; temp folders, fake Keychain)
     _ = NSApplication.shared
     AgentTests.pure(check)                                 // AI sessions: order, restore, liveness, URLs, focus plan, requests
+    RecoveryTest.selfChecks(check)
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }
@@ -7578,6 +7604,8 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-asset
     Assets.render(to: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)
 }
+// One Cocaine at a time (another may still be quitting, e.g. during an update): this one leaves without touching anything.
+guard Recovery.claimSingleInstance() else { exit(0) }
 let app = NSApplication.shared
 private let delegate = AppDelegate()
 app.delegate = delegate
