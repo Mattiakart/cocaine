@@ -381,6 +381,22 @@ enum RecoveryTest {
             reset()
         }
 
+        // 11. A damaged lease (disk trouble, a much newer version's): the HUD still comes back, and sleep is released through
+        //     the claim by the watchdog; at launch the frozen HUD is ended too.
+        do {
+            let s = standIn()
+            _ = eng("on")
+            put(support + "/recovery.json", "{\"owner\":", mode: 0o600)
+            check("damaged lease: the watchdog ends the frozen HUD and releases sleep (claim prior=0)",
+                  sh([bin, "--recover-after", "99999"]) == 0 && waitFor(3) { !alive(s) } && flag() == "0" && !FileManager.default.fileExists(atPath: support + "/recovery.json"))
+            reset()
+            let s2 = standIn()
+            put(support + "/recovery.json", "garbage", mode: 0o600)
+            let o = owner([])
+            check("damaged lease: the next launch ends the frozen HUD and starts a good lease", waitFor(3) { !alive(s2) } && lease()?.owner == o.processIdentifier)
+            reset()
+        }
+
         check("recovery-test: no test process left behind", watchdogs().isEmpty && !holdRunning())
         return failed == 0 ? 0 : 1
     }

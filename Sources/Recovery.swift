@@ -123,6 +123,9 @@ enum Recovery {
 
     static func removeLease() { unlink(leasePath) }
 
+    /// There, but not a lease this version can read (damaged, or written by a much newer one).
+    static func leaseDamaged() -> Bool { access(leasePath, F_OK) == 0 && readLease() == nil }
+
     // MARK: Processes
 
     static func startTime(_ pid: pid_t) -> Double? {
@@ -303,7 +306,9 @@ final class RecoverySession {
         let me = getpid()
         var adopted = false
         Recovery.locked {
-            if var stale = Recovery.readLease() {
+            if Recovery.leaseDamaged() {
+                Recovery.thawHUD()                   // what it said is unknown: at least the system HUD comes back (always safe)
+            } else if var stale = Recovery.readLease() {
                 switch Recovery.launchPlan(stale: stale, me: me, ownerAlive: Recovery.ownerAlive(stale)) {
                 case .recover(let u, let adopt):
                     Recovery.perform(u, on: &stale)
@@ -473,6 +478,15 @@ enum RecoveryCLI {
     /// unreadable).
     static func recoverAfter(_ pid: Int32) -> Int32 {
         Recovery.locked { () -> Int32 in
+            // Unreadable: whose it was is unknown. With no Cocaine running (its instance lock is free), undo the safe parts:
+            // the HUD, and sleep through the engine's claim (which only puts back what Cocaine itself changed).
+            if Recovery.leaseDamaged() {
+                guard Recovery.claimSingleInstance(wait: 0, runningApps: false) else { return 0 }
+                Recovery.thawHUD()
+                if Recovery.releaseSleep() == 4 { return 75 }
+                Recovery.removeLease()
+                return 0
+            }
             guard var l = Recovery.readLease() else { return 0 }
             switch Recovery.afterExit(lease: l, pid: pid, ownerAlive: Recovery.ownerAlive(l), now: Date().timeIntervalSince1970) {
             case .nothing: return 0
