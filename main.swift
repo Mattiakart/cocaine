@@ -584,6 +584,8 @@ private extension Settings {
     var scheduleStart: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleStart") as? Int ?? 540) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleStart") } }
     var scheduleEnd: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleEnd") as? Int ?? 1080) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleEnd") } }
     var triggerAll: Bool { get { flag("triggerAll", false) } nonmutating set { d.set(newValue, forKey: "triggerAll") } }
+    /// Cocaine is on because a Smart Trigger turned it on (kept across an update's or a crash's adopted session).
+    var triggerOwned: Bool { get { flag("triggerOwned", false) } nonmutating set { d.set(newValue, forKey: "triggerOwned") } }
     var schedule: TimeWindow { TimeWindow(days: Set(scheduleDays), start: scheduleStart, end: scheduleEnd) }
     /// "Dim the screen when idle" turns the displays off instead (the Mac keeps working).
     var screenOff: Bool { get { flag("screenOff", false) } nonmutating set { d.set(newValue, forKey: "screenOff") } }
@@ -650,6 +652,10 @@ private struct AutoOn {
         owned = false
         if !on && triggerActive { suppressed = true }
     }
+
+    /// A new instance took over a session a trigger had turned on (an update, a crash): it stays the trigger's, so it
+    /// ends when the trigger does (after the grace), instead of becoming an ON nobody turns off.
+    mutating func resume(now: Date) { owned = true; lastActive = now }
 }
 
 // AgentEntry and AgentBoard (what each AI session is doing) live in Sources/AgentSessions.swift.
@@ -5464,7 +5470,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var approvalAlerted: [String: Date] = [:]   // session → when the notch announced its request
     private var agentNoticeWork: DispatchWorkItem?
     private var batteryGuard = BatteryGuard()
-    private var autoOn = AutoOn()
+    private var autoOn = AutoOn() { didSet { if autoOn.owned != oldValue.owned { settings.triggerOwned = autoOn.owned } } }
     private var triggerActive = false
     private var arbiter = TriggerArbiter()
     private var triggerGrace: TimeInterval = 180
@@ -5484,6 +5490,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         // First: undo what a crashed session left (adopting its sleep), then start this session's lease and watchdog.
         let adopted = RecoverySession.shared.start(ownsSleep: !launchedForAlert)
         if adopted { log.notice("recovered a previous session; its sleep setting goes on") }
+        if adopted && settings.triggerOwned && System.cocaineOn { autoOn.resume(now: Date()) }    // still the trigger's ON
+        else if settings.triggerOwned { settings.triggerOwned = false }
         // A link that started us during an update's hand-over (or after a crash) must not end that session 6 s later.
         launchedForAlert = Recovery.alertOnly(launchedForAlert: launchedForAlert, adoptedSession: adopted)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -7246,6 +7254,14 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     check("battery: not re-armed by a small recovery", !g.check(percent: 22, onAC: false, threshold: 20) && !g.check(percent: 19, onAC: false, threshold: 20))
     check("battery: plugging in re-arms it", !g.check(percent: 19, onAC: true, threshold: 20) && g.check(percent: 19, onAC: false, threshold: 20))
     check("battery: never fires on power", { var x = BatteryGuard(); return !x.check(percent: 3, onAC: true, threshold: 30) }())
+    do {   // after an update or a crash the new instance adopts the session: a trigger's ON stays the trigger's
+        var fresh = AutoOn(), resumed = AutoOn(); let t = Date()
+        resumed.resume(now: t)
+        check("triggers: an adopted trigger ON ends with its trigger (after the grace); without it, it would stay on forever",
+              resumed.step(active: false, isOn: true, now: t.addingTimeInterval(60)) == .none
+              && resumed.step(active: false, isOn: true, now: t.addingTimeInterval(200)) == .turnOff
+              && fresh.step(active: false, isOn: true, now: t.addingTimeInterval(200)) == .none)
+    }
     var a = AutoOn(); let t0 = Date()
     check("trigger: nothing active, nothing to do", a.step(active: false, isOn: false, now: t0) == .none)
     check("trigger: active and off → turn on", a.step(active: true, isOn: false, now: t0) == .turnOn)
