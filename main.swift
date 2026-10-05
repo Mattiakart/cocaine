@@ -1366,7 +1366,14 @@ private final class PanelModel: ObservableObject {
     @Published var presenceAccess = Presence.hasAccess
     @Published var permissionProblems: [Permission] = []
     /// Cocaine is off but Stay active is working: the bag is full of pink powder.
-    var bagPink: Bool { !on && (stayActive || presenceActive) && fillLevel < 0.05 }        // Stay active is on, whether or not a chat app is open
+    /// The pink powder has its own fill, animated like the white one: it pours in when Cocaine is off and Stay active is on (whether
+    /// or not a chat app is open), and empties when either changes.
+    @Published var pinkLevel: CGFloat = 0
+    @Published var pinkPouring = false
+    var pinkTarget: CGFloat { (!on && (stayActive || presenceActive) && fillLevel < 0.05) ? 1 : 0 }
+    var bagPink: Bool { pinkLevel > 0.01 && fillLevel < 0.05 }
+    var bagLevel: CGFloat { bagPink ? pinkLevel : fillLevel }
+    var bagPouring: Bool { bagPink ? pinkPouring : pouring }
     @Published var presenceActive = false
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
     @Published var makingShortcut = false
@@ -2103,7 +2110,7 @@ private struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {                                // header and footer sit on the content edge
-            Image(nsImage: Baggie.imageOnDark(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, size: 28, pink: m.bagPink))
+            Image(nsImage: Baggie.imageOnDark(level: m.bagLevel, pouring: m.bagPouring, size: 28, pink: m.bagPink))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("Cocaine").font(.headline)
@@ -4763,7 +4770,7 @@ private struct IslandView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
                     .modifier(CellMorph(pose: s, kind: .highlight))
-                Image(nsImage: Self.bag(level: m.bagPink ? 1 : m.fillLevel, pouring: m.pouring, pink: m.bagPink)).frame(width: 20, height: 20)
+                Image(nsImage: Self.bag(level: m.bagLevel, pouring: m.bagPouring, pink: m.bagPink)).frame(width: 20, height: 20)
                     .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
                 if let f = model.flash {
                     Image(systemName: f.icon).foregroundStyle(Island.accent).modifier(CellMorph(pose: s, kind: .flashIcon))
@@ -5204,7 +5211,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.presenceChanged = { [weak self] in
             guard let self else { return }
-            self.setIconLevel(max(0, self.iconLevel), pouring: false)        // the bag turns pink (or back) with the switch
+            self.updatePink()                                                // the pink powder pours in (or out) with the switch
             self.autoAsked.remove(.accessibility)           // turning it on asks again, if it's still missing
             self.refreshPermissions(askMissing: true)
             if !self.model.permissionProblems.isEmpty { self.watchPermissions() }
@@ -5736,7 +5743,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshPermissions()                                    // (also starts the HUD keys once their permission is given)
         if want != model.presenceActive {
             model.presenceActive = want
-            setIconLevel(max(0, iconLevel), pouring: false)        // the menu-bar bag turns pink (or back)
+            updatePink()                                           // the pink powder follows
         }
         if want {
             if presenceAssertion == 0 {
@@ -6007,10 +6014,38 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setIconLevel(_ level: CGFloat, pouring: Bool) {
         iconLevel = level
-        let pink = model.bagPink
-        statusItem.button?.image = Baggie.image(level: pink ? 1 : level, pouring: pouring, pink: pink)
         model.fillLevel = level
         if model.pouring != pouring { model.pouring = pouring }
+        redrawStatusItem()
+        updatePink()
+    }
+
+    private var pinkTimer: Timer?
+    private var pinkHeading: CGFloat = -1
+
+    /// Animates the pink powder toward where it should be (full or empty), the way the white one fills and empties.
+    private func updatePink() {
+        let target = model.pinkTarget
+        guard target != pinkHeading else { return }
+        pinkHeading = target
+        pinkTimer?.invalidate()
+        let start = model.pinkLevel, filling = target > start, duration = filling ? 1.4 : 0.6, began = Date()
+        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            let f = min(1, CGFloat(Date().timeIntervalSince(began) / duration))
+            let eased = filling ? 1 - (1 - f) * (1 - f) : f * f                        // ease-out filling, ease-in emptying
+            self.model.pinkLevel = start + (target - start) * eased
+            let pouring = filling && f < 1
+            if self.model.pinkPouring != pouring { self.model.pinkPouring = pouring }
+            self.redrawStatusItem()
+            if f >= 1 { t.invalidate(); self.pinkTimer = nil }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        pinkTimer = t
+    }
+
+    private func redrawStatusItem() {
+        statusItem.button?.image = Baggie.image(level: model.bagLevel, pouring: model.bagPouring, pink: model.bagPink)
     }
 
     /// While Cocaine is on, make sure the script's display helper runs (it doesn't after a restart).
@@ -6496,11 +6531,12 @@ private enum IslandCheck {
         for state in ["off", "on", "pink"] {
             let pm = PanelModel()
             pm.persistLanguage = false
-            pm.on = state == "on"; pm.fillLevel = pm.on ? 1 : 0; pm.stayActive = state == "pink"        // Stay active alone, with no chat app open
+            pm.on = state == "on"; pm.fillLevel = pm.on ? 1 : 0; pm.stayActive = state == "pink"; pm.pinkLevel = state == "pink" ? 1 : 0        // Stay active alone, with no chat app open
             let im = IslandModel()
             im.pm = pm; im.geometry = g                 // renderProgress nil: the live path, driven by `open` alone
             let rep = render(im, pm, frame: closed)
             let bag = count(rep, bagBox, pointWidth: closed.width)
+            check("pink powder (\(state)): it heads for \(pm.pinkTarget)", pm.pinkTarget == (state == "pink" ? 1 : 0))
             check("island closed (\(state)): the bag is drawn left of the notch (\(bag.bright) px)", bag.bright > 20)
             if state == "off" { offBright = bag.bright }
             if state == "on" { check("island closed (on): the bag is full of powder (\(bag.bright) > \(offBright) px)", bag.bright > offBright) }
@@ -6546,7 +6582,8 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
                     AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90)]
     }
     pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
-    if args.contains("--presence") { pm.presenceActive = true }
+    if args.contains("--presence") { pm.presenceActive = true; pm.pinkLevel = 1 }
+    if let i = args.firstIndex(of: "--pink-level"), i + 1 < args.count, let v = Double(args[i + 1]) { pm.pinkLevel = CGFloat(v); pm.pinkPouring = v < 1 }        // a frame of the pink powder filling
     let im = IslandModel()
     im.pm = pm
     im.geometry = NotchGeometry(frame: .zero, notchWidth: 185, height: 32, centerX: 0, hasNotch: true)
@@ -6575,7 +6612,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
         let level = args.firstIndex(of: "--level").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
         im.flash = (level == nil ? "arrow.down.circle.fill" : "speaker.wave.2.fill", args[i + 1], level)
     }
-    if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true }        // Stay active alone: the pink bag
+    if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true; pm.pinkLevel = 1 }        // Stay active alone: the pink bag
     Island.forceExternal = args.contains("--external")
     if args.contains("--live-window") {
         // What the real window shows: the IslandView alone in a hosting view of the live window's size (closed: 465×38 on a
