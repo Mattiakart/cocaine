@@ -15,7 +15,7 @@ rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 for arch in arm64 x86_64; do                  # each slice is linked as "Cocaine" so logs show the real name
   mkdir -p "$BUILD/$arch"
-  swiftc -O -swift-version 5 -target $arch-apple-macos14.0 main.swift -o "$BUILD/$arch/Cocaine"
+  swiftc -O -swift-version 5 -target $arch-apple-macos14.0 main.swift $(ls Sources/*.swift 2>/dev/null) -o "$BUILD/$arch/Cocaine"
 done
 lipo -create "$BUILD/arm64/Cocaine" "$BUILD/x86_64/Cocaine" -output "$APP/Contents/MacOS/Cocaine"
 "$BUILD/$(uname -m)/Cocaine" --render-assets "$BUILD"

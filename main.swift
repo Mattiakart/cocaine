@@ -70,7 +70,20 @@ private enum Language {
         return locale.localizedString(forIdentifier: code)?.capitalized(with: locale) ?? code
     }
 
-    static func text(_ key: String) -> String { bundle.localizedString(forKey: key, value: nil, table: nil) }
+    /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
+    /// developed side by side without editing the same file.
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery"]
+
+    static func text(_ key: String) -> String {
+        let miss = "\u{0}missing"
+        let v = bundle.localizedString(forKey: key, value: miss, table: nil)
+        if v != miss { return v }
+        for t in extraTables {
+            let w = bundle.localizedString(forKey: key, value: miss, table: t)
+            if w != miss { return w }
+        }
+        return key
+    }
 }
 
 /// The app's version as shown in the panel (CFBundleShortVersionString).
@@ -193,7 +206,7 @@ private enum Authorization {
         let execute = unsafeBitCast(sym, to: AEWP.self)
         return authorize(prompt: prompt) { auth in
             // The command reports its own exit code on stdout, since AEWP doesn't hand back the child's status.
-            let args: [UnsafeMutablePointer<CChar>?] = [strdup("-c"), strdup(command + "; echo \"rc=$?\""), nil]
+            let args: [UnsafeMutablePointer<CChar>?] = [strdup("-c"), strdup(reporting(command)), nil]
             defer { args.forEach { free($0) } }
             var pipe: UnsafeMutablePointer<FILE>?
             let rc = args.withUnsafeBufferPointer { execute(auth, "/bin/sh", [], $0.baseAddress!, &pipe) }
@@ -202,8 +215,27 @@ private enum Authorization {
             var buffer = [CChar](repeating: 0, count: 256)
             while fgets(&buffer, 256, pipe) != nil { output += String(cString: buffer) }
             fclose(pipe)
-            return output.contains("rc=0")
+            return succeeded(output)
         }
+    }
+
+    /// Wraps `command` so its exit status is always reported: it runs in a subshell, because commands like the install
+    /// one end with `exit`, which would otherwise end the shell before the report line is printed.
+    static func reporting(_ command: String) -> String { "( \(command)\n); echo \"rc=$?\"" }
+
+    /// True only when the report line says the command exited 0; no report (cancelled, crashed, killed) is a failure.
+    static func succeeded(_ output: String) -> Bool {
+        guard let line = output.split(separator: "\n").last(where: { $0.hasPrefix("rc=") }) else { return false }
+        return line == "rc=0"
+    }
+
+    /// Runs `reporting(command)` in a plain shell (no privileges) and says whether it succeeded: self-test only.
+    static func runPlain(_ command: String) -> Bool {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/sh"); p.arguments = ["-c", reporting(command)]
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return false }
+        let data = out.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+        return succeeded(String(decoding: data, as: UTF8.self))
     }
 }
 
@@ -6370,6 +6402,24 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
     check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
           Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
+    do {   // the one-time authorization: how its outcome is read (the old code never saw the "rc=" line after `exit`)
+        let dir = NSTemporaryDirectory() + "cocaine-auth-\(getpid())"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let dest = dir + "/rule"
+        let cmd = Authorization.installCommand(user: NSUserName(), dest: dest, asRoot: false)!
+        check("auth: the install command ends with exit (the case the old report missed)", cmd.hasSuffix("exit $r"))
+        check("auth: a successful install is reported as success", Authorization.runPlain(cmd) && FileManager.default.fileExists(atPath: dest))
+        check("auth: a failing install is reported as failure", !Authorization.runPlain("exit 3"))
+        check("auth: a failure inside the install (bad destination) is reported as failure",
+              !Authorization.runPlain(Authorization.installCommand(user: NSUserName(), dest: dir + "/no/such/dir/rule", asRoot: false)!))
+        check("auth: no report line (cancelled, killed) is a failure", !Authorization.succeeded("") && !Authorization.succeeded("garbage\n"))
+        check("auth: only rc=0 is success", Authorization.succeeded("rc=0\n") && !Authorization.succeeded("rc=1\n") && !Authorization.succeeded("rc=10\n"))
+        check("auth: noise before the report is ignored", Authorization.succeeded("warning\nrc=0\n"))
+        try? FileManager.default.removeItem(atPath: dest)
+        check("auth: retry after a failure works", Authorization.runPlain(cmd) && FileManager.default.fileExists(atPath: dest))
+        check("auth: a user name with shell characters is refused", Authorization.installCommand(user: "a; rm -rf /") == nil)
+    }
     check("wake: sleep/wake notifications can be registered", SleepWatcher().start())
     check("relay: a message event is read", PhoneListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
     check("relay: keepalives and open events are ignored", PhoneListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
