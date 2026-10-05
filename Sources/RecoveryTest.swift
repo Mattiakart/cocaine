@@ -33,6 +33,9 @@ enum RecoveryTest {
         check("recovery: quit releases sleep", Recovery.quitPlan(lease: l, now: now) == .release)
         check("recovery: quit during an update hand-over keeps sleep", Recovery.quitPlan(lease: h, now: now) == .keepForHandover)
         check("recovery: an alert-only session's quit doesn't touch sleep", { var a = l; a.ownsSleep = false; return Recovery.quitPlan(lease: a, now: now) == .drop }())
+        check("recovery: of two instances the earlier one stays, exactly one",
+              Recovery.startedFirst(10, 5, than: 20, 6) && !Recovery.startedFirst(20, 6, than: 10, 5)
+              && Recovery.startedFirst(10, 5, than: 20, 5) != Recovery.startedFirst(20, 5, than: 10, 5) && !Recovery.startedFirst(10, nil, than: 20, 6))
         check("recovery: brightness still dimmed is restored", Recovery.shouldRestoreBrightness(current: 0.2, from: 0.8, to: 0.2))
         check("recovery: brightness mid-fade is restored", Recovery.shouldRestoreBrightness(current: 0.5, from: 0.8, to: 0.2))
         check("recovery: brightness the user raised is kept", !Recovery.shouldRestoreBrightness(current: 0.9, from: 0.8, to: 0.2))

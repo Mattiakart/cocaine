@@ -6669,6 +6669,9 @@ private func powerSelfTest(_ check: (String, Bool) -> Void) {
 if let code = RecoveryCLI.run(CommandLine.arguments) { exit(code) }   // --recover-after, --prepare-update, … (Sources/Recovery.swift)
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--recovery-test" { exit(RecoveryTest.run()) }
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--recovery-owner" { RecoveryTest.owner(Array(CommandLine.arguments.dropFirst(2))) }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--instance-check" {   // would a launch now give way? 1 = yes
+    exit(Recovery.claimSingleInstance(wait: 1) ? 0 : 1)
+}
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--recovery-standin" { while true { sleep(600) } }   // the test's OSDUIHelper
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftest" {
     // Runs the exact install pipeline (AppleScript quoting, printf, visudo, install) without admin rights,

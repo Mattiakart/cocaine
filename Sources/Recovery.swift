@@ -244,6 +244,12 @@ enum Recovery {
     /// One Cocaine at a time: two would each freeze the HUD, dim and fight over the switch. Holds instance.lock for the
     /// app's life (the kernel drops it on any exit). Another instance may be quitting (an update): wait up to `wait` s.
     /// `runningApps` also waits for an older Cocaine (no lock) launched before us.
+    /// Of two instances, the one that started first stays (same start time: the lower pid), so exactly one survives.
+    static func startedFirst(_ pid: pid_t, _ start: Double?, than me: pid_t, _ myStart: Double) -> Bool {
+        guard let start else { return false }                    // already gone
+        return start < myStart || (start == myStart && pid < me)
+    }
+
     static func claimSingleInstance(wait: Double = 10, runningApps: Bool = true) -> Bool {
         ensureDirectory()
         let deadline = Date().addingTimeInterval(wait)
@@ -256,12 +262,12 @@ enum Recovery {
             instanceFD = fd
         }
         guard runningApps, let id = Bundle.main.bundleIdentifier else { return true }
-        let me = NSRunningApplication.current
+        // Not NSRunningApplication.current: before NSApplication starts it reports pid -1 and no launch date.
+        let me = getpid(), myStart = startTime(me) ?? Date().timeIntervalSince1970
         func older() -> Bool {
             NSRunningApplication.runningApplications(withBundleIdentifier: id).contains { a in
-                guard a.processIdentifier != me.processIdentifier, !a.isTerminated, a.activationPolicy != .prohibited else { return false }
-                guard let theirs = a.launchDate, let mine = me.launchDate else { return a.processIdentifier < me.processIdentifier }
-                return theirs < mine || (theirs == mine && a.processIdentifier < me.processIdentifier)
+                guard a.processIdentifier != me, !a.isTerminated, a.activationPolicy != .prohibited else { return false }
+                return startedFirst(a.processIdentifier, startTime(a.processIdentifier), than: me, myStart)
             }
         }
         while older() {
