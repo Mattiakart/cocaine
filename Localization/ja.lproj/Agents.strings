@@ -1,0 +1,24 @@
+/* Cocaine — ja: AI sessions (going back to them, requests answered from the notch) */
+
+"Go to this session" = "このセッションへ移動";
+"Answer from the notch" = "ノッチから応答";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code と Codex：リクエストを許可・拒否（または MCP の質問に回答）をノッチから行えます。勝手に許可されることはありません：2 分以内に応答がなければ、いつもどおりターミナルが尋ねます。";
+"asks you a question" = "が質問しています";
+"needs your approval" = "が承認を求めています";
+"That request was no longer waiting: answer it in the terminal." = "そのリクエストはもう待機していません：ターミナルで応答してください。";
+"That request had expired: the terminal asks for it now." = "そのリクエストは期限切れでした：今はターミナルが尋ねます。";
+"Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine はこのセッションの実行場所を知りません（古いフック、またはスクリプト）：ターミナルで探してください。";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "%@ でプロジェクトを開きました（そのターミナルパネルは外部から選択できません）。";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "%@ を前面に表示しました。正確なタブを選択するには、プライバシーとセキュリティ → オートメーションで Cocaine に %@ の制御を許可してください。";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ を前面に表示しましたが、正確なタブではありません（閉じられたか、%@ は外部から操作できません）。";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ はもう開いていません：セッションのフォルダを Finder で開きました。";
+"The app this session ran in isn't open, and its folder is gone." = "このセッションが実行されていたアプリは開いておらず、フォルダもありません。";
+"From before Cocaine restarted: not heard from since" = "Cocaine の再起動前のもの：それ以降の情報なし";
+"Deny" = "拒否";
+"Decline" = "辞退";
+"Yes" = "はい";
+"No" = "いいえ";
+"%@ asks" = "%@ の質問";
+"Wants to use %@" = "%@ を使おうとしています";
+"In the terminal" = "ターミナルで";
+"Hands the request back to the terminal and goes there" = "リクエストをターミナルに戻して移動します";

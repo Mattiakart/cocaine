@@ -91,6 +91,8 @@ private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShort
 
 /// UI text in the current language (Localization/*.lproj).
 private func L(_ key: String) -> String { Language.text(key) }
+/// L() for Sources/Agent*.swift (L itself is private to this file).
+func agentsL(_ key: String) -> String { L(key) }
 
 @discardableResult
 private func run(_ path: String, _ args: [String]) -> Int32 {
@@ -479,6 +481,8 @@ private struct AlertRecord: Codable, Identifiable, Equatable {
     let message: String
     let project: String?
     let at: Date
+    var session: String? = nil          // the board's key and where it ran: a click goes back there
+    var origin: AgentOrigin? = nil
     var id: Date { at }
 }
 
@@ -599,6 +603,8 @@ private extension Settings {
         return t
     }
     var alertError: Bool { get { flag("alertError", true) } nonmutating set { d.set(newValue, forKey: "alertError") } }
+    /// Claude Code's and Codex's requests can be answered from the notch (off: they're only shown, the terminal asks).
+    var agentApprovals: Bool { get { flag("agentApprovals", false) } nonmutating set { d.set(newValue, forKey: "agentApprovals") } }
     /// Phone alerts: a Shortcut to run (given the alert text) and/or an ntfy topic URL. Set with `cocaine remote notify`.
     var phoneShortcut: String { d.string(forKey: "phoneShortcut") ?? "" }
     var phoneNtfy: String { d.string(forKey: "phoneNtfy") ?? "" }
@@ -644,53 +650,7 @@ private struct AutoOn {
     }
 }
 
-/// What the hooks say each AI session is doing: working, waiting for you, done, or failed. Written to a file the
-/// `cocaine remote status` command reads.
-private struct AgentEntry: Codable, Identifiable, Equatable {
-    var id: String
-    var from: String
-    var project: String?
-    var state: String            // working | waiting | done | error
-    var since: Double
-    var isLive: Bool { state == "working" || state == "waiting" }
-}
-
-private final class AgentBoard {
-    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Cocaine", isDirectory: true)
-    static let file = directory.appendingPathComponent("state.json")
-    private(set) var entries: [AgentEntry] = []
-
-    /// Records a session's new state (its time restarts only when the state changes).
-    func set(_ id: String, from: String, project: String?, state: String, now: Date = Date()) {
-        if let i = entries.firstIndex(where: { $0.id == id }) {
-            if entries[i].state != state { entries[i].since = now.timeIntervalSince1970 }
-            entries[i].state = state; entries[i].from = from; entries[i].project = project
-        } else {
-            entries.append(AgentEntry(id: id, from: from, project: project, state: state, since: now.timeIntervalSince1970))
-        }
-        prune(now)
-    }
-
-    /// Finished and failed ones fade after 30 minutes; a "working" nobody has updated for 2 hours is stale.
-    func prune(_ now: Date = Date()) {
-        let t = now.timeIntervalSince1970
-        entries.removeAll { t - $0.since > 6 * 3600 || (!$0.isLive && t - $0.since > 1800) || ($0.state == "working" && t - $0.since > 7200) }
-        entries.sort { $0.since > $1.since }
-    }
-
-    /// Something is working or waiting for the user.
-    func anyLive(_ now: Date = Date()) -> Bool { entries.contains { $0.isLive && now.timeIntervalSince1970 - $0.since < 7200 } }
-
-    func write(cocaineOn: Bool, until: Date?) {
-        struct Snapshot: Codable { var updated: Double; var cocaine: String; var until: Double?; var agents: [AgentEntry] }
-        let snap = Snapshot(updated: Date().timeIntervalSince1970, cocaine: cocaineOn ? "ON" : "OFF",
-                            until: until?.timeIntervalSince1970, agents: entries)
-        try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true,
-                                                 attributes: [.posixPermissions: 0o700])
-        if let data = try? JSONEncoder().encode(snap) { try? data.write(to: Self.file, options: .atomic) }
-    }
-}
+// AgentEntry and AgentBoard (what each AI session is doing) live in Sources/AgentSessions.swift.
 
 private extension System {
     /// Charge and power source of the internal battery; nil on a Mac without one.
@@ -1436,7 +1396,13 @@ private final class PanelModel: ObservableObject {
     var bagLevel: CGFloat { bagPink ? pinkLevel : fillLevel }
     var bagPouring: Bool { bagPink ? pinkPouring : pouring }
     @Published var presenceActive = false
-    @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks
+    @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks (waiting for you first)
+    @Published var approvals: [ApprovalRequest] = [] // requests waiting for an answer from the notch
+    @Published var agentNotice: String?              // what a click on a session could (and couldn't) do
+    @Published var agentApprovals: Bool { didSet { settings.agentApprovals = agentApprovals } }
+    var focusAgent: (_ origin: AgentOrigin?, _ name: String) -> Void = { _, _ in }
+    var answerApproval: (_ id: String, _ choice: Int) -> Void = { _, _ in }
+    var releaseApproval: (_ id: String) -> Void = { _ in }
     @Published var makingShortcut = false
     @Published var phoneCount = 0                    // iPhones paired for remote control
     @Published var phoneLinkUp = false               // at least one is connected to the relay
@@ -1499,6 +1465,7 @@ private final class PanelModel: ObservableObject {
         alertSpeak = settings.alertSpeak
         alertVoice = settings.alertVoice
         alertPerSession = settings.alertPerSession
+        agentApprovals = settings.agentApprovals
         alertWhenPresent = settings.alertWhenPresent
         alertRepeatMinutes = settings.alertRepeatMinutes
         alertDuration = settings.alertDuration
@@ -1875,13 +1842,10 @@ private struct PanelView: View {
 
     /// Who is doing what: the AI sessions at work, or, when none is, the latest alerts.
     @ViewBuilder private var activityCard: some View {
-        let now = Date().timeIntervalSince1970
-        let shown = Array(m.board.filter { $0.isLive || now - $0.since < 600 }.prefix(4))
-        if !shown.isEmpty {
-            card("sparkles", L("Agents")) {
-                ForEach(shown) { e in
-                    activityRow(Self.stateIcon(e.state), Self.stateColor(e.state), e.from, Self.stateName(e.state), e.project, Self.age(e.since))
-                }
+        if !m.board.isEmpty || !m.approvals.isEmpty || m.agentNotice != nil {
+            card("sparkles", L("Agents")) {             // all of them, those that need you first; a click goes to the session
+                AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: false, accent: Island.accent,
+                              warning: warningColor, maxHeight: 260, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
             }
         } else if m.ai.available {
             card("bell", L("Recent alerts"), trailing: {
@@ -1890,8 +1854,11 @@ private struct PanelView: View {
                 if m.history.isEmpty {
                     Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(.tertiary)
                 } else {
-                    ForEach(m.history.prefix(3)) { r in
-                        activityRow("bell.fill", Color.secondary, r.from, r.message, r.project, Self.time.string(from: r.at))
+                    ForEach(m.history.prefix(3)) { r in         // a click goes back to the session that sent it
+                        Button { m.focusAgent(r.origin, r.from) } label: {
+                            activityRow("bell.fill", Color.secondary, r.from, r.message, r.project, Self.time.string(from: r.at)).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).help(L("Go to this session"))
                     }
                 }
             }
@@ -2063,6 +2030,10 @@ private struct PanelView: View {
                 row(L("One alert per session"),
                     tip: L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
                     toggle(L("One alert per session"), $m.alertPerSession)
+                }
+                row(L("Answer from the notch"),
+                    tip: L("Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.")) {
+                    toggle(L("Answer from the notch"), $m.agentApprovals)
                 }
                 row(L("Pause"), tip: L("Silences every alert for a while")) {
                     Menu {
@@ -2286,22 +2257,6 @@ private struct PanelView: View {
     }
 
     // MARK: The panel
-
-    private static func stateIcon(_ s: String) -> String {
-        ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
-    }
-    private static func stateColor(_ s: String) -> Color {
-        s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Island.accent
-    }
-    private static func stateName(_ s: String) -> String {
-        ["working": L("Working"), "waiting": L("Needs you"), "done": L("Done"), "error": L("Error")][s] ?? s
-    }
-    private static func age(_ since: Double) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .abbreviated
-        f.locale = Locale(identifier: Language.chosen ?? Language.system)
-        return Date().timeIntervalSince1970 - since < 45 ? L("now") : f.localizedString(for: Date(timeIntervalSince1970: since), relativeTo: Date())
-    }
 
     private func tabTitle(_ id: String) -> String { id == "ai" ? L("AI alerts") : id == "auto" ? L("Automation") : L("General") }
 
@@ -2681,17 +2636,27 @@ private enum AIHooks {
         var top: [JSONValue.Member] = []                  // top-level keys the file must have (Cursor's "version": 1)
         var contents: ((Tool) -> String)? = nil           // .ownFile: the whole file
         var skipIf: String? = nil                         // an env variable set by another tool that runs these hooks too
-        var activeEvents: [Event] { events.filter { $0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true } }
+        var activeEvents: [Event] {
+            events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true) && ($0.kind != "approve" || id == "codex" || AIHooks.binary != nil) }
+        }
         var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
     }
 
     static var home = NSHomeDirectory()                   // `--ai-alerts … --home <dir>` works on a copy
+    /// This app's executable, which approval hooks run (`--agent-request`): only from an installed copy (Applications), not a
+    /// build folder or a translocated download, whose path won't be there later. COCAINE_HOOK_BINARY sets it, for tests.
+    static var binary: String? = {
+        if let b = ProcessInfo.processInfo.environment["COCAINE_HOOK_BINARY"], b.hasPrefix("/") { return b }
+        guard let b = Bundle.main.executablePath, b.hasSuffix(".app/Contents/MacOS/Cocaine"), !b.contains("/AppTranslocation/"),
+              b.hasPrefix("/Applications/") || b.hasPrefix(NSHomeDirectory() + "/Applications/") else { return nil }
+        return b
+    }()
     static let marker = "cocaine://alert"
 
     /// `{"type": "command", "command": …, "timeout": …}`: Claude Code, Codex and Qwen Code (seconds).
     private static func typed(timeout: String) -> (String, String) -> [JSONValue.Member] {
-        { command, _ in [.init(key: "type", value: .string("command")), .init(key: "command", value: .string(command)),
-                         .init(key: "timeout", value: .scalar(timeout))] }
+        { command, kind in [.init(key: "type", value: .string("command")), .init(key: "command", value: .string(command)),
+                            .init(key: "timeout", value: .scalar(kind == "approve" && AIHooks.binary != nil ? ApprovalTiming.config : timeout))] }
     }
 
     /// The supported tools, most used first. Formats from each tool's hooks reference (checked September 2026).
@@ -2701,10 +2666,13 @@ private enum AIHooks {
                        .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
                        .init(name: "UserPromptSubmit", kind: "start"),
-                       .init(name: "StopFailure", kind: "error", minVersion: [2, 1, 78])],
+                       .init(name: "StopFailure", kind: "error", minVersion: [2, 1, 78]),
+                       // Answered from the notch when the user wants it (the app hands them straight back otherwise).
+                       .init(name: "PermissionRequest", kind: "approve", minVersion: [2, 0, 45]),
+                       .init(name: "Elicitation", kind: "approve", minVersion: [2, 1, 78])],
               skipIf: "CURSOR_VERSION"),               // Cursor runs Claude Code's hooks as well; it has its own below
          Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
-              events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "input"),
+              events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "approve"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
                        .init(name: "UserPromptSubmit", kind: "start")]),
          Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
@@ -2735,6 +2703,7 @@ private enum AIHooks {
     }
     /// Claude Code's version, asked once (a login shell finds it like Terminal does); nil if it can't be read.
     private static var claudeVersionCache: [Int]??
+    static func assumeClaudeVersion(_ v: [Int]?) { claudeVersionCache = .some(v) }   // tests: not the Mac's own Claude Code
     static func claudeVersion(atLeast need: [Int]) -> Bool {
         if claudeVersionCache == nil {
             let p = Process()
@@ -2815,8 +2784,17 @@ private enum AIHooks {
         // empty when the tool sends no such list; gives up after 2 s if a tool never closes stdin.
         let info = #"$(/usr/bin/perl -MJSON::PP -e 'alarm 2; local $/; my $j = eval { decode_json(<STDIN> // "") } || {}; my $s = $j->{session_id} // $j->{sessionId} // $j->{conversation_id} // $j->{conversationId} // $j->{trajectory_id} // ""; $s =~ s/[^A-Za-z0-9._:-]//g; my $n; for my $k ("background_tasks", "session_crons") { $n += @{$j->{$k}} if ref $j->{$k} eq "ARRAY" } print "$s ", $n // ""' 2>/dev/null)"#
         let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
+        // A request that can be answered from the notch: this app's binary sends it over the socket and prints the answer
+        // (or nothing). The comment carries the marker that tells Cocaine's hooks apart.
+        if kind == "approve" {
+            guard let bin = binary else { return command(tool, "input") }
+            return skip + "'" + bin.replacingOccurrences(of: "'", with: "'\\''") + "' --agent-request \(tool.id) 2>/dev/null; true # \(marker)"
+        }
+        // Where the session runs, for going back to it: the agent's pid (the hook's parent; the app finds its terminal and
+        // app from it), its folder, and what the terminal puts in the environment (app, tab/session ids, tmux, WezTerm).
+        let origin = #"$(/usr/bin/perl -e 'sub e { my $v = shift // ""; $v =~ s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge; $v } my $pp = shift // ""; $pp = "" unless $pp =~ /^[0-9]+$/; my %q = (pid => $pp, cwd => $ENV{PWD}, app => $ENV{__CFBundleIdentifier}, term => $ENV{TERM_PROGRAM}, tsid => $ENV{ITERM_SESSION_ID} // $ENV{TERM_SESSION_ID}, tmux => $ENV{TMUX_PANE}, tmuxs => (split /,/, $ENV{TMUX} // "")[0], wez => $ENV{WEZTERM_PANE}); print map { defined $q{$_} && length $q{$_} ? "&$_=" . e($q{$_}) : "" } sort keys %q' "$PPID" 2>/dev/null)"#
         return skip + "pgrep -qx Cocaine && { j=\(info); open -g \"cocaine://alert?from=\(from)&event=\(kind)"
-            + "&session=${j% *}&running=${j#* }&project=\(project)\"; }; true"
+            + "&session=${j% *}&running=${j#* }&project=\(project)\(origin)\"; }; true"
     }
 
     /// What goes in an event's list: a group holding our handler (with the event's matcher), or the handler itself.
@@ -4857,6 +4835,7 @@ private final class IslandModel: ObservableObject {
     var rightActive: Bool {
         flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.stayActive ?? false) || (pm?.presenceActive ?? false)
             || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
+            || !(pm?.approvals.isEmpty ?? true)
     }
     var leftW: CGFloat { flash != nil ? 130 : Island.wing }
     var rightW: CGFloat { rightActive ? (flash != nil ? 130 : Island.wing) : 0 }
@@ -5097,7 +5076,7 @@ private struct IslandView: View {
     fileprivate var files: FileShelf { model.files }
     fileprivate var clipboard: ClipboardHistory { model.clipboard }
     fileprivate var calendar: CalendarWatch { model.calendar }
-    private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
+    private var waiting: Bool { !m.approvals.isEmpty || m.board.contains(where: \.needsYou) }
     private var working: Bool { m.board.contains { $0.state == "working" } }
 
     /// Closed and open are one view: a single progress (0 closed … 1 open, sprung) drives the outline, its clip and every icon,
@@ -5216,7 +5195,7 @@ private struct IslandView: View {
             }
         }
         else if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
-        else if waiting != nil { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
+        else if waiting { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
         else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
         else if working { ProgressView().controlSize(.mini).tint(.white) }
         else if model.music.playing { Visualizer(playing: true) }
@@ -5307,32 +5286,23 @@ private struct IslandView: View {
             }
             .frame(width: 250)
             VStack(alignment: .leading, spacing: 8) {
-                let shown = Array(m.board.filter { $0.isLive || Date().timeIntervalSince1970 - $0.since < 600 }.prefix(3))
-                Text(L("Agents")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
-                if shown.isEmpty {
-                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
-                } else {
-                    ForEach(shown) { e in
-                        HStack(spacing: 9) {
-                            Image(systemName: Self.icon(e.state)).font(.system(size: 12, weight: .medium)).foregroundStyle(Self.color(e.state)).frame(width: 16)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(e.from).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Text([Self.name(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                        }
+                HStack {
+                    Text(L("Agents")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                    if m.board.count + m.approvals.count > 3 {
+                        Text("\(m.board.count)").font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                     }
+                }
+                if m.board.isEmpty && m.approvals.isEmpty && m.agentNotice == nil {
+                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                } else {                                    // all of them, scrolling; those that need you first
+                    AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: true, accent: Island.accent,
+                                  warning: warningColor, maxHeight: .infinity, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
                 }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-
-    private static func icon(_ s: String) -> String { ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle" }
-    private static func color(_ s: String) -> Color { s == "error" || s == "waiting" ? warningColor : s == "done" ? .green : Island.accent }
-    private static func name(_ s: String) -> String { ["working": L("Working"), "waiting": L("Needs you"), "done": L("Done"), "error": L("Error")][s] ?? s }
 
     // MARK: focus
 
@@ -5574,7 +5544,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var autoAsked = Set<Permission>()
     private var presenceAssertion: IOPMAssertionID = 0
     private var lastOnAC: Bool?
-    private let board = AgentBoard()                 // what each AI session is doing, from the hooks
+    /// What each AI session is doing, from the hooks; what it held before a restart comes back first (also in an instance
+    /// started just for an alert, which used to overwrite the saved board with that one alert).
+    private lazy var board: AgentBoard = { let b = AgentBoard(); b.restore(); return b }()
+    private var alertDedup = AlertDeduper()
+    private var approvalServer: ApprovalServer?
+    private var approvals = ApprovalStore()
+    private var approvalAlerted: [String: Date] = [:]   // session → when the notch announced its request
+    private var agentNoticeWork: DispatchWorkItem?
     private var batteryGuard = BatteryGuard()
     private var autoOn = AutoOn()
     private var triggerActive = false
@@ -5695,6 +5672,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.testPhone = { Phone.send(L("This is a test")) }
         syncPhones()
         model.quit = { NSApp.terminate(nil) }
+        model.focusAgent = { [weak self] origin, name in self?.goToSession(origin, name) }
+        model.answerApproval = { [weak self] id, choice in self?.answerApproval(id, choice) }
+        model.releaseApproval = { [weak self] id in self?.releaseApproval(id) }
+        model.board = board.entries                      // restored from before a restart
         model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
         hostView = PanelHostingView(rootView: PanelView(m: model))
         hostView.sizingOptions = [.intrinsicContentSize]
@@ -5732,6 +5713,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Opening the app turns Cocaine on; a link that started it decides by itself (cocaine://off must not turn it on first).
         if !System.cocaineOn && pendingCommands.isEmpty { toggleCocaine() }
+        startApprovals()                             // not in an instance started just for an alert: it quits in 6 s
         pendingCommands.forEach(command)             // then whatever was asked for while it started
         pendingCommands = []
         DispatchQueue.global().async {
@@ -5754,55 +5736,57 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 continue
             }
             if !didFinishLaunching { launchedForAlert = !pendingNeedsApp }
-            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            // Anything can open a cocaine:// URL: keep values short and free of control characters.
-            func value(_ name: String) -> String? {
-                items.first { $0.name == name }?.value.flatMap { raw in
-                    let cleaned = String(String.UnicodeScalarView(raw.unicodeScalars.map { $0.value < 32 || $0.value == 127 ? " " : $0 }))
-                    let clean = String(cleaned.prefix(name == "message" ? 200 : 80)).trimmingCharacters(in: .whitespaces)
-                    return clean.isEmpty ? nil : clean
-                }
+            // Anything can open a cocaine:// URL: AlertParams keeps values short, free of control characters, well-formed.
+            let p = AlertParams.parse(url)
+            let trusted = p.token == settings.testToken                         // only the app's own tools know it
+            let from = p.from, project = p.project, event = p.event
+            let session = p.sessionKey                                          // tools that don't say: one per AI and folder
+            if trusted && p.test == "phone" { Phone.send(p.message ?? L("This is a test")); continue }
+            let isTest = trusted && p.test != nil
+            // A tool that fires the same hook twice (or a URL opened twice) makes one alert, not two.
+            if !isTest, ["done", "input", "error"].contains(event), alertDedup.isDuplicate("\(session)|\(event)") {
+                log.notice("duplicate \(event, privacy: .public) for \(session, privacy: .public): ignored")
+                continue
             }
-            let trusted = value("token") == settings.testToken                  // only the app's own tools know it
-            let from = value("from") ?? "Cocaine"
-            let project = value("project").flatMap { $0 == "/" || $0 == NSUserName() ? nil : $0 }   // not a real project
-            let session = value("session") ?? "\(from)|\(project ?? "")"   // tools that don't say: one per AI and folder
-            let event = value("event") ?? "done"
-            if trusted && value("test") == "phone" { Phone.send(value("message") ?? L("This is a test")); continue }
-            if let running = value("running").flatMap(Int.init) {    // the tool's own list of work still in flight
+            let origin: AgentOrigin? = p.origin.isEmpty ? nil : AgentProcess.complete(p.origin)
+            if let running = p.running {                                        // the tool's own list of work still in flight
                 var s = sessions[session] ?? SessionState()
                 s.inFlight = running
                 sessions[session] = s
             }
-            let isTest = trusted && value("test") != nil
             if event == "error" {                                    // an agent stopped with an error
-                if !isTest { boardSet(session, from, project, "error") }
-                if settings.alertError { alert(Notice(from: from, message: value("message") ?? L("stopped with an error"), project: project),
-                                                away: trusted && value("test") == "away" ? true : nil) }
+                if !isTest { boardSet(session, from, project, "error", origin) }
+                if settings.alertError { alert(Notice(from: from, message: p.message ?? L("stopped with an error"), project: project, session: session, origin: origin),
+                                                away: trusted && p.test == "away" ? true : nil) }
                 continue
             }
             if event != "done" && event != "input" {                 // silent signs of life: prompts, agents and tasks
-                if !isTest, ["start", "agentstart", "taskstart"].contains(event) { boardSet(session, from, project, "working") }
+                if !isTest, ["start", "agentstart", "taskstart"].contains(event) { boardSet(session, from, project, "working", origin) }
                 activity(session, event)
                 continue
             }
             let input = event == "input"
-            if value("message") == nil && !(input ? settings.alertInput : settings.alertDone) {   // alerts of this kind are off
-                if !isTest { boardSet(session, from, project, input ? "waiting" : "done") }
+            if p.message == nil && !(input ? settings.alertInput : settings.alertDone) {   // alerts of this kind are off
+                if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
                 continue
             }
-            let message = value("message") ?? (input ? L("needs your input") : L("has finished"))
-            let notice = Notice(from: from, message: message, project: project)
-            if value("message") == nil && !input && settings.alertPerSession && !isTest {
-                boardSet(session, from, project, "working")        // still counts as at work until it stays quiet
+            // Claude Code's own "needs you" after a request the notch already announced (handed back, or expired): one alert.
+            if input && p.message == nil && !isTest, let t = approvalAlerted[session], Date().timeIntervalSince(t) < 300 {
+                boardSet(session, from, project, "waiting", origin)
+                continue
+            }
+            let message = p.message ?? (input ? L("needs your input") : L("has finished"))
+            let notice = Notice(from: from, message: message, project: project, session: session, origin: origin)
+            if p.message == nil && !input && settings.alertPerSession && !isTest {
+                boardSet(session, from, project, "working", origin)  // still counts as at work until it stays quiet
                 holdUntilQuiet(session, notice)                    // one alert when the whole session is done
                 continue
             }
-            if !isTest { boardSet(session, from, project, input ? "waiting" : "done") }
+            if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
             if input, var s = sessions[session] {                 // it needs you now; "done" will come again later
                 s.timer?.cancel(); s.notice = nil; sessions[session] = s
             }
-            alert(notice, away: trusted && value("test") == "away" ? true : nil)
+            alert(notice, away: trusted && p.test == "away" ? true : nil)
         }
     }
 
@@ -5874,9 +5858,132 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String) {
-        board.set(session, from: from, project: project, state: state)
+    private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String, _ origin: AgentOrigin? = nil) {
+        board.set(session, from: from, project: project, state: state, origin: origin)
         writeBoard()
+    }
+
+    // MARK: Requests answered from the notch (Sources/AgentApprovals.swift)
+
+    private func startApprovals() {
+        let dir = AgentPaths.support()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        guard let key = ApprovalKey.loadOrCreate(AgentPaths.key(dir)) else { log.error("approvals: no key"); return }
+        let server = ApprovalServer(path: AgentPaths.socket(dir), key: key)
+        server.onRequest = { [weak self] id, nonce, tool, input, origin in self?.approvalArrived(id, nonce, tool, input, origin) }
+        server.onGone = { [weak self] id in
+            guard let self else { return }
+            self.approvals.gone(id, now: Date())
+            self.publishApprovals()
+        }
+        do { try server.start(); approvalServer = server }
+        catch { log.error("approvals: socket not started: \(String(describing: error), privacy: .public)") }   // hooks fall back to the terminal
+    }
+
+    private func approvalArrived(_ id: String, _ nonce: String, _ tool: String, _ input: [String: Any], _ origin: AgentOrigin) {
+        guard let server = approvalServer else { return }
+        guard var r = ApprovalRequest.make(id: id, nonce: nonce, tool: tool, input: input, origin: AgentProcess.complete(origin), now: Date()) else {
+            server.reply(id, decision: "none", content: nil)
+            return
+        }
+        let session = r.session ?? "\(r.from)|\(r.project ?? "")"
+        r.session = session
+        boardSet(session, r.from, r.project, "waiting", r.origin)
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard ApprovalPolicy.hold(enabled: settings.agentApprovals, answerable: r.answerable, origin: r.origin, frontmost: front,
+                                  idleSeconds: System.idleSeconds), approvals.add(r) else {
+            server.reply(id, decision: "none", content: nil)     // the terminal asks; Claude Code's Notification hook alerts then
+            if r.tool == "codex" { approvalAlert(r) }           // Codex has no other "needs you" hook
+            return
+        }
+        log.notice("approval \(id, privacy: .public) from \(r.from, privacy: .public): held for the notch")
+        publishApprovals()
+        approvalAlert(r)
+        DispatchQueue.main.asyncAfter(deadline: .now() + ApprovalTiming.app + 0.5) { [weak self] in self?.expireApprovals() }
+    }
+
+    private func approvalAlert(_ r: ApprovalRequest) {
+        approvalAlerted = approvalAlerted.filter { Date().timeIntervalSince($0.value) < 600 }
+        approvalAlerted[r.session ?? ""] = Date()
+        guard settings.alertInput else { return }
+        alert(Notice(from: r.from, message: r.event == "Elicitation" ? L("asks you a question") : L("needs your approval"), project: r.project,
+                     session: r.session, origin: r.origin))
+    }
+
+    private func expireApprovals() {
+        for id in approvals.expire(now: Date()) { approvalServer?.reply(id, decision: "none", content: nil) }   // the terminal asks now
+        publishApprovals()
+    }
+
+    private func publishApprovals() {
+        let now = Date()
+        model.approvals = approvals.pending.filter { $0.deadline > now }
+    }
+
+    /// A click on one of a request's buttons. The first click wins; a late or repeated one changes nothing.
+    private func answerApproval(_ id: String, _ choice: Int) {
+        let r = approvals.requests[id]
+        switch approvals.answer(id, choice: choice, now: Date()) {
+        case .send(let decision, let content):
+            approvalServer?.reply(id, decision: decision, content: content) { [weak self] sent in
+                guard let self else { return }
+                if !sent { self.showAgentNotice(L("That request was no longer waiting: answer it in the terminal.")) }
+                else if let r, let s = r.session { self.boardSet(s, r.from, r.project, "working") }
+            }
+            log.notice("approval \(id, privacy: .public): \(decision, privacy: .public) from the notch")
+        case .expired:
+            approvalServer?.reply(id, decision: "none", content: nil)
+            showAgentNotice(L("That request had expired: the terminal asks for it now."))
+        case .alreadyAnswered: break                                  // a second click on the same request
+        case .unknown: showAgentNotice(L("That request was no longer waiting: answer it in the terminal."))
+        }
+        publishApprovals()
+    }
+
+    private func releaseApproval(_ id: String) {
+        if approvals.release(id, now: Date()) { approvalServer?.reply(id, decision: "none", content: nil) }
+        publishApprovals()
+    }
+
+    // MARK: Going back to a session (Sources/AgentFocus.swift)
+
+    private func goToSession(_ origin: AgentOrigin?, _ name: String) {
+        guard let origin, !origin.isEmpty else {
+            showAgentNotice(L("Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal."))
+            return
+        }
+        AgentFocus.go(origin) { [weak self] r in
+            guard let self else { return }
+            if r.note == .automationDenied { Permissions.openPane(.automation) }
+            if let text = Self.focusMessage(r, name) { self.showAgentNotice(text) }
+            else { self.hidePanel(); self.island.setOpen(false) }   // it's in front: get out of the way
+        }
+    }
+
+    /// What a click could do, said plainly when it's less than the exact tab. nil = it got there.
+    static func focusMessage(_ r: AgentFocus.Result, _ name: String) -> String? {
+        let app = r.appName ?? name
+        switch r.level {
+        case .exact: return nil
+        case .window: return String(format: L("Opened the project in %@ (its terminal panel can't be selected from outside)."), app)
+        case .app:
+            return r.note == .automationDenied
+                ? String(format: L("Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation."), app, app)
+                : String(format: L("Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)."), app, app)
+        case .folder: return String(format: L("%@ isn't open any more: opened the session's folder in Finder."), app)
+        case .none:
+            return r.note == .noInfo ? L("Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal.")
+                : L("The app this session ran in isn't open, and its folder is gone.")
+        }
+    }
+
+    private func showAgentNotice(_ text: String) {
+        model.agentNotice = text
+        if settings.island { island.model.flashNotice("arrow.uturn.left.circle", text) }
+        agentNoticeWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.model.agentNotice = nil }
+        agentNoticeWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: w)
     }
 
     private func writeBoard() {
@@ -5902,6 +6009,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Agents or tasks starting and ending: counted, and (like any sign of life) they push a held "finished" back.
     private func activity(_ key: String, _ event: String) {
+        if sessions.count > 200 {                    // anything can send these: forget the quiet ones rather than grow forever
+            sessions = sessions.filter { $0.value.notice != nil || Date().timeIntervalSince($0.value.touched) < 3600 }
+        }
         var s = sessions[key] ?? SessionState()
         switch event {
         case "agentstart": s.agents += 1
@@ -5948,7 +6058,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + s.quietSeconds, execute: work)
     }
 
-    struct Notice { let from: String, message: String, project: String? }
+    struct Notice {
+        let from: String, message: String, project: String?
+        var session: String? = nil, origin: AgentOrigin? = nil          // where it came from: a click on it goes back there
+    }
 
     /// Away from the Mac (idle 20 s, or screens dimmed), or always if the user wants: wake the screens, restore the
     /// brightness, flash them with the message, play the sound, read it aloud. At the Mac: just refill the baggie.
@@ -5960,7 +6073,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let away = forced ?? (idleNow >= 20 || dimPlan != nil || (screenOffMode && screenGate.fired))
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
         if !repeated && !test {                          // "Recent alerts"
-            settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date())]
+            settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date(), session: a.session, origin: a.origin)]
                 + settings.alertHistory
             model.history = settings.alertHistory
         }
@@ -6019,6 +6132,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting (Quit button, ⌘Q, logout, shutdown) turns Cocaine off, just as opening the app turns it on.
     func applicationWillTerminate(_ n: Notification) {
         systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
+        approvalServer?.stop()                   // waiting hooks see the socket close: their terminals ask as usual
+        board.write(cocaineOn: System.cocaineOn, until: settings.onUntil)   // the board as it was, for the next launch
         mediaKeys.stop()
         ClipboardHistory.shared.flush()          // a saved history gets its last change
         WakeSchedule.cancel()                    // nothing would be listening at that wake
@@ -6908,6 +7023,116 @@ private func powerSelfTest(_ check: (String, Bool) -> Void) {
 
 // MARK: - Entry point
 
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--agent-request" {
+    // Run by Claude Code's and Codex's request hooks (`AIHooks.command(_, "approve")`): hands the request to the running app
+    // and prints its signed answer as the tool's documented hook output, or nothing (the tool then asks in the terminal).
+    // Never a decision of its own; always exit 0 (exit 2 would mean "block" to some tools).
+    signal(SIGPIPE, SIG_IGN)
+    let env = ProcessInfo.processInfo.environment
+    let timeout = env["COCAINE_HOOK_TIMEOUT"].flatMap(Double.init).map { min(max($0, 1), ApprovalTiming.hook) } ?? ApprovalTiming.hook
+    if let out = ApprovalHook.run(tool: CommandLine.arguments[2], input: ApprovalHook.readInput(), env: env, timeout: timeout) { print(out) }
+    exit(0)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--agents-test" {
+    // AI sessions: the pure logic, the approval protocol over a real socket with this binary as the hook, and the hooks
+    // written into a temporary home (never the real ~/.claude or ~/.codex). PASS/FAIL lines, exit status.
+    var failed = 0
+    func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    let exe = Bundle.main.executablePath ?? CommandLine.arguments[0]
+    AgentTests.pure(check)
+    AgentTests.protocolTests(binary: exe, check)
+    let home = AgentTests.tempDir()
+    defer { try? FileManager.default.removeItem(at: home) }
+    AIHooks.home = home.path
+    AIHooks.binary = "/Applications/Cocaine.app/Contents/MacOS/Cocaine"
+    AIHooks.assumeClaudeVersion([2, 1, 100])
+    for d in [".claude", ".codex"] { try? FileManager.default.createDirectory(at: home.appendingPathComponent(d), withIntermediateDirectories: true) }
+    let settingsPath = home.appendingPathComponent(".claude/settings.json").path
+    let mine = #"{"model":"opus","hooks":{"PermissionRequest":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-guard.sh"}]}]}}"#
+    try? mine.write(toFile: settingsPath, atomically: true, encoding: .utf8)
+    let claude = AIHooks.tool("claude")!, codex = AIHooks.tool("codex")!
+    func text(_ p: String) -> String { (try? String(contentsOfFile: p, encoding: .utf8)) ?? "" }
+    func commands(_ path: String, _ event: String) -> [String] {
+        (AIHooks.load(path)?["hooks"]?[event]?.items ?? []).flatMap { $0["hooks"]?.items ?? [] }.compactMap {
+            if case .scalar(let s)? = $0["command"] { return (try? JSONSerialization.jsonObject(with: Data(s.utf8), options: .fragmentsAllowed)) as? String }
+            return nil
+        }
+    }
+    check("hooks: on (temporary home)", AIHooks.set(true, only: [claude, codex]).isEmpty)
+    let pr = commands(settingsPath, "PermissionRequest")
+    check("hooks: Claude Code's PermissionRequest runs the app's binary next to the user's own hook",
+          pr.count == 2 && pr.contains("my-guard.sh") && pr.contains { $0.contains("'/Applications/Cocaine.app/Contents/MacOS/Cocaine' --agent-request claude") })
+    check("hooks: the request hook may wait for the notch (timeout \(ApprovalTiming.config) s)", text(settingsPath).contains("\"timeout\": \(ApprovalTiming.config)"))
+    check("hooks: MCP questions (Elicitation) too, and the alerts as before",
+          commands(settingsPath, "Elicitation").count == 1 && commands(settingsPath, "Notification").count == 1 && commands(settingsPath, "Stop").count == 1)
+    check("hooks: alert commands also send where the session runs", commands(settingsPath, "Stop").first?.contains("\"$PPID\"") == true)
+    let once = text(settingsPath)
+    _ = AIHooks.set(true, only: [claude, codex])
+    check("hooks: turning on twice changes nothing", text(settingsPath) == once)
+    check("hooks: Codex's PermissionRequest runs the binary as well",
+          commands(codex.file, "PermissionRequest").first?.contains("--agent-request codex") == true)
+    check("hooks: off", AIHooks.set(false, only: [claude, codex]).isEmpty)
+    let off = text(settingsPath)
+    check("hooks: off removes only Cocaine's hooks; the user's own and their settings stay",
+          !off.contains(AIHooks.marker) && commands(settingsPath, "PermissionRequest") == ["my-guard.sh"] && off.contains("\"model\": \"opus\""))
+    _ = AIHooks.set(false, only: [claude, codex])
+    check("hooks: off twice changes nothing", text(settingsPath) == off)
+    AIHooks.assumeClaudeVersion([2, 0, 0])
+    _ = AIHooks.set(true, only: [claude])
+    check("hooks: an older Claude Code gets no request hooks it doesn't know",
+          commands(settingsPath, "PermissionRequest") == ["my-guard.sh"] && commands(settingsPath, "Elicitation").isEmpty)
+    AIHooks.assumeClaudeVersion([2, 1, 100])
+    AIHooks.update()
+    check("hooks: …and gets them once it's updated (at the app's launch)", commands(settingsPath, "PermissionRequest").count == 2)
+    AIHooks.binary = nil
+    _ = AIHooks.set(true, only: [claude, codex])
+    check("hooks: without an installed app to run, no request hooks for Claude Code (its Notification alerts)",
+          commands(settingsPath, "PermissionRequest") == ["my-guard.sh"])
+    check("hooks: …and Codex's request just alerts as before", commands(codex.file, "PermissionRequest").first.map { $0.contains("event=input") && !$0.contains("--agent-request") } == true)
+    _ = AIHooks.set(false, only: [claude, codex])
+
+    // The origin the alert command sends, run by a real shell, read back by the app's own parser.
+    AIHooks.binary = exe
+    let stop = AIHooks.command(claude, "done")
+    if let a = stop.range(of: "$(/usr/bin/perl -e 'sub e"), let b = stop.range(of: "\"$PPID\" 2>/dev/null)", range: a.upperBound..<stop.endIndex) {
+        let snippet = String(stop[a.lowerBound..<b.upperBound])
+        let odd = home.appendingPathComponent("my proj&x=1")
+        try? FileManager.default.createDirectory(at: odd, withIntermediateDirectories: true)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "cd \"$1\" && x=" + snippet + "; printf %s \"$x\"", "sh", odd.path]
+        p.environment = ["TMUX_PANE": "%7", "TMUX": "/private/tmp/tmux-501/default,123,0", "__CFBundleIdentifier": "com.googlecode.iterm2",
+                         "ITERM_SESSION_ID": "w0t1p0:ABCDEF12-0000-1111", "TERM_PROGRAM": "iTerm.app", "PATH": "/usr/bin:/bin"]
+        let pipe = Pipe(); p.standardOutput = pipe
+        try? p.run(); p.waitUntilExit()
+        let q = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let got = AlertParams.parse(URL(string: "cocaine://alert?from=Claude%20Code&event=done" + q)!).origin
+        check("hooks: the session's origin survives the shell, the URL and the parser (\(q.prefix(60))…)",
+              got.cwd == odd.resolvingSymlinksInPath().path || got.cwd == odd.path)
+        check("hooks: …with its terminal app, iTerm2 session, tmux pane and socket, and the agent's pid",
+              got.app == "com.googlecode.iterm2" && got.termSession == "ABCDEF12-0000-1111" && got.tmuxPane == "%7"
+              && got.tmuxSocket == "/private/tmp/tmux-501/default" && got.pid == getpid())
+    } else { check("hooks: the alert command carries the origin snippet", false) }
+
+    // The exact request-hook command, run by a real shell against a real socket.
+    let support = AgentTests.tempDir()
+    defer { try? FileManager.default.removeItem(at: support) }
+    if let key = ApprovalKey.loadOrCreate(AgentPaths.key(support)) {
+        let server = ApprovalServer(path: AgentPaths.socket(support), key: key)
+        server.onRequest = { id, _, _, _, _ in server.reply(id, decision: "deny", content: nil) }
+        try? server.start()
+        let cmd = AIHooks.command(claude, "approve")
+        let r = AgentTests.runHook(["-c", cmd], executable: "/bin/sh", input: AgentTests.sampleInput, support: support)
+        check("hooks: the installed request command, run by sh, returns the notch's answer", r.out.contains(#""behavior":"deny""#) && r.status == 0)
+        server.stop()
+        let none = AgentTests.runHook(["-c", cmd], executable: "/bin/sh", input: AgentTests.sampleInput, support: support)
+        check("hooks: …and nothing, exit 0, when the app isn't there", none.out.isEmpty && none.status == 0)
+        let moved = AgentTests.runHook(["-c", cmd.replacingOccurrences(of: exe, with: "/nonexistent/Cocaine")], executable: "/bin/sh",
+                                       input: AgentTests.sampleInput, support: support)
+        check("hooks: …and when the app was moved away (exit 0, no decision)", moved.out.isEmpty && moved.status == 0)
+    }
+    exit(failed == 0 ? 0 : 1)
+}
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--auth-selftest" {
     // Runs the exact install pipeline (AppleScript quoting, printf, visudo, install) without admin rights,
     // writing the rule to the given file instead of /etc/sudoers.d.
@@ -7101,6 +7326,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     }
     if ClipboardTests.run() != 0 { failed += 1 }           // the clipboard history (its own PASS/FAIL lines; temp folders, fake Keychain)
     _ = NSApplication.shared
+    AgentTests.pure(check)                                 // AI sessions: order, restore, liveness, URLs, focus plan, requests
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }
@@ -7181,7 +7407,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-tes
 private struct SavedSettings {
     static let keys = ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
                        "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD", "haptics", "alertDone", "alertInput", "alertFlash", "alertSpeak", "alertVoice",
-                       "alertPerSession", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language"]
+                       "alertPerSession", "agentApprovals", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language"]
     let values: [String: Any] = Dictionary(uniqueKeysWithValues: keys.compactMap { k in UserDefaults.standard.object(forKey: k).map { (k, $0) } })
     func restore() {
         for k in Self.keys { if let v = values[k] { UserDefaults.standard.set(v, forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) } }
@@ -7295,6 +7521,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
         let t = Date().timeIntervalSince1970
         pm.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
                     AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90)]
+    }
+    if args.contains("--many-agents") || args.contains("--approval") {         // the full list, and a request to answer
+        (pm.board, pm.approvals) = AgentTests.sample(approval: args.contains("--approval"))
     }
     pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
     if args.contains("--presence") { pm.presenceActive = true; pm.pinkLevel = 1 }
@@ -7413,6 +7642,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         model.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
                        AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90),
                        AgentEntry(id: "3", from: "Cursor", project: "Gestionale", state: "error", since: t - 30)]
+    }
+    if CommandLine.arguments.contains("--many-agents") || CommandLine.arguments.contains("--approval") {
+        (model.board, model.approvals) = AgentTests.sample(approval: CommandLine.arguments.contains("--approval"))
     }
     if CommandLine.arguments.contains("--speak") {                  // the longest voice name: the widest thing a row can hold
         model.alertSpeak = true

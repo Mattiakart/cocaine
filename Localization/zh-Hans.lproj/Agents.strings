@@ -1,0 +1,24 @@
+/* Cocaine — zh-Hans: AI sessions (going back to them, requests answered from the notch) */
+
+"Go to this session" = "前往此会话";
+"Answer from the notch" = "在刘海处回应";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code 和 Codex：在刘海处允许或拒绝请求（或回答 MCP 问题）。绝不会自动允许：2 分钟内没有回应，终端会照常询问。";
+"asks you a question" = "向你提问";
+"needs your approval" = "需要你的批准";
+"That request was no longer waiting: answer it in the terminal." = "该请求已不再等待：请在终端中回应。";
+"That request had expired: the terminal asks for it now." = "该请求已过期：现在由终端询问。";
+"Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine 不知道此会话在哪里运行（旧的钩子或脚本）：请在终端中查找。";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "已在 %@ 中打开项目（其终端面板无法从外部选择）。";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "已将 %@ 置于前台。要选择准确的标签页，请在“隐私与安全性 → 自动化”中允许 Cocaine 控制 %@。";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "已将 %@ 置于前台，但不是准确的标签页（已关闭，或 %@ 无法从外部操控）。";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ 已不再打开：已在访达中打开会话的文件夹。";
+"The app this session ran in isn't open, and its folder is gone." = "此会话所在的应用未打开，其文件夹也已不存在。";
+"From before Cocaine restarted: not heard from since" = "来自 Cocaine 重启之前：此后没有消息";
+"Deny" = "拒绝";
+"Decline" = "谢绝";
+"Yes" = "是";
+"No" = "否";
+"%@ asks" = "%@ 提问";
+"Wants to use %@" = "想要使用 %@";
+"In the terminal" = "在终端中";
+"Hands the request back to the terminal and goes there" = "将请求交还给终端并前往";

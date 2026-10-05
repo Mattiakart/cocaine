@@ -1,0 +1,24 @@
+/* Cocaine — zh-Hant: AI sessions (going back to them, requests answered from the notch) */
+
+"Go to this session" = "前往此工作階段";
+"Answer from the notch" = "在瀏海處回應";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code 與 Codex：在瀏海處允許或拒絕請求（或回答 MCP 問題）。絕不會自動允許：2 分鐘內沒有回應，終端機會照常詢問。";
+"asks you a question" = "向你提問";
+"needs your approval" = "需要你的核准";
+"That request was no longer waiting: answer it in the terminal." = "該請求已不再等待：請在終端機中回應。";
+"That request had expired: the terminal asks for it now." = "該請求已過期：現在由終端機詢問。";
+"Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine 不知道此工作階段在哪裡執行（舊的掛鉤或指令碼）：請在終端機中尋找。";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "已在 %@ 中打開專案（其終端機面板無法從外部選擇）。";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "已將 %@ 移到最前面。若要選擇準確的標籤頁，請在「隱私權與安全性 → 自動化」中允許 Cocaine 控制 %@。";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "已將 %@ 移到最前面，但不是準確的標籤頁（已關閉，或 %@ 無法從外部操控）。";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ 已不再打開：已在 Finder 中打開工作階段的檔案夾。";
+"The app this session ran in isn't open, and its folder is gone." = "此工作階段所在的 App 未打開，其檔案夾也已不存在。";
+"From before Cocaine restarted: not heard from since" = "來自 Cocaine 重新啟動之前：此後沒有消息";
+"Deny" = "拒絕";
+"Decline" = "婉拒";
+"Yes" = "是";
+"No" = "否";
+"%@ asks" = "%@ 提問";
+"Wants to use %@" = "想要使用 %@";
+"In the terminal" = "在終端機中";
+"Hands the request back to the terminal and goes there" = "將請求交還給終端機並前往";

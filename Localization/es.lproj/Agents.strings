@@ -1,0 +1,24 @@
+/* Cocaine — es: AI sessions (going back to them, requests answered from the notch) */
+
+"Go to this session" = "Ir a esta sesión";
+"Answer from the notch" = "Responder desde el notch";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code y Codex: permite o deniega una solicitud (o responde a una pregunta MCP) desde el notch. Nunca se permite nada por sí solo: sin respuesta en 2 minutos pregunta el terminal, como siempre.";
+"asks you a question" = "te hace una pregunta";
+"needs your approval" = "necesita tu aprobación";
+"That request was no longer waiting: answer it in the terminal." = "Esa solicitud ya no estaba esperando: respóndela en el terminal.";
+"That request had expired: the terminal asks for it now." = "Esa solicitud había caducado: ahora la pregunta el terminal.";
+"Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine no sabe dónde se ejecuta esta sesión (un hook antiguo o un script): búscala en tu terminal.";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Proyecto abierto en %@ (su panel de terminal no se puede seleccionar desde fuera).";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "%@ en primer plano. Para seleccionar la pestaña exacta, permite que Cocaine controle %@ en Privacidad y seguridad → Automatización.";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ en primer plano, pero no la pestaña exacta (se cerró, o %@ no se puede manejar desde fuera).";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ ya no está abierto: se abrió la carpeta de la sesión en el Finder.";
+"The app this session ran in isn't open, and its folder is gone." = "La app en la que se ejecutaba esta sesión no está abierta y su carpeta ya no existe.";
+"From before Cocaine restarted: not heard from since" = "De antes de reiniciar Cocaine: sin noticias desde entonces";
+"Deny" = "Denegar";
+"Decline" = "Rechazar";
+"Yes" = "Sí";
+"No" = "No";
+"%@ asks" = "%@ pregunta";
+"Wants to use %@" = "Quiere usar %@";
+"In the terminal" = "En el terminal";
+"Hands the request back to the terminal and goes there" = "Devuelve la solicitud al terminal y va allí";

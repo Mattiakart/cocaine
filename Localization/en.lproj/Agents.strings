@@ -1,0 +1,24 @@
+/* Cocaine — en: AI sessions (going back to them, requests answered from the notch) */
+
+"Go to this session" = "Go to this session";
+"Answer from the notch" = "Answer from the notch";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.";
+"asks you a question" = "asks you a question";
+"needs your approval" = "needs your approval";
+"That request was no longer waiting: answer it in the terminal." = "That request was no longer waiting: answer it in the terminal.";
+"That request had expired: the terminal asks for it now." = "That request had expired: the terminal asks for it now.";
+"Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal.";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Opened the project in %@ (its terminal panel can't be selected from outside).";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation.";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside).";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ isn't open any more: opened the session's folder in Finder.";
+"The app this session ran in isn't open, and its folder is gone." = "The app this session ran in isn't open, and its folder is gone.";
+"From before Cocaine restarted: not heard from since" = "From before Cocaine restarted: not heard from since";
+"Deny" = "Deny";
+"Decline" = "Decline";
+"Yes" = "Yes";
+"No" = "No";
+"%@ asks" = "%@ asks";
+"Wants to use %@" = "Wants to use %@";
+"In the terminal" = "In the terminal";
+"Hands the request back to the terminal and goes there" = "Hands the request back to the terminal and goes there";
