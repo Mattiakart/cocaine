@@ -158,8 +158,6 @@
 "Home" = "ホーム";
 "Focus" = "集中";
 "Break" = "休憩";
-"Batteries" = "バッテリー";
-"Usage" = "使用量";
 "Settings" = "設定";
 "Start" = "開始";
 "Reset" = "リセット";
@@ -215,7 +213,6 @@
 "Charging" = "充電中";
 "On battery" = "バッテリー駆動";
 "Drop files here" = "ここにファイルをドロップ";
-"Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then" = "Teams や Slack などで「退席中」と表示されないようにします。操作がない間、見えないマウスイベントを時々送ります";
 "Needs permission to send input" = "入力を送信する許可が必要です";
 "Only while one of the chosen apps is open, or all the time" = "選んだアプリのどれかが開いている間のみ、または常時";
 "Remove" = "削除";
@@ -229,3 +226,4 @@
 "on/off" = "オン/オフ";
 "panel" = "パネル";
 "pause alerts" = "通知を停止";
+"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "操作がない間、見えないマウスイベントを送り、Teams や Slack などで「退席中」にならないようにします。画面上は何も動きません。";

@@ -158,8 +158,6 @@
 "Home" = "首頁";
 "Focus" = "專注";
 "Break" = "休息";
-"Batteries" = "電池";
-"Usage" = "用量";
 "Settings" = "設定";
 "Start" = "開始";
 "Reset" = "重置";
@@ -215,7 +213,6 @@
 "Charging" = "充電中";
 "On battery" = "使用電池";
 "Drop files here" = "將檔案拖到這裡";
-"Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then" = "防止 Teams、Slack 等 App 顯示你為離開：閒置時會不時傳送一個不可見的滑鼠事件";
 "Needs permission to send input" = "需要傳送輸入的權限";
 "Only while one of the chosen apps is open, or all the time" = "僅在所選 App 之一開啟時，或一律";
 "Remove" = "移除";
@@ -229,3 +226,4 @@
 "on/off" = "開/關";
 "panel" = "面板";
 "pause alerts" = "暫停提醒";
+"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "閒置時傳送一個不可見的滑鼠事件，讓 Teams、Slack 等 App 不會把你顯示為離開。螢幕上不會有任何移動。";

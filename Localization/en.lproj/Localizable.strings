@@ -158,8 +158,6 @@
 "Home" = "Home";
 "Focus" = "Focus";
 "Break" = "Break";
-"Batteries" = "Batteries";
-"Usage" = "Usage";
 "Settings" = "Settings";
 "Start" = "Start";
 "Reset" = "Reset";
@@ -215,7 +213,6 @@
 "Charging" = "Charging";
 "On battery" = "On battery";
 "Drop files here" = "Drop files here";
-"Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then" = "Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then";
 "Needs permission to send input" = "Needs permission to send input";
 "Only while one of the chosen apps is open, or all the time" = "Only while one of the chosen apps is open, or all the time";
 "Remove" = "Remove";
@@ -229,3 +226,4 @@
 "on/off" = "on/off";
 "panel" = "panel";
 "pause alerts" = "pause alerts";
+"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen.";

@@ -158,8 +158,6 @@
 "Home" = "Home";
 "Focus" = "Focus";
 "Break" = "Pausa";
-"Batteries" = "Batterie";
-"Usage" = "Utilizzo";
 "Settings" = "Impostazioni";
 "Start" = "Avvia";
 "Reset" = "Azzera";
@@ -215,7 +213,6 @@
 "Charging" = "In carica";
 "On battery" = "A batteria";
 "Drop files here" = "Rilascia qui i file";
-"Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then" = "Evita che Teams, Slack e app simili ti mostrino come assente: mentre sei inattivo invia ogni tanto un evento di mouse invisibile";
 "Needs permission to send input" = "Serve il permesso di inviare input";
 "Only while one of the chosen apps is open, or all the time" = "Solo mentre una delle app scelte è aperta, oppure sempre";
 "Remove" = "Rimuovi";
@@ -229,3 +226,4 @@
 "on/off" = "on/off";
 "panel" = "pannello";
 "pause alerts" = "pausa avvisi";
+"While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen." = "Mentre sei inattivo invia un evento di mouse invisibile, così Teams, Slack e app simili non ti segnano assente. Sullo schermo non si muove nulla.";

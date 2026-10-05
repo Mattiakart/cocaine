@@ -114,13 +114,12 @@ opens, with these pages:
 - **Shelf**: drop files on the island (it opens by itself) and keep them there, then drag them out or send them all by AirDrop.
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
 - **Clipboard**: what you copied lately, kept in memory only and never from password managers; click to copy again.
-- **Batteries**: the Mac, AirPods and other Bluetooth devices.
-- **Usage**: Codex's limits and Claude Code's tokens, both read from their own local files.
+- **Status**: the batteries of the Mac, AirPods and other Bluetooth devices, and the usage of Codex (its limits) and Claude Code (tokens), read from their own local files.
 - **Mirror**: a live view of the camera, on only while that page is open.
 - **Monitors** (only with an external monitor): brightness, contrast, volume and input of the monitor itself over DDC/CI,
   Apple silicon only; not every monitor supports it, and it can't read values back.
 
-Plugging the charger in or out is announced too. The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
+Plugging the charger in or out is announced too. The island replaces the menu-bar icon (the bag of Cocaine on its left fills and empties as the icon did); turn it off and the icon comes back. The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. The volume
 and brightness bars appear in addition to macOS's own HUD; turn on *Cocaine → Replace system HUD* (needs the Accessibility
 permission) and the volume, mute and brightness keys are handled by Cocaine and shown only in the island (⌥⇧ for fine steps).
 

@@ -357,6 +357,8 @@ private extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var presenceAsked: Bool { get { flag("presenceAsked", false) } nonmutating set { d.set(newValue, forKey: "presenceAsked") } }
+    var hudAsked: Bool { get { flag("hudAsked", false) } nonmutating set { d.set(newValue, forKey: "hudAsked") } }
     var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
     var stayActiveAlways: Bool { get { flag("stayActiveAlways", false) } nonmutating set { d.set(newValue, forKey: "stayActiveAlways") } }
     var stayActiveApps: [String] { get { d.stringArray(forKey: "stayActiveApps") ?? Presence.defaultApps } nonmutating set { d.set(newValue, forKey: "stayActiveApps") } }
@@ -1754,7 +1756,7 @@ private struct PanelView: View {
                 }
             }
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
-                row(L("Stay available in chat apps"), tip: L("Keeps Teams, Slack and similar apps from showing you as away: while you are idle it sends an invisible mouse event now and then")) {
+                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
                 }
                 row(L("When"), tip: L("Only while one of the chosen apps is open, or all the time")) {
@@ -2578,13 +2580,13 @@ private final class ClosureItem: NSMenuItem {
 
 private enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
-    static let openSize = CGSize(width: 720, height: 214)
+    static let openSize = CGSize(width: 620, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     /// id, symbol, title. The first half goes left of the notch, the rest right of it.
     static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
         var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
                  ("files", "tray.full.fill", L("Files")), ("shelf", "tray.and.arrow.down.fill", L("Shelf")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
-                 ("battery", "battery.100", L("Batteries")), ("usage", "chart.bar.fill", L("Usage")), ("mirror", "person.crop.square", L("Mirror"))]
+                 ("status", "gauge.with.needle", L("Status")), ("mirror", "person.crop.square", L("Mirror"))]
         if external { t.append(("display", "display", L("Monitors"))) }
         return t
     }
@@ -3017,7 +3019,7 @@ extension IslandView {
                 Text(L("Drag a file out to drop it anywhere")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
                 Spacer(minLength: 0)
             }
-            .frame(width: 290, alignment: .leading)
+            .frame(width: 250, alignment: .leading)
         }
     }
 
@@ -3716,7 +3718,7 @@ private final class IslandModel: ObservableObject {
     var wing: CGFloat { flash != nil ? 130 : Island.wing }
     /// Is anything live (so the closed island shows wings beside the notch)?
     var live: Bool {
-        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
+        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.fillLevel ?? 0) > 0.02 || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
     }
     var hover: (Bool) -> Void = { _ in }
     var toggleOpen: () -> Void = {}
@@ -3745,6 +3747,7 @@ private final class IslandController {
         model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
         model.mic.start()
+        startPointerMonitors()
         model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
         model.airDrop = { urls in
             guard !urls.isEmpty else { return }
@@ -3800,17 +3803,36 @@ private final class IslandController {
             relayout()
         } else {
             model.open = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in if self?.model.open == false { self?.relayout() } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in if self?.model.open == false { self?.relayout() } }
         }
+    }
+
+    private var hovering = false
+    private var pointerMonitors: [Any] = []
+
+    /// Watches the pointer itself (in every app, and over the island), so it opens as soon as you touch the notch.
+    private func startPointerMonitors() {
+        guard pointerMonitors.isEmpty else { return }
+        let handler: (NSEvent) -> Void = { [weak self] _ in self?.pointerMoved() }
+        if let g = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: handler) { pointerMonitors.append(g) }
+        if let l = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { e in handler(e); return e }) { pointerMonitors.append(l) }
+    }
+
+    private func pointerMoved() {
+        guard enabled, let panel, panel.isVisible else { return }
+        let p = NSEvent.mouseLocation, f = panel.frame
+        let margin: CGFloat = model.open ? 8 : 4                      // a little slack around it, and the very top edge of the screen
+        let inside = p.x >= f.minX - margin && p.x <= f.maxX + margin && p.y >= f.minY - (model.open ? margin : 0) && p.y <= f.maxY + 2
+        if inside != hovering { hovering = inside; hover(inside) }
     }
 
     private func hover(_ inside: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
         if inside {
             guard !model.open else { return }
-            openTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: false) { [weak self] _ in self?.setOpen(true) }
+            openTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: false) { [weak self] _ in self?.setOpen(true) }
         } else if model.open {
-            closeTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in self?.setOpen(false) }
+            closeTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in self?.setOpen(false) }
         }
     }
 
@@ -3858,12 +3880,11 @@ private struct IslandView: View {
         let size = model.open ? Island.openSize : CGSize(width: closedWidth, height: g.height)
         ZStack(alignment: .top) {
             NotchShape(radius: model.open ? 28 : 11).fill(Color.black)
-            if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.1))) } else { closedContent }
+            if model.open { openContent.transition(.opacity.animation(.easeOut(duration: 0.14).delay(0.03))) } else { closedContent }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .clipShape(NotchShape(radius: model.open ? 28 : 11))
         .contentShape(Rectangle())
-        .onHover { model.hover($0) }
         .onTapGesture { if !model.open { model.toggleOpen() } }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { model.dropTargeted($0) })) { providers in
             for provider in providers {
@@ -3874,8 +3895,8 @@ private struct IslandView: View {
             return true
         }
         .frame(width: max(model.panelSize.width, size.width), height: max(model.panelSize.height, size.height), alignment: .top)
-        .animation(.spring(response: 0.42, dampingFraction: 0.8), value: model.open)
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: live)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: model.open)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: live)
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
@@ -3892,17 +3913,21 @@ private struct IslandView: View {
         .opacity(live ? 1 : 0)
     }
 
+    /// Left of the notch: the bag of Cocaine, filling and emptying exactly like the menu-bar icon did.
     @ViewBuilder private var leftWing: some View {
         if let f = model.flash { Image(systemName: f.icon).foregroundStyle(Island.accent) }
-        else if focus.running { Image(systemName: focus.isBreak ? "cup.and.saucer.fill" : "timer").foregroundStyle(Island.accent) }
-        else if waiting != nil { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
-        else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
-        else if working { Image(systemName: "gearshape.fill").foregroundStyle(Island.accent) }
-        else if model.music.playing { Group { if let a = model.music.artwork { Image(nsImage: a).resizable().aspectRatio(contentMode: .fill) } else { Image(systemName: "music.note") } }
-            .frame(width: 22, height: 22).clipShape(RoundedRectangle(cornerRadius: 5)) }
-        else if m.on { Image(systemName: "bolt.fill").foregroundStyle(Island.accent) }
+        else { Image(nsImage: Self.bag(level: m.fillLevel, pouring: m.pouring)).frame(width: 20, height: 20) }
     }
 
+    /// The menu-bar bag, always in its light-on-dark colors (the island is black).
+    private static func bag(level: CGFloat, pouring: Bool) -> NSImage {
+        NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
+            Baggie.draw(in: rect, level: level, pouring: pouring, palette: Baggie.palette(dark: true))
+            return true
+        }
+    }
+
+    /// Right of the notch: what is going on, by importance.
     @ViewBuilder private var rightWing: some View {
         if let f = model.flash {
             if let l = f.level {
@@ -3913,8 +3938,8 @@ private struct IslandView: View {
             }
         }
         else if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
-        else if let w = waiting { Text(w.from.prefix(7)).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)) }
-        else if mic.active { Circle().fill(.orange).frame(width: 7, height: 7) }
+        else if waiting != nil { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
+        else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
         else if working { ProgressView().controlSize(.mini).tint(.white) }
         else if model.music.playing { Visualizer(playing: true) }
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
@@ -3941,12 +3966,11 @@ private struct IslandView: View {
                 case "files": filesTab
                 case "shelf": shelfTab
                 case "clipboard": clipboardTab
-                case "battery": batteryTab
-                case "usage": usageTab
+                case "status": statusTab
                 default: homeTab
                 }
             }
-            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 18)
+            .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: Island.openSize.width, height: Island.openSize.height, alignment: .top)
@@ -3966,7 +3990,7 @@ private struct IslandView: View {
         let tabs = Island.tabs(external: !DDCDisplays.externalNames.isEmpty), half = (tabs.count + 1) / 2
         return HStack(spacing: 0) {
             HStack(spacing: 2) { ForEach(tabs.prefix(half), id: \.id) { tabButton($0) } }
-                .padding(.leading, 22).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16).frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
             HStack(spacing: 2) {
                 ForEach(tabs.dropFirst(half), id: \.id) { tabButton($0) }
@@ -3976,7 +4000,7 @@ private struct IslandView: View {
                 }
                 .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
             }
-            .padding(.trailing, 22).frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 16).frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(height: g.height)
     }
@@ -4010,8 +4034,9 @@ private struct IslandView: View {
                     Spacer(minLength: 4)
                     CocaineSwitch($m.stayActive)
                 }
+                .help(L("While you're idle it sends an invisible mouse event, so Teams, Slack and similar apps don't mark you away. Nothing moves on screen."))
             }
-            .frame(width: 270)
+            .frame(width: 250)
             VStack(alignment: .leading, spacing: 8) {
                 let shown = Array(m.board.filter { $0.isLive || Date().timeIntervalSince1970 - $0.since < 600 }.prefix(3))
                 Text(L("Agents")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
@@ -4089,9 +4114,9 @@ private struct IslandView: View {
             if batteries.items.isEmpty {
                 Text(L("No devices")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
             }
-            let cols = [GridItem(.flexible(), spacing: 22), GridItem(.flexible())]
+            let cols = [GridItem(.flexible())]
             LazyVGrid(columns: cols, alignment: .leading, spacing: 10) {
-                ForEach(batteries.items.prefix(8)) { item in
+                ForEach(batteries.items.prefix(4)) { item in
                     HStack(spacing: 9) {
                         Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(.white.opacity(0.75)).frame(width: 20)
                         VStack(alignment: .leading, spacing: 4) {
@@ -4118,9 +4143,17 @@ private struct IslandView: View {
 
     // MARK: usage
 
+    /// Batteries on the left, the AI tools' usage on the right.
+    private var statusTab: some View {
+        HStack(alignment: .top, spacing: 24) {
+            batteryTab.frame(width: 250, alignment: .topLeading)
+            usageTab.frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
     private var usageTab: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 26) {
+            VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Codex").font(.system(size: 13, weight: .semibold))
                     if usage.codex.isEmpty {
@@ -4137,7 +4170,7 @@ private struct IslandView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Claude Code").font(.system(size: 13, weight: .semibold))
                     tokenRow(L("Last 5 hours"), usage.claudeFive)
                     tokenRow(L("Last 7 days"), usage.claudeWeek)
@@ -4254,11 +4287,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
         model.wakeChanged = { [weak self] in self?.applyWake(ask: true) }
-        model.islandChanged = { [weak self] in self?.island.setEnabled(self?.settings.island ?? false) }
-        island.start(panelModel: model, enabled: settings.island) { [weak self] in self?.showPanel(fromClick: false) }
+        model.islandChanged = { [weak self] in
+            guard let self else { return }
+            self.island.setEnabled(self.settings.island)
+            self.statusItem.isVisible = !self.settings.island        // the island replaces the menu-bar icon
+        }
+        statusItem.isVisible = !settings.island
+        island.start(panelModel: model, enabled: settings.island) { [weak self] in
+            self?.island.setOpen(false)
+            self?.showPanel(fromClick: false)
+        }
         model.presenceChanged = { [weak self] in
             guard let self else { return }
-            if self.settings.stayActive && !Presence.hasAccess { Presence.requestAccess() }
+            if self.settings.stayActive && !Presence.hasAccess && !self.settings.presenceAsked {
+                self.settings.presenceAsked = true          // asked once; after that the Allow button does it
+                Presence.requestAccess()
+            }
             self.presenceTick()
         }
         model.requestPresence = { Presence.requestAccess() }
@@ -4571,7 +4615,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let clicked = fromClick ? NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } : nil
         var screen = clicked ?? NSScreen.main
         var anchorX = mouse.x
-        if let button = statusItem.button, let bar = button.window {
+        if settings.island, let g = NotchGeometry.current() {
+            screen = NSScreen.screens.first { $0.frame == g.frame } ?? screen       // under the notch, where the island is
+            anchorX = g.centerX
+        } else if let button = statusItem.button, let bar = button.window {
             let icon = bar.convertToScreen(button.convert(button.bounds, to: nil))
             if clicked == nil || clicked == bar.screen { screen = bar.screen ?? screen; anchorX = icon.midX }
         }
@@ -4735,7 +4782,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyHUDReplacement() {
         if settings.replaceHUD {
-            if !AXIsProcessTrusted() { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
+            if !AXIsProcessTrusted() && !settings.hudAsked {
+                settings.hudAsked = true
+                _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            }
             mediaKeys.start()
         } else {
             mediaKeys.stop()

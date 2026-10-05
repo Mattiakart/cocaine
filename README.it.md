@@ -114,13 +114,12 @@ o ci clicchi e si apre, con queste pagine:
 - **Scaffale**: trascina dei file sull'isola (si apre da sola) e tienili lì, poi trascinali fuori o mandali tutti con AirDrop.
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo avvisa quando ne arriva uno.
 - **Appunti**: ciò che hai copiato da poco, solo in memoria e mai dai gestori di password; clicca per copiare di nuovo.
-- **Batterie**: il Mac, gli AirPods e altri dispositivi Bluetooth.
-- **Utilizzo**: i limiti di Codex e i token di Claude Code, letti dai loro file locali.
+- **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth, e l'utilizzo di Codex (i limiti) e Claude Code (i token), letti dai loro file locali.
 - **Specchio**: la vista dal vivo della fotocamera, accesa solo mentre quella pagina è aperta.
 - **Monitor** (solo con un monitor esterno): luminosità, contrasto, volume e ingresso del monitor stesso via DDC/CI, solo Apple
   silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
 
-Anche il caricatore collegato o scollegato viene annunciato. L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
+Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu (la busta di Cocaine a sinistra si riempie e si svuota come faceva l'icona); se la disattivi, l'icona torna. L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
 giochi. Le barre di volume e luminosità compaiono in aggiunta all'HUD di macOS; attiva *Cocaine → Sostituisci l'HUD di sistema* (serve il
 permesso Accessibilità) e i tasti di volume, muto e luminosità li gestisce Cocaine, mostrati solo nell'isola (⌥⇧ per passi fini).
 
