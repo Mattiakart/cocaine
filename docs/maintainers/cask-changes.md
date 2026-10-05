@@ -80,3 +80,7 @@ What changed and why:
 
 Not testable here (needs Homebrew + admin): the stanza as a whole. Tested by `--recovery-test`: `--prepare-update` (with and
 without a running session), the hand-over adopted and expired, and `--uninstall-cleanup` against stand-ins.
+
+## Note after the integration review
+
+`Cocaine --uninstall-cleanup` now refuses (exit 75) while a Cocaine instance is running, so the cask's uninstall step must quit the app first (for example `quit: "local.cocaine.toggle"` in the `uninstall` stanza, ahead of the `script`), then run the cleanup.

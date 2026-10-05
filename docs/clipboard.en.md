@@ -34,3 +34,5 @@ source when the copying app doesn't say, so an app copying in the background may
 ad-hoc signed build (no local signing identity), macOS asks again for Keychain access after each update; if you refuse,
 nothing is saved. Deleting files can't guarantee the bytes are erased on an SSD: what makes the deleted history unreadable
 is that its encryption key is deleted too. The search field takes the keyboard while the Clipboard page is open.
+
+**If the saved history can't be read** (damaged, written with another key or by a newer version), Cocaine moves the index and its images together into an `unreadable-<time>` folder next to it, starts empty and never deletes them; if even that fails, nothing is saved. If the Keychain refuses access at launch, saving pauses for that launch only.

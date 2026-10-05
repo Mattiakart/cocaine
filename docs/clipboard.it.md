@@ -38,3 +38,5 @@ un'altra. Con una build firmata ad hoc (senza identità di firma locale) macOS r
 Portachiavi dopo ogni aggiornamento; se lo rifiuti, non viene salvato nulla. Eliminare i file non garantisce che i byte
 siano cancellati da un SSD: a rendere illeggibile la cronologia eliminata è il fatto che viene eliminata anche la sua
 chiave. Il campo di ricerca prende la tastiera mentre la pagina Appunti è aperta.
+
+**Se la cronologia salvata non si può leggere** (danneggiata, scritta con un'altra chiave o da una versione più recente), Cocaine sposta l'indice e le sue immagini insieme in una cartella `unreadable-<ora>` accanto, riparte vuota e non le cancella mai; se nemmeno questo riesce, non salva nulla. Se il Portachiavi rifiuta l'accesso all'avvio, il salvataggio si ferma solo per quell'avvio.

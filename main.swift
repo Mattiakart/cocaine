@@ -6963,6 +6963,11 @@ private func powerSelfTest(_ check: (String, Bool) -> Void) {
           (try? parse("cocaine://x-callback-url/status?x-success=shortcuts%3A%2F%2Fx-callback-url%2Fic-success%3Fid%3D1").get())?.success?.scheme == "shortcuts")
     check("link: a callback to anything but Shortcuts is dropped",
           (try? parse("cocaine://x-callback-url/status?x-success=https%3A%2F%2Fevil.example%2F&x-error=javascript:alert(1)").get()).map { $0.success == nil && $0.failure == nil } == true)
+    check("link: a callback can't run a shortcut or open anything else in Shortcuts",
+          ["shortcuts://x-callback-url/run-shortcut?name=Evil", "shortcuts://x-callback-url/open-shortcut?name=x",
+           "shortcuts://x-callback-url/create-shortcut", "shortcuts://run-shortcut?name=Evil", "shortcuts://x-callback-url", "shortcuts://"]
+            .allSatisfy { ControlURL.callback($0) == nil })
+    check("link: Shortcuts' own answer address is accepted", ControlURL.callback("shortcuts://x-callback-url/ic-success?id=1") != nil)
     check("link: changing commands need permission, status and panel don't",
           ControlAction.on(minutes: nil).guarded && ControlAction.off.guarded && ControlAction.pause(minutes: nil).guarded
           && !ControlAction.status.guarded && !ControlAction.panel.guarded)

@@ -224,9 +224,18 @@ enum ControlURL {
         return .success(ControlRequest(action: action, success: success, failure: failure))
     }
 
-    /// Only Shortcuts may be called back: a web page can't get the answer, or bounce the user anywhere.
+    /// Shortcuts' own commands that DO something: a callback must never be one of them, or a link from a web page could make
+    /// Cocaine's answer run a named shortcut (`shortcuts://x-callback-url/run-shortcut?name=…`).
+    static let shortcutsCommands: Set<String> = ["run-shortcut", "run", "open-shortcut", "create-shortcut", "import-shortcut",
+                                                 "open-gallery", "gallery", "search", "x-callback-url"]
+
+    /// Only Shortcuts' own answer address may be called back (`shortcuts://x-callback-url/<reply>`, never one of its commands):
+    /// a web page can't get the answer, or bounce the user anywhere, or run a shortcut.
     static func callback(_ s: String) -> URL? {
-        guard let u = URL(string: s), u.scheme?.lowercased() == "shortcuts" else { return nil }
+        guard let u = URL(string: s), u.scheme?.lowercased() == "shortcuts",
+              (u.host ?? "").lowercased() == "x-callback-url" else { return nil }
+        let first = (u.pathComponents.dropFirst().first ?? "").lowercased()
+        guard !first.isEmpty, !shortcutsCommands.contains(first) else { return nil }
         return u
     }
 
