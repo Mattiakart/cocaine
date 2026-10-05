@@ -1692,6 +1692,7 @@ private struct EqualSegments<T: Hashable>: NSViewRepresentable {
 
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
+    @ObservedObject var clip = ClipboardHistory.shared
 
     private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
     static func timeString(_ d: Date) -> String { time.string(from: d) }
@@ -1964,6 +1965,78 @@ private struct PanelView: View {
             activityCard
             permissionsCard
             appCard
+            if m.island { clipboardCard }
+        }
+    }
+
+    // MARK: Clipboard (the island's page; Sources/Clipboard.swift)
+
+    private func clipSetting<T>(_ kp: WritableKeyPath<ClipSettings, T>) -> Binding<T> {
+        Binding(get: { clip.settings[keyPath: kp] }, set: { var s = clip.settings; s[keyPath: kp] = $0; clip.update(s) })
+    }
+
+    private func ageName(_ hours: Int) -> String {
+        switch hours {
+        case 0: return L("No limit")
+        case 1: return L("1 hour")
+        case 24: return L("1 day")
+        case 24 * 7: return L("1 week")
+        default: return String(format: L("%d days"), hours / 24)
+        }
+    }
+
+    private var clipboardCard: some View {
+        let s = clip.settings
+        return card("doc.on.clipboard", L("Clipboard"), warning: clip.problem != nil) {
+            row(L("Save on this Mac"), detail: clip.problem ?? (s.persist ? L("Encrypted, with its key in your Keychain") : L("Off: kept in memory only, gone when Cocaine quits")),
+                warning: clip.problem != nil) {
+                CocaineSwitch(on: s.persist) { ClipboardUI.setPersist(clip, !s.persist) }.accessibilityLabel(L("Save on this Mac"))
+            }
+            row(L("Keep at most"), tip: L("Favorites don't count and are never removed")) {
+                choice(L("Keep at most"), clipSetting(\.maxItems), ClipSettings.itemChoices) { String(format: L("%d items"), $0) }
+            }
+            row(L("Forget after")) { choice(L("Forget after"), clipSetting(\.maxAgeHours), ClipSettings.ageChoices, ageName) }
+            row(L("Space in all")) { choice(L("Space in all"), clipSetting(\.maxTotalMB), ClipSettings.totalChoices) { "\($0) MB" } }
+            row(L("Largest item"), tip: L("Bigger images and texts aren't kept")) {
+                choice(L("Largest item"), clipSetting(\.maxItemMB), ClipSettings.itemSizeChoices) { "\($0) MB" }
+            }
+            row(L("Skip card numbers and keys"), tip: L("Card numbers, private keys, API keys and other tokens aren't kept")) {
+                toggle(L("Skip card numbers and keys"), clipSetting(\.skipSecrets))
+            }
+            row(L("Excluded apps"), detail: L("Password managers are always excluded")) {
+                Menu {
+                    ForEach(s.excludedApps, id: \.self) { id in
+                        Button { var n = s; n.excludedApps.removeAll { $0 == id }; clip.update(n) } label: {
+                            Label(ClipboardHistory.appName(id) ?? id, systemImage: "checkmark")
+                        }
+                    }
+                    if !s.excludedApps.isEmpty { Divider() }
+                    Section(L("Open now")) {
+                        ForEach(ClipboardUI.runningApps(excluding: s.excludedApps), id: \.id) { app in
+                            Button(app.name) { var n = s; n.excludedApps.append(app.id); clip.update(n) }
+                        }
+                    }
+                } label: {
+                    Text(s.excludedApps.isEmpty ? L("None") : s.excludedApps.count == 1 ? (ClipboardHistory.appName(s.excludedApps[0]) ?? "1")
+                         : "\(ClipboardHistory.appName(s.excludedApps[0]) ?? "") +\(s.excludedApps.count - 1)").font(UI.value).lineLimit(1)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.visible).accessibilityLabel(L("Excluded apps"))
+            }
+            row(L("Excluded patterns"), tip: L("Text matching one of these regular expressions isn't kept")) {
+                Menu {
+                    ForEach(s.patterns, id: \.self) { p in
+                        Button { var n = s; n.patterns.removeAll { $0 == p }; clip.update(n) } label: { Label(p, systemImage: "checkmark") }
+                    }
+                    if !s.patterns.isEmpty { Divider() }
+                    Button(L("Add…")) { ClipboardUI.addPattern(clip) }
+                } label: {
+                    Text(s.patterns.isEmpty ? L("None") : "\(s.patterns.count)").font(UI.value).lineLimit(1)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.visible).accessibilityLabel(L("Excluded patterns"))
+            }
+            row(L("Delete everything"), detail: L("History, favorites, saved files and their key")) {
+                Button(L("Delete…")) { ClipboardUI.confirmDeleteEverything(clip) }.controlSize(.small)
+            }
         }
     }
 
@@ -3520,37 +3593,8 @@ private struct FileThumb: View {
     }
 }
 
-/// What was copied lately, kept in memory only (never written anywhere) and never from password managers.
-private final class ClipboardWatch: ObservableObject {
-    struct Clip: Identifiable, Equatable { let id = UUID(); var text: String; var date: Date }
-    @Published var items: [Clip] = []
-    private var count = NSPasteboard.general.changeCount
-    private var timer: Timer?
-
-    func start() {
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in self?.poll() }
-    }
-    func stop() { timer?.invalidate(); timer = nil; items = [] }
-
-    private func poll() {
-        let pb = NSPasteboard.general
-        guard pb.changeCount != count else { return }
-        count = pb.changeCount
-        let secret = Set(["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType", "com.agilebits.onepassword"])
-        if let types = pb.types, types.contains(where: { secret.contains($0.rawValue) }) { return }
-        guard let t = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty, t.count < 5000 else { return }
-        items.removeAll { $0.text == t }
-        items.insert(Clip(text: t, date: Date()), at: 0)
-        if items.count > 12 { items.removeLast() }
-    }
-
-    func copy(_ c: Clip) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(c.text, forType: .string)
-        count = NSPasteboard.general.changeCount
-    }
-}
+/// The clipboard history lives in Sources/Clipboard.swift; its text comes from the Clipboard string table.
+func clipboardL(_ key: String) -> String { L(key) }
 
 /// Today and the next events (up to two weeks ahead) from the Calendar app, with the user's permission.
 private final class CalendarWatch: ObservableObject {
@@ -3574,6 +3618,229 @@ private final class CalendarWatch: ObservableObject {
 
     func requestAccess() {
         Permissions.request(.calendar) { [weak self] in self?.asked = true; self?.refresh() }
+    }
+}
+
+/// The island's clipboard page: search, favorites, pause, and the history itself (Sources/Clipboard.swift).
+private struct ClipboardPage: View {
+    @ObservedObject var h: ClipboardHistory
+    let flash: (String, String) -> Void
+    let keyable: (Bool) -> Void
+
+    var body: some View {
+        let list = h.visible
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                    TextField(L("Search"), text: $h.query).textFieldStyle(.plain).font(.system(size: 12))
+                        .onExitCommand { h.query = "" }
+                    if !h.query.isEmpty {
+                        Button { h.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4)) }
+                            .buttonStyle(.plain).help(L("Clear search"))
+                    }
+                }
+                .padding(.horizontal, 8).frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.08)))
+                tool(h.favoritesOnly ? "star.fill" : "star", on: h.favoritesOnly, L("Favorites only")) { h.favoritesOnly.toggle() }
+                tool(h.paused ? "play.fill" : "pause.fill", on: h.paused, h.paused ? L("Resume") : L("Pause")) { h.paused.toggle() }
+                Menu {
+                    Button(L("Clear history (keeps favorites)")) { h.clearHistory() }
+                    Button(L("Delete everything…"), role: .destructive) { ClipboardUI.confirmDeleteEverything(h) }
+                } label: {
+                    Image(systemName: "trash").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28, height: 24).help(L("Clear"))
+            }
+            if list.isEmpty {
+                Text(h.items.isEmpty ? L("What you copy will show up here") : h.favoritesOnly && h.query.isEmpty ? L("No favorites yet") : L("Nothing matches"))
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
+                    ForEach(list) { c in row(c) }
+                }
+            }
+            Spacer(minLength: 0)
+            footer
+        }
+        .onAppear { keyable(true) }
+        .onDisappear { keyable(false); h.hovered = nil }
+    }
+
+    /// A small square button of the toolbar, highlighted while its mode is on (like the selected tab).
+    private func tool(_ icon: String, on: Bool, _ title: String, _ action: @escaping () -> Void) -> some View {
+        Button { Haptic.tap(.alignment); action() } label: {
+            Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(on ? Island.accent : .white.opacity(0.5))
+                .frame(width: 28, height: 24)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(on ? 0.16 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+    }
+
+    private func row(_ c: ClipItem) -> some View {
+        let gone = h.missing.contains(c.id), hover = h.hovered == c.id
+        return HStack(spacing: 7) {
+            Button { copy(c) } label: {
+                HStack(spacing: 7) {
+                    leading(c)
+                    Text(title(c)).font(.system(size: 12)).lineLimit(1).truncationMode(c.kind == .files ? .middle : .tail)
+                        .foregroundStyle(gone ? Color.white.opacity(0.4) : Color.white)
+                    if gone { Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(warningColor) }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if hover {
+                Button { h.remove(c.id) } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.5)).frame(width: 14, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).help(L("Delete")).accessibilityLabel(L("Delete"))
+            }
+            Button { Haptic.tap(.alignment); h.togglePin(c.id) } label: {
+                Image(systemName: c.pinned ? "star.fill" : "star").font(.system(size: 10))
+                    .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.5 : 0.18)).frame(width: 14, height: 20).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
+            .accessibilityLabel(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
+        }
+        .padding(.leading, 10).padding(.trailing, 6).frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+        .onHover { inside in if inside { h.hovered = c.id } else if h.hovered == c.id { h.hovered = nil } }
+        .help(gone ? L("The file is no longer there") : tip(c))
+        .contextMenu {
+            Button(L("Copy")) { copy(c) }
+            Button(c.pinned ? L("Remove from favorites") : L("Add to favorites")) { h.togglePin(c.id) }
+            if c.kind == .files, !gone { Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting(c.paths.map { URL(fileURLWithPath: $0) }) } }
+            Divider()
+            Button(L("Delete")) { h.remove(c.id) }
+        }
+    }
+
+    @ViewBuilder private func leading(_ c: ClipItem) -> some View {
+        switch c.kind {
+        case .text: EmptyView()
+        case .image:
+            Group {
+                if let t = h.thumbnail(c) { Image(nsImage: t).resizable().aspectRatio(contentMode: .fill) } else { Color.white.opacity(0.1) }
+            }
+            .frame(width: 22, height: 16).clipShape(RoundedRectangle(cornerRadius: 3))
+        case .files:
+            Image(nsImage: NSWorkspace.shared.icon(forFile: c.paths.first ?? "/")).resizable().frame(width: 16, height: 16)
+        }
+    }
+
+    private func title(_ c: ClipItem) -> String {
+        switch c.kind {
+        case .text: return c.text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+        case .image: return L("Image") + " · \(c.width)×\(c.height)"
+        case .files: return (c.names.first ?? "") + (c.names.count > 1 ? " +\(c.names.count - 1)" : "")
+        }
+    }
+
+    private func tip(_ c: ClipItem) -> String {
+        var parts: [String] = []
+        switch c.kind {
+        case .text: parts.append(String(c.text.prefix(300)))
+        case .image: parts.append(L("Image") + " · \(c.width)×\(c.height) · " + ByteCountFormatter.string(fromByteCount: Int64(c.bytes), countStyle: .file))
+        case .files: parts.append(c.paths.prefix(5).joined(separator: "\n"))
+        }
+        if let app = ClipboardHistory.appName(c.source) { parts.append(app) }
+        parts.append(c.date.formatted(date: .abbreviated, time: .shortened))
+        return parts.joined(separator: "\n")
+    }
+
+    private func copy(_ c: ClipItem) {
+        if h.copy(c) {
+            Haptic.tap(.generic)
+            flash("doc.on.clipboard.fill", L("Copied"))
+        } else {
+            flash("exclamationmark.triangle.fill", c.kind == .files ? L("The file is no longer there") : L("Can't copy it"))
+        }
+    }
+
+    /// Where the history is kept, said plainly; a problem (no Keychain, unreadable file) takes its place.
+    @ViewBuilder private var footer: some View {
+        if let p = h.problem {
+            Label(p, systemImage: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(warningColor).lineLimit(1).help(p)
+        } else if h.paused {
+            Label(L("Paused: what you copy now isn't kept."), systemImage: "pause.fill").font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+        } else if h.saving {
+            Label(L("Saved on this Mac, encrypted. Never from password managers."), systemImage: "lock.fill").font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+        } else {
+            Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+        }
+    }
+}
+
+/// The clipboard's confirmations and its little editors (alerts, centred on the screen, with the panel out of the way).
+private enum ClipboardUI {
+    static var beforeAlert: () -> Void = {}
+
+    static func setPersist(_ h: ClipboardHistory, _ on: Bool) {
+        if on { h.setPersist(true); return }
+        beforeAlert()
+        let a = NSAlert()
+        a.messageText = L("Stop saving the clipboard history?")
+        a.informativeText = L("The saved copy can be deleted now, with its Keychain key, or kept encrypted on this Mac for the next time you turn this on.")
+        a.addButton(withTitle: L("Delete it"))
+        a.addButton(withTitle: L("Keep it"))
+        a.addButton(withTitle: L("Cancel"))
+        switch a.runModal() {
+        case .alertFirstButtonReturn: h.setPersist(false, wipe: true)
+        case .alertSecondButtonReturn: h.setPersist(false, wipe: false)
+        default: break
+        }
+    }
+
+    static func confirmDeleteEverything(_ h: ClipboardHistory) {
+        beforeAlert()
+        let a = NSAlert()
+        a.alertStyle = .critical
+        a.messageText = L("Delete the whole clipboard history?")
+        a.informativeText = L("Everything, favorites included, plus the saved files and their Keychain key. It can't be undone.")
+        a.addButton(withTitle: L("Delete everything"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        if !h.deleteEverything() {
+            let e = NSAlert()
+            e.messageText = L("Some of it couldn't be deleted")
+            e.informativeText = ClipStore.defaultDir.path
+            e.runModal()
+        }
+    }
+
+    static func addPattern(_ h: ClipboardHistory) {
+        beforeAlert()
+        let a = NSAlert()
+        a.messageText = L("Exclude text matching a pattern")
+        a.informativeText = L("A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept.")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        a.accessoryView = field
+        a.window.initialFirstResponder = field
+        a.addButton(withTitle: L("Add"))
+        a.addButton(withTitle: L("Cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        let p = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard ClipRules.validPattern(p) else {
+            let e = NSAlert(); e.messageText = L("That isn't a valid pattern"); e.informativeText = p; e.runModal()
+            return
+        }
+        var s = h.settings
+        if !s.patterns.contains(p) { s.patterns.append(p) }
+        h.update(s)
+    }
+
+    /// Apps that are open now and could be excluded: name and bundle id.
+    static func runningApps(excluding: [String]) -> [(name: String, id: String)] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { a in a.bundleIdentifier.map { (a.localizedName ?? $0, $0) } }
+            .filter { app in !excluding.contains(app.1) && !ClipRules.isPasswordApp(app.1) && app.1 != Bundle.main.bundleIdentifier }
+            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+            .map { (name: $0.0, id: $0.1) }
     }
 }
 
@@ -3623,25 +3890,7 @@ extension IslandView {
     // MARK: clipboard
 
     fileprivate var clipboardTab: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if clipboard.items.isEmpty { Text(L("What you copy will show up here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-            ScrollView(.vertical, showsIndicators: false) { LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
-                ForEach(clipboard.items) { c in
-                    Button { Haptic.tap(.generic); clipboard.copy(c); model.flashNotice("doc.on.clipboard.fill", L("Copied")) } label: {
-                        HStack(spacing: 8) {
-                            Text(c.text.replacingOccurrences(of: "\n", with: " ")).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            } }
-            Spacer(minLength: 0)
-            Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
-        }
+        ClipboardPage(h: clipboard, flash: { model.flashNotice($0, $1) }, keyable: model.setKeyable)
     }
 
     // MARK: calendar
@@ -4575,7 +4824,7 @@ private final class IslandModel: ObservableObject {
     let mic = MicWatch()
     let usage = UsageWatch()
     let files = FileShelf()
-    let clipboard = ClipboardWatch()
+    let clipboard = ClipboardHistory.shared
     let shelf = ShelfStore()
     var airDrop: ([URL]) -> Void = { _ in }
     var dropTargeted: (Bool) -> Void = { _ in }
@@ -4614,10 +4863,14 @@ private final class IslandModel: ObservableObject {
     var hover: (Bool) -> Void = { _ in }
     var toggleOpen: () -> Void = {}
     var showSettings: () -> Void = {}
+    /// The clipboard page's search field needs the keyboard: the panel may take it while that page is shown.
+    var setKeyable: (Bool) -> Void = { _ in }
 }
 
 private final class IslandPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    /// Only while the clipboard page is shown, for its search field (the panel never activates the app).
+    var keyable = false
+    override var canBecomeKey: Bool { keyable }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
 }
@@ -4638,6 +4891,11 @@ private final class IslandController {
         model.hover = { [weak self] inside in self?.hover(inside) }
         model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
         model.relayoutNow = { [weak self] in self?.relayout() }
+        model.setKeyable = { [weak self] on in
+            guard let p = self?.panel else { return }
+            p.keyable = on
+            if !on, p.isKeyWindow { p.orderOut(nil); p.orderFrontRegardless() }     // gives the keyboard back to the app in front
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
         model.mic.start()
         startPointerMonitors()
@@ -4837,7 +5095,7 @@ private struct IslandView: View {
 
     private var g: NotchGeometry { model.geometry }
     fileprivate var files: FileShelf { model.files }
-    fileprivate var clipboard: ClipboardWatch { model.clipboard }
+    fileprivate var clipboard: ClipboardHistory { model.clipboard }
     fileprivate var calendar: CalendarWatch { model.calendar }
     private var waiting: AgentEntry? { m.board.first { $0.state == "waiting" || $0.state == "error" } }
     private var working: Bool { m.board.contains { $0.state == "working" } }
@@ -5391,6 +5649,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.island.setOpen(false)
             self?.showPanel(fromClick: false)
         }
+        ClipboardUI.beforeAlert = { [weak self] in self?.hidePanel(); self?.island.setOpen(false); NSApp.activate() }
         model.presenceChanged = { [weak self] in
             guard let self else { return }
             self.updatePink()                                                // the pink powder pours in (or out) with the switch
@@ -5761,6 +6020,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ n: Notification) {
         systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
         mediaKeys.stop()
+        ClipboardHistory.shared.flush()          // a saved history gets its last change
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
@@ -6839,6 +7099,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
               AppDelegate.permissionProblems(needed: [], island: true, state: st([.camera: .denied, .calendar: .notAsked, .files: .denied])) == [.camera, .files]
               && AppDelegate.permissionProblems(needed: [], island: false, state: st([.camera: .denied])).isEmpty)
     }
+    if ClipboardTests.run() != 0 { failed += 1 }           // the clipboard history (its own PASS/FAIL lines; temp folders, fake Keychain)
     _ = NSApplication.shared
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
@@ -7013,6 +7274,9 @@ private enum IslandCheck {
         return failed == 0 ? 0 : 1
     }
 }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--clipboard-test" {
+    exit(ClipboardTests.run() == 0 ? 0 : 1)
+}
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--island-selfcheck" {
     _ = NSApplication.shared
     exit(IslandCheck.run())
@@ -7049,8 +7313,10 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     im.files.downloads = [FileShelf.Item(url: URL(fileURLWithPath: "/Applications/Cocaine.app"), date: Date(), size: 5_200_000),
                           FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), date: Date(), size: 120_000_000)]
     im.files.shots = (0..<5).map { FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/Desktop Pictures/Sonoma.heic").deletingLastPathComponent().appendingPathComponent("shot\($0).png"), date: Date(), size: 1) }
-    im.clipboard.items = [ClipboardWatch.Clip(text: "brew upgrade --cask cocaine", date: Date()), ClipboardWatch.Clip(text: "https://github.com/Mattiakart/cocaine", date: Date()),
-                          ClipboardWatch.Clip(text: "Ciao Mario, ti mando il file domani mattina", date: Date())]
+    im.clipboard.replace([ClipItem.text("brew upgrade --cask cocaine"), {
+                              var f = ClipItem.files(["/System/Library/CoreServices/Finder.app"]); f.pinned = true; return f }(),
+                          ClipItem.text("https://github.com/Mattiakart/cocaine"), ClipItem.text("Ciao Mario, ti mando il file domani mattina"),
+                          ClipItem.files(["/tmp/cocaine-no-such-file.pdf"])])
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
