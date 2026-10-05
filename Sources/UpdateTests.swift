@@ -176,6 +176,9 @@ enum TestBundles {
 enum UpdateTests {
     static func run() -> Int32 {
         signal(SIGPIPE, SIG_IGN)
+        let scratch = tempDir("updates")                     // never the real ~/Library/Caches/local.cocaine.toggle
+        setenv("COCAINE_UPDATES_DIR", scratch.path, 1)
+        defer { try? FileManager.default.removeItem(at: scratch) }
         semver(); manifests(); releases(); policyAndSchedule(); homebrew(); downloads(); installs(); relauncher()
         print(failures == 0 ? "update tests: all passed" : "update tests: \(failures) failed")
         return failures == 0 ? 0 : 1
