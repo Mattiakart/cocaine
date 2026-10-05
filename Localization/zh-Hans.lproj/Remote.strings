@@ -1,0 +1,10 @@
+/* iPhone remote control (protocol v2, migration of old Shortcuts) */
+"This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "此配对已过期。在 Mac 上:Cocaine → 远程工作 → iPhone → 发送,然后使用新的快捷指令。";
+"Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "Cocaine 已更新,不再接受此快捷指令。在 Mac 上:Cocaine → 远程工作 → iPhone → 发送,然后使用新的快捷指令。";
+"No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes." = "暂无有效回复。如果 Mac 正在睡眠,请几分钟后再试“上次回复”。";
+"Old Shortcuts" = "旧快捷指令";
+"Unprotected, still accepted (status, on/off) until %@" = "未受保护,仍接受(状态、开/关)至 %@";
+"%d without protection or expired: send a new Shortcut" = "%d 个未受保护或已过期:请发送新的快捷指令";
+"Allow 14 days" = "允许 14 天";
+"Stop" = "停止";
+"Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them" = "旧快捷指令发送未加密、未认证的文本:任何知道其中继主题的人都能使用它们";

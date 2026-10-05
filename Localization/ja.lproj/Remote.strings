@@ -1,0 +1,10 @@
+/* iPhone remote control (protocol v2, migration of old Shortcuts) */
+"This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "このペアリングは期限切れです。Macで Cocaine → リモートワーク → iPhone → 送信 を選び、新しいショートカットを使ってください。";
+"Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut." = "Cocaineが更新され、このショートカットは使えなくなりました。Macで Cocaine → リモートワーク → iPhone → 送信 を選び、新しいショートカットを使ってください。";
+"No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes." = "有効な応答はまだありません。Macがスリープ中なら、数分後に「最後の応答」を試してください。";
+"Old Shortcuts" = "古いショートカット";
+"Unprotected, still accepted (status, on/off) until %@" = "保護なし、%@まで受け付け中(状態、オン/オフ)";
+"%d without protection or expired: send a new Shortcut" = "%d件が保護なしまたは期限切れ:新しいショートカットを送信してください";
+"Allow 14 days" = "14日間許可";
+"Stop" = "停止";
+"Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them" = "古いショートカットは暗号化も認証もされていないテキストを送ります。リレーのトピックを知った人なら誰でも使えてしまいます";
