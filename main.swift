@@ -1294,6 +1294,12 @@ private final class PanelModel: ObservableObject {
     var bagLevel: CGFloat { bagPink ? pinkLevel : fillLevel }
     var bagPouring: Bool { bagPink ? pinkPouring : pouring }
     @Published var presenceActive = false
+    /// Why Cocaine is on, when a Smart Trigger turned it on ("Xcode", "On the charger"…); nil otherwise.
+    @Published var triggeredBy: String?
+    /// Why the triggers can't turn it on now (a low battery, heat); nil when they can.
+    @Published var triggerHold: String?
+    /// The triggers that are true right now (TriggerKind raw values): a green dot on their rows.
+    @Published var liveTriggers: Set<String> = []
     @Published var board: [AgentEntry] = []          // what each AI session is doing, from the hooks (waiting for you first)
     @Published var approvals: [ApprovalRequest] = [] // requests waiting for an answer from the notch
     @Published var agentNotice: String?              // what a click on a session could (and couldn't) do
@@ -1325,7 +1331,7 @@ private final class PanelModel: ObservableObject {
     @Published var delayMinutes: Int { didSet { if delayMinutes > 0 { settings.delay = Double(delayMinutes * 60) } } }
     /// "" = same as the Mac, otherwise a code from Language.codes. Changes apply at once.
     @Published var language: String = Language.chosen ?? "" {
-        didSet { Language.set(language.isEmpty ? nil : language, persist: persistLanguage); languageChanged() }
+        didSet { Language.set(language.isEmpty ? nil : language, persist: persistLanguage); Self.controlWords(); languageChanged() }
     }
     var persistLanguage = true
     var languageChanged: () -> Void = {}
@@ -1359,7 +1365,15 @@ private final class PanelModel: ObservableObject {
     /// Closes the settings panel and opens the island again (on the page it was on), for the strip's back button.
     var backToIsland: () -> Void = {}
 
+    /// The few words Sources/Controls.swift shows by itself, in the app's language; its haptic tap.
+    static func controlWords() {
+        L10nControls.opensList = L("Opens a list"); L10nControls.all = L("All"); L10nControls.none = L("None")
+        L10nControls.selected = L("%d selected"); L10nControls.search = L("Search"); L10nControls.openNow = L("Open now")
+        ControlHaptics.tap = { Haptic.tap(.alignment) }
+    }
+
     init() {
+        Self.controlWords()
         dimEnabled = settings.dimEnabled
         levelPercent = Double((settings.level * 100).rounded())
         delayMinutes = Int(settings.delay) / 60
@@ -1468,24 +1482,6 @@ private struct CocaineSwitch: View {
     }
 }
 
-private struct DimmedByContainerKey: EnvironmentKey { static let defaultValue = false }
-private extension EnvironmentValues {
-    /// A whole group is dimmed and disabled (dimGroup): its controls don't dim themselves again.
-    var dimmedByContainer: Bool {
-        get { self[DimmedByContainerKey.self] }
-        set { self[DimmedByContainerKey.self] = newValue }
-    }
-}
-
-private extension View {
-    /// Disables a group of rows and dims it once (text, values and switches alike), never twice.
-    func dimGroup(_ off: Bool) -> some View {
-        self.disabled(off).allowsHitTesting(!off)
-            .opacity(off ? UI.disabledOpacity : 1)
-            .transformEnvironment(\.dimmedByContainer) { if off { $0 = true } }
-    }
-}
-
 private struct PressScale: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.scaleEffect(configuration.isPressed ? 0.94 : 1)
@@ -1533,62 +1529,12 @@ private extension View {
     }
 }
 
-/// A segmented control whose segments are all the same width and that fills the width it is given (the native one in
-/// SwiftUI hugs its labels). A value that isn't in the list (a custom timer length) leaves no segment selected.
-private struct EqualSegments<T: Hashable>: NSViewRepresentable {
-    @Binding var selection: T
-    let values: [T]
-    var name: String? = nil                  // what VoiceOver calls the group ("Stay on for", "After"…)
-    let label: (T) -> String
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let c = NSSegmentedControl(labels: values.map(label), trackingMode: .selectOne,
-                                   target: context.coordinator, action: #selector(Coordinator.changed(_:)))
-        c.segmentDistribution = .fillEqually
-        c.selectedSegmentBezelColor = NSColor(red: 0.40, green: 0.64, blue: 1.0, alpha: 1)      // the island's accent
-        c.controlSize = .small
-        c.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        c.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        c.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return c
-    }
-
-    func updateNSView(_ c: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
-        if c.segmentCount != values.count { c.segmentCount = values.count }
-        for (i, v) in values.enumerated() {
-            let text = label(v)
-            c.setLabel(text, forSegment: i); c.setWidth(0, forSegment: i)
-            c.setToolTip(text == "∞" ? L("No limit") : nil, forSegment: i)
-        }
-        c.selectedSegment = values.firstIndex(of: selection) ?? -1
-        c.setAccessibilityLabel(name)
-        // A group dimmed as a whole (dimGroup) keeps the control's own look, so it isn't dimmed twice; it can't be clicked anyway.
-        c.isEnabled = context.environment.isEnabled || context.environment.dimmedByContainer
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView c: NSSegmentedControl, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? c.intrinsicContentSize.width, height: c.intrinsicContentSize.height)
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    final class Coordinator: NSObject {
-        var parent: EqualSegments
-        init(_ parent: EqualSegments) { self.parent = parent }
-        @objc func changed(_ c: NSSegmentedControl) {
-            guard c.selectedSegment >= 0, c.selectedSegment < parent.values.count else { return }
-            Haptic.tap(.alignment)
-            parent.selection = parent.values[c.selectedSegment]
-        }
-    }
-}
-
 private struct PanelView: View {
     @ObservedObject var m: PanelModel
     @ObservedObject var clip = ClipboardHistory.shared
     @ObservedObject var up = Updater.shared
     @ObservedObject var dialogs = DialogCenter.shared
+    @ObservedObject var pickers = PickerCenter.shared
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -1621,7 +1567,7 @@ private struct PanelView: View {
         }
         .padding(Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 12))     // whatever it holds is cut at the card's edge, never drawn outside
+        .clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))     // whatever it holds is cut at the card's edge, never drawn outside
         .panelCard()
     }
 
@@ -1630,19 +1576,29 @@ private struct PanelView: View {
         card(icon, title, warning: warning, trailing: { EmptyView() }, content)
     }
 
-    /// One row: its name on the left, its control on the right edge. Always one line for the control; the name wraps.
-    private func row<Control: View>(_ title: String, detail: String? = nil, tip: String? = nil, warning: Bool = false,
-                                    @ViewBuilder _ control: () -> Control) -> some View {
-        HStack(alignment: .center, spacing: Space.m) {
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                Text(title).font(UI.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                if let detail {
-                    Text(detail).font(UI.detail).foregroundStyle(warning ? warningColor : UI.secondary)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+    /// A row's title (with a green dot while what it watches is true now) and its detail line.
+    private func titleBlock(_ title: String, _ detail: String?, warning: Bool = false, live: Bool = false, wraps: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            HStack(spacing: Space.s) {
+                Text(title).font(UI.title).lineLimit(wraps ? 2 : 1).fixedSize(horizontal: !wraps, vertical: true)
+                if live {
+                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                        .help(L("True now")).accessibilityLabel(L("True now"))
                 }
             }
-            .padding(.vertical, detail == nil ? 0 : Space.rowAir)      // a two-line row keeps the same air as one-line rows
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if let detail {
+                Text(detail).font(UI.detail).foregroundStyle(warning ? warningColor : UI.secondary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, detail == nil ? 0 : Space.rowAir)      // a two-line row keeps the same air as one-line rows
+    }
+
+    /// One row: its name on the left, its control on the right edge. Always one line for the control; the name wraps.
+    private func row<Control: View>(_ title: String, detail: String? = nil, tip: String? = nil, warning: Bool = false, live: Bool = false,
+                                    @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: Space.m) {
+            titleBlock(title, detail, warning: warning, live: live).frame(maxWidth: .infinity, alignment: .leading)
             control().fixedSize()
         }
         .frame(minHeight: 22)
@@ -1650,21 +1606,24 @@ private struct PanelView: View {
         .help(tip ?? detail ?? title)
     }
 
-    /// A value you pick from a short list: the current value and a chevron, flush with the right edge.
-    private func choice<T: Hashable>(_ title: String, _ selection: Binding<T>, _ values: [T],
-                                     _ name: @escaping (T) -> String) -> some View {
-        Menu {
-            Picker(title, selection: selection) { ForEach(values, id: \.self) { Text(name($0)).tag($0) } }
-                .pickerStyle(.inline).labelsHidden()
-        } label: {
-            HStack(spacing: 4) {
-                Text(name(selection.wrappedValue)).font(UI.value).lineLimit(1)
+    /// A row whose value is a short list: a segmented control beside the title when it fits (in this language), else on its
+    /// own full-width line under it. No popup at all.
+    private func segRow<T: Hashable>(_ title: String, detail: String? = nil, tip: String? = nil, live: Bool = false, _ selection: Binding<T>, _ values: [T],
+                                     spoken: @escaping (T) -> String? = { _ in nil }, _ label: @escaping (T) -> String) -> some View {
+        let seg = Segments(selection: selection, values: values, name: title, label: label, spoken: spoken)
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: Space.m) {
+                titleBlock(title, detail, live: live, wraps: false)
+                Spacer(minLength: Space.l)
+                seg.fixedSize()
             }
-            .frame(maxWidth: 190, alignment: .trailing)
+            VStack(alignment: .leading, spacing: Space.s) {
+                titleBlock(title, detail, live: live)
+                seg.frame(maxWidth: .infinity)
+            }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
-        .accessibilityLabel(title)
+        .frame(minHeight: 22)
+        .help(tip ?? detail ?? title)
     }
 
     private func toggle(_ title: String, _ on: Binding<Bool>) -> some View {
@@ -1684,16 +1643,29 @@ private struct PanelView: View {
     }
 
     private func durationName(_ s: Double) -> String { s == 0 ? L("Until you're back") : String(format: L("%d s"), Int(s)) }
-    private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
+    private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("%d min"), min) }
 
     /// "∞" for no limit, else "45 min", "2 h" or "2 h 30 min": any length, not just the presets.
     private func durationLabel(_ minutes: Int) -> String { Dur.short(minutes: minutes) }   // the same words as the island's
+    private func noLimit(_ minutes: Int) -> String? { minutes == 0 ? L("No limit") : nil }
+
+    /// "A +2" for a list of chosen things (or None).
+    private func listValue(_ names: [String]) -> String {
+        names.isEmpty ? L("None") : names.count == 1 ? names[0] : "\(names[0]) +\(names.count - 1)"
+    }
+
+    /// The new list after a dropdown's boxes changed: what stays keeps its order, what was added follows (A–Z).
+    static func merged(_ old: [String], _ chosen: Set<String>) -> [String] {
+        old.filter { chosen.contains($0) } + chosen.subtracting(old).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     private var status: String {
         if m.needsAuth { return L("Admin password needed") }
         if m.on && m.holdMissing { return L("Keeping the screen on…") }
         var parts = [m.on ? L("Your Mac stays awake") : L("Your Mac sleeps as usual")]
         if m.on, let until = m.onUntil, until > Date() { parts.append(String(format: L("until %@"), Self.time.string(from: until))) }
+        if m.on, let by = m.triggeredBy { parts.append(String(format: L("Turned on by %@"), by)) }   // why it is on
+        else if !m.on, let hold = m.triggerHold { parts.append(hold) }                                 // why a trigger can't turn it on
         if let paused = m.alertsPausedUntil { parts.append("⏸ " + String(format: L("until %@"), Self.time.string(from: paused))) }
         return parts.joined(separator: " · ")
     }
@@ -1721,11 +1693,13 @@ private struct PanelView: View {
             Divider().frame(height: 12)
             stepButton("plus", L("Longer")) { m.timerMinutes = min(1440, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15) }
         }
-        .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
+        .frame(height: CTL.h)
+        .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
         .fixedSize()
         .onScrollSteps(every: 10) { m.timerMinutes = min(1440, max(15, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15 * $0)) }
         .help(L("Any length, in steps of 15 minutes"))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("Stay on for"))
     }
 
     /// Scrolling over the presets moves through them (∞ · 30 min … 8 h).
@@ -1736,44 +1710,70 @@ private struct PanelView: View {
     }
 
     private var timerCard: some View {
-        card("timer", L("Stay on for"), trailing: { customTimer }) {
-            EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: durationLabel)
+        card("hourglass", L("Stay on for"), trailing: { customTimer }) {
+            Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: durationLabel, spoken: noLimit)
                 .frame(maxWidth: .infinity)
                 .onScrollSteps(every: 24) { n in stepTimerPreset(n) }
+            if !m.on {
+                Text(L("Picking a length turns Cocaine on for that long")).font(UI.detail).foregroundStyle(UI.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .help(L("Cocaine turns itself off when the time is up"))
     }
 
-    private var screenCard: some View {
-        card("sun.min", L("Dim the screen when idle"), trailing: { toggle(L("Dim the screen when idle"), $m.dimEnabled) }) {
-            Group {
+    /// What happens when you leave the Mac alone: nothing, the screens dim, or they turn off (the Mac keeps working).
+    private var idleMode: Binding<Int> {
+        Binding(get: { !m.dimEnabled ? 0 : m.screenOff ? 2 : 1 }, set: { v in
+            switch v {
+            case 0: m.dimEnabled = false
+            case 1: if m.screenOff { m.screenOff = false }; if !m.dimEnabled { m.dimEnabled = true }
+            default: if !m.screenOff { m.screenOff = true }; if !m.dimEnabled { m.dimEnabled = true }
+            }
+        })
+    }
+
+    private var idleCard: some View {
+        card("sun.min", L("When idle"), trailing: {
+            Button(L("Screens off now")) { m.screenOffNow() }.buttonStyle(CocaineButtonStyle())
+                .help(L("Turn the screens off now"))
+        }) {
+            Segments(selection: idleMode, values: [0, 1, 2], name: L("When idle")) { [L("Nothing"), L("Dim"), L("Screen off")][$0] }
+                .frame(maxWidth: .infinity)
+            if m.dimEnabled && !m.screenOff {
                 HStack(spacing: Space.m) {
                     Image(systemName: "sun.min").font(UI.icon).foregroundStyle(UI.secondary).frame(width: UI.iconColumn)
-                    Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
-                        .accessibilityLabel(L("Dim the screen when idle"))
+                    CocaineSlider(value: m.levelPercent, range: 1...50, name: L("Dim the screen when idle"),
+                                  valueText: "\(Int(m.levelPercent))%") { m.setLevel($0) }
                     Text("\(Int(m.levelPercent))%").font(UI.value.monospacedDigit()).frame(width: 34, alignment: .trailing)
-                    Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
+                    Button(L("Preview")) { m.preview() }.buttonStyle(CocaineButtonStyle()).disabled(m.previewing)
                         .help(L("Shows the minimum brightness for 3 seconds"))
-                }
-                .dimGroup(m.screenOff && m.dimEnabled)            // (when the whole card is off it is dimmed once, below)
-                row(L("Turn the screen off instead"),
-                    detail: L("The Mac keeps working with the screen off."),
-                    tip: L("While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings.")) {
-                    HStack(spacing: Space.s) {
-                        Button(L("Now")) { m.screenOffNow() }.controlSize(.small).help(L("Turn the screens off now"))
-                        toggle(L("Turn the screen off instead"), $m.screenOff)
-                    }
-                }
-                HStack(spacing: Space.m) {
-                    Text(L("After")).font(UI.title).fixedSize()
-                    EqualSegments(selection: $m.delayMinutes, values: Settings.delayChoices, name: L("After")) { Dur.short(minutes: $0) }
-                        .frame(maxWidth: .infinity)
                 }
                 .frame(minHeight: 22)
             }
-            .dimGroup(!m.dimEnabled)
+            if m.dimEnabled && m.screenOff {
+                Text(L("The Mac keeps working with the screen off.")).font(UI.detail).foregroundStyle(UI.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(L("While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings."))
+            }
+            if m.dimEnabled {
+                segRow(L("After"), $m.delayMinutes, Settings.delayChoices) { Dur.short(minutes: $0) }
+            }
         }
         .help(L("Goes back to normal as soon as you touch anything"))
+    }
+
+    /// Battery Guard: one level for everything battery (the power trigger lets go there too).
+    private var batteryCard: some View {
+        card("battery.50", L("Battery Guard")) {
+            row(L("When the battery reaches"), detail: m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
+                EmptyView()
+            }
+            Segments(selection: $m.batteryThreshold, values: Settings.batteryChoices, name: L("Battery Guard")) { $0 == 0 ? L("Off") : "\($0)%" }
+                .frame(maxWidth: .infinity)
+            segRow(L("Then"), tip: L("What Cocaine does at that level"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
+                .dimGroup(m.batteryThreshold == 0)
+        }
     }
 
     /// Who is doing what: the AI sessions at work, or, when none is, the latest alerts.
@@ -1786,7 +1786,10 @@ private struct PanelView: View {
             }
         } else if m.ai.available {
             card("bell", L("Recent alerts"), trailing: {
-                if !m.history.isEmpty { Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(UI.detail) }
+                if !m.history.isEmpty {
+                    Button(L("Clear")) { m.clearHistory() }.buttonStyle(CocaineButtonStyle(kind: .plain))
+                        .padding(.trailing, -8)                  // its text on the content edge; the hover pill reaches past it
+                }
             }) {
                 if m.history.isEmpty {
                     Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(UI.hint)
@@ -1820,6 +1823,14 @@ private struct PanelView: View {
         }
     }
 
+    private var languageSpec: PickerSpec {
+        let code = m.language
+        return PickerSpec(id: "language", title: L("Language"),
+                          items: [PickerItem(id: "", title: L("Same as Mac"), emoji: Language.flag(Language.system))]
+                              + Language.codes.map { PickerItem(id: $0, title: Language.nativeName($0), emoji: Language.flag($0)) },
+                          mode: .single(code))
+    }
+
     private var appCard: some View {
         card("gearshape", "Cocaine") {
             row(L("Open at login")) {
@@ -1829,30 +1840,29 @@ private struct PanelView: View {
             row(L("Check for updates automatically"), tip: L("Once a day. Nothing is downloaded until you press Install.")) {
                 toggle(L("Check for updates automatically"), $up.autoCheck)
             }
-            row(L("Island"), tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Island"), $m.island) }
-            row(L("Haptic feedback"), tip: L("A light tap on the trackpad when you change a timer, switch a page or toggle something")) { toggle(L("Haptic feedback"), $m.haptics) }
-            row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
-                toggle(L("Replace system HUD"), $m.replaceHUD)
-            }
             row(L("Language")) {
                 let code = m.language.isEmpty ? Language.system : m.language
-                Menu {
-                    Picker(L("Language"), selection: $m.language) {
-                        Text("\(L("Same as Mac"))  \(Language.flag(Language.system))").tag("")
-                        ForEach(Language.codes, id: \.self) { Text("\(Language.flag($0))  \(Language.nativeName($0))").tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("\(Language.flag(code))  \(Language.nativeName(code))").font(UI.value).lineLimit(1)
-                    }
+                ValueButton(id: "language", title: L("Language"), value: "\(Language.flag(code))  \(Language.nativeName(code))",
+                            spec: { languageSpec }, onPick: { m.language = $0 })
+            }
+            row(L("Show in the notch"), detail: L("Replaces the menu-bar icon"),
+                tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Show in the notch"), $m.island) }
+            row(L("Haptic feedback"), tip: L("A light tap on the trackpad when you change a timer, switch a page or toggle something")) { toggle(L("Haptic feedback"), $m.haptics) }
+            row(L("Global shortcuts"), detail: "⌃⌥⌘C \(L("on/off")) · ⌃⌥⌘O \(L("panel")) · ⌃⌥⌘P \(L("pause alerts"))",
+                tip: "⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts")) {
+                toggle(L("Global shortcuts"), $m.hotkeys)
+            }
+            row(L("Shortcuts app and links"),
+                tip: L("Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first.")) {
+                toggle(L("Shortcuts app and links"), $m.allowLinks)
+            }
+            if m.permissionProblems.isEmpty {
+                row(L("Permissions"), detail: L("Everything Cocaine needs is allowed"), tip: SigningTier.current.panelLine) {
+                    Image(systemName: "checkmark.circle.fill").font(UI.icon).foregroundStyle(.green).accessibilityLabel(L("Everything Cocaine needs is allowed"))
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.visible)
-                .accessibilityLabel(L("Language"))
             }
             row(L("Feedback or help"), detail: Feedback.address) {
-                Button(L("Write…")) { Feedback.compose() }.controlSize(.small).help(L("Feedback or help") + " — " + Feedback.address)
+                Button(L("Write…")) { Feedback.compose() }.buttonStyle(CocaineButtonStyle()).help(L("Feedback or help") + " — " + Feedback.address)
             }
         }
     }
@@ -1860,28 +1870,24 @@ private struct PanelView: View {
     /// Check, Install (or the Homebrew command / the download page when this copy can't update itself), Cancel, Retry.
     @ViewBuilder private var updateControl: some View {
         switch up.phase {
-        case .checking, .installing: ProgressView().controlSize(.small)
-        case .downloading: Button(L("Cancel")) { up.cancel() }.controlSize(.small)
+        case .checking, .installing: ProgressView().controlSize(.small).frame(height: CTL.h)
+        case .downloading: Button(L("Cancel")) { up.cancel() }.buttonStyle(CocaineButtonStyle())
         case .available:
             if up.eligibility == .homebrew {
-                Button(L("Copy command")) { up.copyBrewCommand() }.controlSize(.small).help(Homebrew.upgradeCommand)
+                Button(L("Copy command")) { up.copyBrewCommand() }.buttonStyle(CocaineButtonStyle()).help(Homebrew.upgradeCommand)
             } else {
-                Button(up.eligibility == .ok ? L("Install") : L("Download")) { up.install() }.controlSize(.small)
+                Button(up.eligibility == .ok ? L("Install") : L("Download")) { up.install() }.buttonStyle(CocaineButtonStyle(kind: .primary))
             }
-        case .failed(_, let retry): Button(retry ? L("Retry") : L("Check now")) { retry ? up.retry() : up.check() }.controlSize(.small)
-        default: Button(L("Check now")) { up.check() }.controlSize(.small)
+        case .failed(_, let retry): Button(retry ? L("Retry") : L("Check now")) { retry ? up.retry() : up.check() }.buttonStyle(CocaineButtonStyle())
+        default: Button(L("Check now")) { up.check() }.buttonStyle(CocaineButtonStyle())
         }
     }
 
-    /// Only what is missing, with a button; one calm line when everything is in place.
+    /// Only when something is missing: what, and a button (when all is fine it is one line in the Cocaine card).
     private var permissionsCard: some View {
-        card("lock.shield", L("Permissions")) {
-            if m.permissionProblems.isEmpty {
-                row(L("Everything Cocaine needs is allowed")) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
-            } else {
-                ForEach(m.permissionProblems) { p in
-                    row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.controlSize(.small) }
-                }
+        card("lock.shield", L("Permissions"), warning: true) {
+            ForEach(m.permissionProblems) { p in
+                row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.buttonStyle(CocaineButtonStyle(kind: .primary)) }
             }
             Text(SigningTier.current.panelLine).font(UI.detail).foregroundStyle(UI.secondary)   // what the permissions are tied to
                 .lineLimit(3).fixedSize(horizontal: false, vertical: true)
@@ -1889,13 +1895,25 @@ private struct PanelView: View {
     }
 
     private var generalTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.l) {
+            if !m.permissionProblems.isEmpty { permissionsCard }
             timerCard
-            screenCard
-            activityCard
-            permissionsCard
+            idleCard
+            batteryCard
             appCard
-            if m.island { clipboardCard }
+        }
+    }
+
+    // MARK: Island (the island's settings: only while it is on)
+
+    private var islandTab: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            card("rectangle.topthird.inset.filled", L("Island")) {
+                row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
+                    toggle(L("Replace system HUD"), $m.replaceHUD)
+                }
+            }
+            clipboardCard
         }
     }
 
@@ -1905,14 +1923,29 @@ private struct PanelView: View {
         Binding(get: { clip.settings[keyPath: kp] }, set: { var s = clip.settings; s[keyPath: kp] = $0; clip.update(s) })
     }
 
+    /// A clipboard age, short, in the app's language ("1 h", "1 w", "30 d"; "∞" for no limit).
     private func ageName(_ hours: Int) -> String {
-        switch hours {
-        case 0: return L("No limit")
-        case 1: return L("1 hour")
-        case 24: return L("1 day")
-        case 24 * 7: return L("1 week")
-        default: return String(format: L("%d days"), hours / 24)
-        }
+        guard hours > 0 else { return "∞" }
+        let f = DateComponentsFormatter(); f.unitsStyle = .abbreviated
+        var cal = Calendar.current; cal.locale = Language.locale; f.calendar = cal
+        f.allowedUnits = hours < 24 ? [.hour] : hours % 168 == 0 ? [.weekOfMonth] : [.day]
+        return f.string(from: TimeInterval(hours * 3600)) ?? "\(hours)"
+    }
+
+    private func appIcon(bundleID id: String) -> NSImage? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { NSWorkspace.shared.icon(forFile: $0.path) }
+    }
+
+    private var excludedAppsSpec: PickerSpec {
+        let s = clip.settings
+        let chosen = s.excludedApps.map { PickerItem(id: $0, title: ClipboardHistory.appName($0) ?? $0, image: appIcon(bundleID: $0)) }
+        let open = ClipboardUI.runningApps(excluding: s.excludedApps).map { PickerItem(id: $0.id, title: $0.name, image: appIcon(bundleID: $0.id), section: 1) }
+        return PickerSpec(id: "excludedApps", title: L("Excluded apps"), items: chosen + open, mode: .multi, selected: Set(s.excludedApps), sectionTitle: L("Open now"))
+    }
+
+    private var patternsSpec: PickerSpec {
+        let p = clip.settings.patterns
+        return PickerSpec(id: "patterns", title: L("Excluded patterns"), items: p.map { PickerItem(id: $0, title: $0) }, mode: .multi, selected: Set(p))
     }
 
     private var clipboardCard: some View {
@@ -1922,58 +1955,61 @@ private struct PanelView: View {
                 warning: clip.problem != nil) {
                 CocaineSwitch(on: s.persist) { ClipboardUI.setPersist(clip, !s.persist) }.accessibilityLabel(L("Save on this Mac"))
             }
-            row(L("Keep at most"), tip: L("Favorites don't count and are never removed")) {
-                choice(L("Keep at most"), clipSetting(\.maxItems), ClipSettings.itemChoices) { String(format: L("%d items"), $0) }
-            }
-            row(L("Forget after")) { choice(L("Forget after"), clipSetting(\.maxAgeHours), ClipSettings.ageChoices, ageName) }
-            row(L("Space in all")) { choice(L("Space in all"), clipSetting(\.maxTotalMB), ClipSettings.totalChoices) { "\($0) MB" } }
-            row(L("Largest item"), tip: L("Bigger images and texts aren't kept")) {
-                choice(L("Largest item"), clipSetting(\.maxItemMB), ClipSettings.itemSizeChoices) { "\($0) MB" }
-            }
+            segRow(L("Keep at most"), tip: L("Favorites don't count and are never removed"), clipSetting(\.maxItems), ClipSettings.itemChoices,
+                   spoken: { String(format: L("%d items"), $0) }) { "\($0)" }
+            segRow(L("Forget after"), clipSetting(\.maxAgeHours), ClipSettings.ageChoices, spoken: { $0 == 0 ? L("No limit") : nil }, ageName)
+            segRow(L("Space in all"), clipSetting(\.maxTotalMB), ClipSettings.totalChoices) { "\($0) MB" }
+            segRow(L("Largest item"), tip: L("Bigger images and texts aren't kept"), clipSetting(\.maxItemMB), ClipSettings.itemSizeChoices) { "\($0) MB" }
             row(L("Skip card numbers and keys"), tip: L("Card numbers, private keys, API keys and other tokens aren't kept")) {
                 toggle(L("Skip card numbers and keys"), clipSetting(\.skipSecrets))
             }
             row(L("Excluded apps"), detail: L("Password managers are always excluded")) {
-                Menu {
-                    ForEach(s.excludedApps, id: \.self) { id in
-                        Button { var n = s; n.excludedApps.removeAll { $0 == id }; clip.update(n) } label: {
-                            Label(ClipboardHistory.appName(id) ?? id, systemImage: "checkmark")
-                        }
-                    }
-                    if !s.excludedApps.isEmpty { Divider() }
-                    Section(L("Open now")) {
-                        ForEach(ClipboardUI.runningApps(excluding: s.excludedApps), id: \.id) { app in
-                            Button(app.name) { var n = s; n.excludedApps.append(app.id); clip.update(n) }
-                        }
-                    }
-                } label: {
-                    Text(s.excludedApps.isEmpty ? L("None") : s.excludedApps.count == 1 ? (ClipboardHistory.appName(s.excludedApps[0]) ?? "1")
-                         : "\(ClipboardHistory.appName(s.excludedApps[0]) ?? "") +\(s.excludedApps.count - 1)").font(UI.value).lineLimit(1)
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.visible).accessibilityLabel(L("Excluded apps"))
+                ValueButton(id: "excludedApps", title: L("Excluded apps"), value: listValue(s.excludedApps.map { ClipboardHistory.appName($0) ?? $0 }),
+                            spec: { excludedAppsSpec }, onChange: { set in
+                                var n = clip.settings; n.excludedApps = Self.merged(n.excludedApps, set); clip.update(n)
+                            })
             }
             row(L("Excluded patterns"), tip: L("Text matching one of these regular expressions isn't kept")) {
-                Menu {
-                    ForEach(s.patterns, id: \.self) { p in
-                        Button { var n = s; n.patterns.removeAll { $0 == p }; clip.update(n) } label: { Label(p, systemImage: "checkmark") }
+                HStack(spacing: Space.s) {
+                    if !s.patterns.isEmpty {
+                        ValueButton(id: "patterns", title: L("Excluded patterns"), value: "\(s.patterns.count)", maxWidth: 120,
+                                    spec: { patternsSpec }, onChange: { set in
+                                        var n = clip.settings; n.patterns = Self.merged(n.patterns, set); clip.update(n)
+                                    })
                     }
-                    if !s.patterns.isEmpty { Divider() }
-                    Button(L("Add…")) { ClipboardUI.addPattern(clip) }
-                } label: {
-                    Text(s.patterns.isEmpty ? L("None") : "\(s.patterns.count)").font(UI.value).lineLimit(1)
+                    Button(L("Add…")) { pickers.close(); ClipboardUI.addPattern(clip) }.buttonStyle(CocaineButtonStyle())
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.visible).accessibilityLabel(L("Excluded patterns"))
             }
             row(L("Delete everything"), detail: L("History, favorites, saved files and their key")) {
-                Button(L("Delete…")) { ClipboardUI.confirmDeleteEverything(clip) }.controlSize(.small)
+                Button(L("Delete…")) { ClipboardUI.confirmDeleteEverything(clip) }.buttonStyle(CocaineButtonStyle(kind: .destructive))
             }
         }
     }
 
     // MARK: AI alerts
 
+    private var pauseSpec: PickerSpec {
+        var items: [PickerItem] = []
+        if m.alertsPausedUntil != nil { items.append(PickerItem(id: "resume", title: L("Resume"), symbol: "play.fill")) }
+        items += [PickerItem(id: "30", title: String(format: L("%d min"), 30)), PickerItem(id: "60", title: L("1 hour")),
+                  PickerItem(id: "tomorrow", title: L("Until tomorrow"))]
+        return PickerSpec(id: "pause", title: L("Pause"), items: items, mode: .action)
+    }
+
+    private func pause(_ id: String) {
+        switch id {
+        case "resume": m.pauseAlerts(nil)
+        case "30": m.pauseAlerts(Date().addingTimeInterval(1800))
+        case "60": m.pauseAlerts(Date().addingTimeInterval(3600))
+        default:
+            let cal = Calendar.current
+            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
+        }
+    }
+
     private var aiTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.l) {
+            activityCard
             card("sparkles", L("Connected AIs"), warning: m.ai.codexNeedsTrust) {
                 ForEach(m.ai.tools.filter(\.installed)) { t in
                     let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
@@ -1982,9 +2018,8 @@ private struct PanelView: View {
                     }
                 }
                 let others = m.ai.tools.filter { !$0.installed }.map(\.name)
-                Button(L("Other apps and scripts…")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
-                    .buttonStyle(.link).font(UI.detail)
-                    .help(others.isEmpty ? L("Other apps and scripts…") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
+                LinkButton(title: L("Other apps and scripts")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
+                    .help(others.isEmpty ? L("Other apps and scripts") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
             }
             card("bell.badge", L("When")) {
                 row(L("Finishes"), tip: L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
@@ -1999,46 +2034,35 @@ private struct PanelView: View {
                     toggle(L("Answer from the island"), $m.agentApprovals)
                 }
                 row(L("Pause"), tip: L("Silences every alert for a while")) {
-                    Menu {
-                        if m.alertsPausedUntil != nil {
-                            Button(L("Resume")) { m.pauseAlerts(nil) }
-                            Divider()
-                        }
-                        Button(String(format: L("%d min"), 30)) { m.pauseAlerts(Date().addingTimeInterval(1800)) }
-                        Button(L("1 hour")) { m.pauseAlerts(Date().addingTimeInterval(3600)) }
-                        Button(L("Until tomorrow")) {
-                            let cal = Calendar.current
-                            m.pauseAlerts(cal.date(bySettingHour: 8, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date())!))
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Off")).font(UI.value).lineLimit(1)
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.visible)
-                    .accessibilityLabel(L("Pause"))
+                    ValueButton(id: "pause", title: L("Pause"),
+                                value: m.alertsPausedUntil.map { String(format: L("until %@"), Self.time.string(from: $0)) } ?? L("Not paused"),
+                                spec: { pauseSpec }, onPick: pause)
                 }
             }
             card("speaker.wave.2", L("How"), trailing: {
-                Button(L("Test")) { m.testAlert() }.controlSize(.small).help(L("Shows an alert with these settings"))
+                Button(L("Test")) { m.testAlert() }.buttonStyle(CocaineButtonStyle()).help(L("Shows an alert with these settings"))
             }) {
                 row(L("Flash"), tip: L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
                 row(L("Sound"), tip: L("Plays when the alert arrives")) {
-                    choice(L("Sound"), $m.alertSound, [""] + Settings.sounds) { $0.isEmpty ? L("No sound") : $0 }
+                    ValueButton(id: "sound", title: L("Sound"), value: m.alertSound.isEmpty ? L("No sound") : m.alertSound,
+                                spec: { PickerSpec(id: "sound", title: L("Sound"),
+                                                   items: [PickerItem(id: "", title: L("No sound"), symbol: "speaker.slash")]
+                                                       + Settings.sounds.map { PickerItem(id: $0, title: $0, symbol: "speaker.wave.2") },
+                                                   mode: .single(m.alertSound)) },
+                                onPick: { m.alertSound = $0 })
                 }
                 row(L("Voice"), tip: L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
                 if m.alertSpeak {                               // which voice, only when there's one to choose
                     row(L("Voice type"), tip: L("The Mac's voices for your language; you hear it as you pick")) {
-                        choice(L("Voice type"), $m.alertVoice, [""] + Voices.available.map(\.identifier), Voices.name)
+                        ValueButton(id: "voice", title: L("Voice type"), value: Voices.name(m.alertVoice),
+                                    spec: { PickerSpec(id: "voice", title: L("Voice type"),
+                                                       items: ([""] + Voices.available.map(\.identifier)).map { PickerItem(id: $0, title: Voices.name($0)) },
+                                                       mode: .single(m.alertVoice)) },
+                                    onPick: { m.alertVoice = $0 })
                     }
                 }
-                row(L("On screen"), tip: L("How long the alert stays")) {
-                    choice(L("On screen"), $m.alertDuration, Settings.durationChoices, durationName)
-                }
-                row(L("Repeat"), tip: L("While you're away, for up to 30 minutes")) {
-                    choice(L("Repeat"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
-                }
+                segRow(L("On screen"), tip: L("How long the alert stays"), $m.alertDuration, Settings.durationChoices, durationName)
+                segRow(L("Repeat"), tip: L("While you're away, for up to 30 minutes"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
             }
         }
     }
@@ -2056,10 +2080,10 @@ private struct PanelView: View {
                     Haptic.tap(.alignment)
                     if on { m.scheduleDays.removeAll { $0 == day } } else { m.scheduleDays = (m.scheduleDays + [day]).sorted() }
                 } label: {
-                    Text(cal.veryShortStandaloneWeekdaySymbols[day - 1]).font(UI.value)
-                        .frame(maxWidth: .infinity, minHeight: 24)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(on ? Island.accent : Color.white.opacity(0.10)))
-                        .foregroundStyle(on ? Color.black : Color.primary)        // black on the accent, as every accent fill (8:1)
+                    Text(cal.veryShortStandaloneWeekdaySymbols[day - 1]).font(CTL.label)
+                        .frame(maxWidth: .infinity, minHeight: CTL.h)
+                        .background(RoundedRectangle(cornerRadius: CTL.radius).fill(on ? Island.accent : CTL.fill))
+                        .foregroundStyle(on ? CTL.onAccentInk : Color.primary)        // black on the accent, as every accent fill (8:1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -2070,78 +2094,67 @@ private struct PanelView: View {
         }
         row(L("Hours"), detail: m.scheduleEnd <= m.scheduleStart ? L("Ends the next day") : nil,
             tip: L("Local time; follows daylight saving and time-zone changes")) {
-            HStack(spacing: 4) {
-                minutePicker($m.scheduleStart)
+            HStack(spacing: Space.xs) {
+                TimeStepper(id: "scheduleStart", title: L("From"), minutes: $m.scheduleStart)
                 Text("–").font(UI.value)
-                minutePicker($m.scheduleEnd)
+                TimeStepper(id: "scheduleEnd", title: L("To"), minutes: $m.scheduleEnd)
             }
         }
     }
 
-    /// A time of day (minutes after midnight) as an hour-and-minute field.
-    private func minutePicker(_ minutes: Binding<Int>) -> some View {
-        let cal = Calendar.autoupdatingCurrent
-        let day = cal.startOfDay(for: Date())
-        return DatePicker("", selection: Binding(
-            get: { cal.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: day) ?? day },
-            set: { let c = cal.dateComponents([.hour, .minute], from: $0); minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0) }),
-            displayedComponents: .hourAndMinute)
-            .labelsHidden().datePickerStyle(.field).controlSize(.small)
+    /// An app's icon by its name: from the running app, else from the app in /Applications (or the system's), else the generic one.
+    private func appIcon(named name: String) -> NSImage? {
+        if let a = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }), let i = a.icon { return i }
+        for dir in ["/Applications", "/System/Applications", NSHomeDirectory() + "/Applications"] {
+            let path = dir + "/" + name + ".app"
+            if FileManager.default.fileExists(atPath: path) { return NSWorkspace.shared.icon(forFile: path) }
+        }
+        return NSWorkspace.shared.icon(for: .application)
     }
 
+
+    /// A multiple choice of apps by name: the chosen (and suggested) ones, then the ones open now.
+    private func appsSpec(_ id: String, _ title: String, chosen: [String], suggested: [String] = []) -> PickerSpec {
+        let known = Array(Set(chosen + suggested))
+        let running = System.runningAppNames().filter { !known.contains($0) }
+        return PickerSpec(id: id, title: title,
+                          items: known.map { PickerItem(id: $0, title: $0, image: appIcon(named: $0)) }
+                              + running.map { PickerItem(id: $0, title: $0, image: appIcon(named: $0), section: 1) },
+                          mode: .multi, selected: Set(chosen), sectionTitle: L("Open now"))
+    }
+
+    /// The battery level the power trigger lets go at: Battery Guard's (10 % when it is off).
+    private var batteryFloor: Int { PowerRule.batteryFloor(guardLevel: m.batteryThreshold) }
+
     private var automationTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.l) {
             card("bolt.badge.automatic", L("Smart Triggers")) {
-                row(L("An AI is at work"), tip: L("On while an AI works or waits for you; off 3 minutes after")) {
+                row(L("An AI is at work"), tip: L("On while an AI works or waits for you; off 3 minutes after"), live: m.liveTriggers.contains("agents")) {
                     toggle(L("An AI is at work"), $m.triggerAgents)
                 }
-                row(L("These programs are open"), tip: L("On while any is running; off 3 minutes after")) {
-                    Menu {
-                        ForEach(m.triggerApps, id: \.self) { app in
-                            Button { m.triggerApps.removeAll { $0 == app } } label: { Label(app, systemImage: "checkmark") }
-                        }
-                        if !m.triggerApps.isEmpty { Divider() }
-                        Section(L("Open now")) {
-                            ForEach(System.runningAppNames().filter { n in !m.triggerApps.contains(n) }, id: \.self) { app in
-                                Button(app) { m.triggerApps.append(app) }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(m.triggerApps.isEmpty ? L("Choose")
-                                 : (m.triggerApps.count == 1 ? m.triggerApps[0] : "\(m.triggerApps[0]) +\(m.triggerApps.count - 1)"))
-                                .font(UI.value).lineLimit(1)
-                        }
-                        .frame(maxWidth: 190, alignment: .trailing)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.visible)
-                    .accessibilityLabel(L("These programs are open"))
+                row(L("These programs are open"), tip: L("On while any is running; off 3 minutes after"), live: m.liveTriggers.contains("apps")) {
+                    ValueButton(id: "triggerApps", title: L("These programs are open"), value: listValue(m.triggerApps),
+                                spec: { appsSpec("triggerApps", L("These programs are open"), chosen: m.triggerApps) },
+                                onChange: { m.triggerApps = Self.merged(m.triggerApps, $0) })
                 }
-                row(L("Power"), tip: L("On while the Mac is on the charger, or on battery above a level; off 30 seconds after")) {
-                    choice(L("Power"), $m.triggerPower, ["", "ac", "battery"]) {
-                        $0 == "ac" ? L("On the charger") : $0 == "battery" ? L("On battery") : L("Off")
-                    }
+                segRow(L("Power"), detail: m.triggerPower == "battery" ? String(format: L("Until the battery is down to %@"), "\(batteryFloor)%") : nil,
+                       tip: L("On while the Mac is on the charger, or on battery above a level; off 30 seconds after"), live: m.liveTriggers.contains("power"),
+                       $m.triggerPower, ["", "ac", "battery"]) {
+                    $0 == "ac" ? L("On the charger") : $0 == "battery" ? L("On battery") : L("Off")
                 }
-                if m.triggerPower == "battery" {
-                    row(L("Down to"), tip: L("Below this level the battery trigger lets go")) {
-                        choice(L("Down to"), $m.triggerPowerMin, Settings.powerMinimumChoices) { "\($0)%" }
-                    }
+                segRow(L("External display"), tip: L("On while a display is connected (or while none is); off 30 seconds after"),
+                       live: m.liveTriggers.contains("display"), $m.triggerDisplay, ["", "connected", "disconnected"]) {
+                    $0 == "connected" ? L("Connected") : $0 == "disconnected" ? L("Not connected") : L("Off")
                 }
-                row(L("External display"), tip: L("On while a display is connected (or while none is); off 30 seconds after")) {
-                    choice(L("External display"), $m.triggerDisplay, ["", "connected", "disconnected"]) {
-                        $0 == "connected" ? L("Connected") : $0 == "disconnected" ? L("Not connected") : L("Off")
-                    }
-                }
-                row(L("Schedule"), tip: L("On during these hours on the chosen days; off when they end")) {
+                row(L("Schedule"), tip: L("On during these hours on the chosen days; off when they end"), live: m.liveTriggers.contains("schedule")) {
                     toggle(L("Schedule"), $m.triggerSchedule)
                 }
                 if m.triggerSchedule {
                     scheduleRows
                 }
                 if m.triggerCount >= 2 {
-                    row(L("Turn on when"), tip: L("Any: one reason is enough. All: every chosen one must hold.")) {
-                        choice(L("Turn on when"), $m.triggerAll, [false, true]) { $0 ? L("All are true") : L("Any is true") }
+                    segRow(L("Turn on when"), tip: L("Any: one reason is enough. All: every chosen one must hold."), $m.triggerAll, [false, true]) {
+                        $0 ? L("All are true") : L("Any is true")
                     }
                 }
             }
@@ -2149,54 +2162,30 @@ private struct PanelView: View {
                 row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
                 }
-                row(L("When"), tip: L("Only while one of the chosen apps is open, or all the time")) {
-                    choice(L("When"), $m.stayActiveAlways, [false, true]) { $0 ? L("Always") : L("While these apps are open") }
-                }
-                .dimGroup(!m.stayActive)
-                row(L("Apps"), tip: L("The chat apps to keep available")) {
-                    Menu {
-                        ForEach(Array(Set(Presence.defaultApps + m.stayActiveApps)).sorted(), id: \.self) { app in
-                            Button { if m.stayActiveApps.contains(app) { m.stayActiveApps.removeAll { $0 == app } } else { m.stayActiveApps.append(app) } } label: {
-                                if m.stayActiveApps.contains(app) { Label(app, systemImage: "checkmark") } else { Text(app) }
-                            }
-                        }
-                        Section(L("Open now")) {
-                            ForEach(System.runningAppNames().filter { n in !Presence.defaultApps.contains(n) && !m.stayActiveApps.contains(n) }, id: \.self) { app in
-                                Button(app) { m.stayActiveApps.append(app) }
-                            }
-                        }
-                    } label: {
-                        Text(m.stayActiveApps.isEmpty ? L("Choose") : (m.stayActiveApps.count == 1 ? m.stayActiveApps[0] : "\(m.stayActiveApps[0]) +\(m.stayActiveApps.count - 1)")).font(UI.value).lineLimit(1)
-                            .frame(maxWidth: 190, alignment: .trailing)
+                Group {
+                    segRow(L("When"), tip: L("Only while one of the chosen apps is open, or all the time"), $m.stayActiveAlways, [false, true]) {
+                        $0 ? L("Always") : L("While these apps are open")
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.visible)
-                    .accessibilityLabel(L("Apps"))
+                    row(L("Apps"), tip: L("The chat apps to keep available")) {
+                        ValueButton(id: "stayApps", title: L("Apps"), value: listValue(m.stayActiveApps),
+                                    spec: { appsSpec("stayApps", L("Apps"), chosen: m.stayActiveApps, suggested: Presence.defaultApps) },
+                                    onChange: { m.stayActiveApps = Self.merged(m.stayActiveApps, $0) })
+                    }
                 }
                 .dimGroup(!m.stayActive)
                 if m.stayActive && !m.presenceAccess {
                     row(L("Needs permission to send input"), detail: L("Allow Cocaine in Privacy & Security → Accessibility"), warning: true) {
-                        Button(L("Allow")) { m.requestPresence() }.controlSize(.small)
+                        Button(L("Allow")) { m.requestPresence() }.buttonStyle(CocaineButtonStyle(kind: .primary))
                     }
                 }
-            }
-            card("battery.50", L("Battery Guard")) {
-                row(L("When the battery reaches"), detail: m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
-                    EmptyView()
-                }
-                EqualSegments(selection: $m.batteryThreshold, values: Settings.batteryChoices, name: L("Battery Guard")) { $0 == 0 ? L("Off") : "\($0)%" }
-                    .frame(maxWidth: .infinity)
-                row(L("Then"), tip: L("What Cocaine does at that level")) {
-                    choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
-                }
-                .dimGroup(m.batteryThreshold == 0)
             }
             card("iphone.gen3", L("Remote work")) {
                 row(L("iPhone"), detail: m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
                     : String(format: L("Paired: %d"), m.phoneCount) + " · " + (m.phoneLinkUp ? L("Connected") : L("Connecting…"))) {
                     HStack(spacing: Space.s) {
-                        Button(m.makingShortcut ? "…" : L("Send…")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
+                        Button(L("Send…")) { m.sendShortcut() }.buttonStyle(CocaineButtonStyle(busy: m.makingShortcut)).disabled(m.makingShortcut)
                             .help(L("Send the Shortcut to your iPhone"))
-                        if m.phoneCount + m.oldPhones > 0 { Button(L("Revoke…")) { m.revokePhones() }.controlSize(.small) }
+                        if m.phoneCount + m.oldPhones > 0 { Button(L("Revoke…")) { m.revokePhones() }.buttonStyle(CocaineButtonStyle(kind: .destructive)) }
                     }
                 }
                 if m.oldPhones > 0 {
@@ -2204,9 +2193,13 @@ private struct PanelView: View {
                                                                                        $0.formatted(.dateTime.day().month(.abbreviated).year().locale(Language.locale))) }
                         ?? String(format: L("%d without protection or expired: send a new Shortcut"), m.oldPhones), warning: true) {   // warning: the detail only
                         HStack(spacing: Space.s) {
-                            Button(m.oldPhonesAllowedUntil == nil ? L("Allow 14 days") : L("Stop")) { m.allowOldPhones(m.oldPhonesAllowedUntil == nil) }
-                                .controlSize(.small).help(L("Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them"))
-                            Button(L("Remove")) { m.removeOldPhones() }.controlSize(.small)
+                            if m.oldPhonesAllowedUntil == nil {
+                                Button(L("Allow 14 days")) { confirmAllowOldPhones() }.buttonStyle(CocaineButtonStyle())
+                                    .help(L("Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them"))
+                            } else {
+                                Button(L("Stop")) { m.allowOldPhones(false) }.buttonStyle(CocaineButtonStyle())
+                            }
+                            Button(L("Remove…")) { confirmRemoveOldPhones() }.buttonStyle(CocaineButtonStyle(kind: .destructive))
                         }
                     }
                 }
@@ -2214,37 +2207,38 @@ private struct PanelView: View {
                     toggle(L("Wake for iPhone"), $m.wakeForPhone)
                 }
                 row(L("Phone alerts"), detail: m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
-                    Button(L("Test")) { m.testPhone() }.controlSize(.small).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
+                    Button(L("Test")) { m.testPhone() }.buttonStyle(CocaineButtonStyle()).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
                 }
-                Button(L("Remote work guide…")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
-                    .buttonStyle(.link).font(UI.detail)
-            }
-            card("keyboard", L("Shortcuts")) {
-                row(L("Global shortcuts"), tip: L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
-                Text("⌃⌥⌘C  \(L("on/off"))  ·  ⌃⌥⌘O  \(L("panel"))  ·  ⌃⌥⌘P  \(L("pause alerts"))").font(UI.detail).foregroundStyle(UI.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.75)
-                    .help("⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts"))
-                    .opacity(m.hotkeys ? 1 : 0.45)
-                row(L("Shortcuts app and links"),
-                    tip: L("Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first.")) {
-                    toggle(L("Shortcuts app and links"), $m.allowLinks)
-                }
+                LinkButton(title: L("Remote work guide")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
             }
         }
     }
 
+    /// Accepting unprotected Shortcuts lowers the protection: asked first, the safe answer is the default.
+    private func confirmAllowOldPhones() {
+        DialogCenter.shared.present(Dialogs.allowOldShortcuts()) { r in if r.buttonID == "allow" { m.allowOldPhones(true) } }
+    }
+
+    /// Removing old Shortcuts can't be undone (those iPhones stop working): asked first, Cancel is the default.
+    private func confirmRemoveOldPhones() {
+        DialogCenter.shared.present(Dialogs.removeOldShortcuts()) { r in if r.buttonID == "remove" { m.removeOldPhones() } }
+    }
+
     // MARK: The panel
 
-    private func tabTitle(_ id: String) -> String { id == "ai" ? L("AI alerts") : id == "auto" ? L("Automation") : L("General") }
+    private func tabTitle(_ id: String) -> String {
+        switch id { case "ai": return L("AI alerts"); case "auto": return L("Automation"); case "island": return L("Island"); default: return L("General") }
+    }
 
-    private var tabs: [String] { m.ai.available ? ["", "ai", "auto"] : ["", "auto"] }
+    /// General, AI alerts (on Macs with an AI tool), Automation, and Island (only while the island is on).
+    private var tabs: [String] { PanelTabs.list(ai: m.ai.available, island: m.island) }
 
     /// A cell of the top strip: as wide as the strip's layout allows for this notch, its highlight derived from it.
     private func stripButton(_ icon: String, _ title: String, _ s: StripLayout, height: CGFloat, selected: Bool = false,
                              _ action: @escaping () -> Void) -> some View {
         Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: s.highlight, height: min(26, height - 2))
+                RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: s.highlight, height: min(26, height - 2))
                 Image(systemName: icon).font(UI.tabIcon).foregroundStyle(selected ? Color.white : UI.hint)
             }
             .frame(width: s.cell, height: height)              // the whole cell around the icon
@@ -2254,21 +2248,25 @@ private struct PanelView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func tabIcon(_ id: String) -> String { id == "ai" ? "sparkles" : id == "auto" ? "bolt.badge.automatic" : "house.fill" }
+    private func tabIcon(_ id: String) -> String {
+        switch id { case "ai": return "sparkles"; case "auto": return "bolt.badge.automatic"; case "island": return "rectangle.topthird.inset.filled"; default: return "house.fill" }
+    }
 
-    /// The strip's cells for this notch: back and the tabs left of it, Automation and Quit right of it (nil: they don't fit;
-    /// then the tabs are a segmented control under the header).
+    /// The strip's cells for this notch: back, General and AI alerts left of it; Automation, Island and Quit right of it (nil:
+    /// they don't fit; then the tabs are a segmented control under the header).
     private func stripLayout(_ g: NotchGeometry) -> StripLayout? {
-        StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: g.notchWidth,
-                         left: 1 + tabs.filter { $0 != "auto" }.count, right: 2)
+        let (l, r) = PanelTabs.split(tabs)
+        return StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: g.notchWidth,
+                                left: 1 + l.count, right: r.count + 1)
     }
 
     /// The panel's top strip, like the island's: each side gets exactly what the notch leaves, so nothing is ever under it.
     private func strip(_ g: NotchGeometry, _ s: StripLayout) -> some View {
-        HStack(spacing: 0) {
+        let (l, r) = PanelTabs.split(tabs)
+        return HStack(spacing: 0) {
             HStack(spacing: 0) {
                 stripButton("chevron.backward", L("Back to the island"), s, height: g.height) { m.backToIsland() }   // from the island's gear: back to it
-                ForEach(tabs.filter { $0 != "auto" }, id: \.self) { t in
+                ForEach(l, id: \.self) { t in
                     stripButton(tabIcon(t), tabTitle(t), s, height: g.height, selected: m.page == t) { m.page = t }
                 }
             }
@@ -2276,7 +2274,9 @@ private struct PanelView: View {
             .frame(width: s.side, alignment: .leading)
             Color.clear.frame(width: s.notchWidth)
             HStack(spacing: 0) {
-                stripButton(tabIcon("auto"), tabTitle("auto"), s, height: g.height, selected: m.page == "auto") { m.page = "auto" }
+                ForEach(r, id: \.self) { t in
+                    stripButton(tabIcon(t), tabTitle(t), s, height: g.height, selected: m.page == t) { m.page = t }
+                }
                 stripButton("xmark.circle", L("Quit Cocaine"), s, height: g.height) { m.quit() }
             }
             .padding(.trailing, s.edgeInset)
@@ -2295,11 +2295,12 @@ private struct PanelView: View {
                 }
                 Text(status).font(UI.detail).lineLimit(1)
                     .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? warningColor : UI.secondary)
+                    .help(status)
             }
             Spacer(minLength: 8)
             CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
                 .help(m.on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
-                .accessibilityLabel("Cocaine")
+                .accessibilityLabel(L("Cocaine, keeps the Mac awake"))
         }
         .padding(.horizontal, 10)
     }
@@ -2308,6 +2309,10 @@ private struct PanelView: View {
         let g = m.island ? NotchGeometry.current() : nil
         let s = g.flatMap(stripLayout)
         let asking = dialogs.isShowing(on: .panel)
+        let picking = pickers.isOpen(on: .panel)
+        let page = tabs.contains(m.page) ? m.page : ""
+        let reserve = max(asking ? PanelDialogOverlay.reserved(dialogs.cardHeight, notch: g) : 0,
+                          picking ? PickerLayer.reserved(pickers.anchor, card: pickers.cardHeight, bottom: Space.frame) : 0)
         return VStack(alignment: .leading, spacing: Space.l) {
             if let g {
                 if let s { strip(g, s) } else { Color.clear.frame(height: g.height) }      // the notch: nothing goes under it
@@ -2315,20 +2320,21 @@ private struct PanelView: View {
             VStack(alignment: .leading, spacing: Space.l) {
                 header
                 if s == nil {
-                    EqualSegments(selection: $m.page, values: tabs, name: L("Settings"), label: tabTitle)
+                    Segments(selection: $m.page, values: tabs, name: L("Settings"), label: tabTitle)
                         .frame(maxWidth: .infinity)
                 }
 
-                switch m.page {
+                switch page {
                 case "ai": aiTab
                 case "auto": automationTab
+                case "island": islandTab
                 default: generalTab
                 }
 
                 if s == nil {
                     HStack(spacing: Space.m) {
                         Spacer(minLength: Space.m)
-                        Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
+                        Button(L("Quit")) { m.quit() }.buttonStyle(CocaineButtonStyle()).fixedSize()
                             .help(L("Quit Cocaine"))
                     }
                     .padding(.horizontal, Space.l)
@@ -2338,13 +2344,70 @@ private struct PanelView: View {
         .disabled(asking)                                    // a question is on top (PanelDialogOverlay): nothing under it reacts
         .padding(.horizontal, Space.frame).padding(.bottom, Space.frame).padding(.top, g == nil ? Space.frame : Layout.overscan)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
-        // A dialog taller than the page: the panel grows to hold it (the card is drawn over the panel's top, see the overlay).
-        .frame(minHeight: asking ? PanelDialogOverlay.reserved(dialogs.cardHeight, notch: g) : 0, alignment: .top)
+        // A dropdown hangs under its row, over the page (never above the row, so never up into the notch).
+        .overlay(alignment: .topLeading) {
+            PickerLayer(center: pickers, surface: .panel, x: Space.frame, width: Layout.width - 2 * Space.frame)
+        }
+        .coordinateSpace(name: PickerCenter.space)
+        // A dialog or a dropdown taller than the page: the panel grows to hold it.
+        .frame(minHeight: reserve, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
-        .focusEffectDisabled()
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
+    }
+}
+
+/// The panel's tabs, and which side of the notch each goes on (pure: --layout-test and --selftest check it).
+enum PanelTabs {
+    static func list(ai: Bool, island: Bool) -> [String] { [""] + (ai ? ["ai"] : []) + ["auto"] + (island ? ["island"] : []) }
+    /// Left of the notch: General and AI alerts (after the back button); right: Automation and Island (before Quit).
+    static func split(_ tabs: [String]) -> (left: [String], right: [String]) {
+        (tabs.filter { $0 == "" || $0 == "ai" }, tabs.filter { $0 == "auto" || $0 == "island" })
+    }
+}
+
+/// A time of day (minutes after midnight): − and + in steps of 15 minutes (or two-finger scrolling), and the time itself opens
+/// a list of the half hours. No system date picker.
+private struct TimeStepper: View {
+    let id: String
+    let title: String
+    @Binding var minutes: Int
+
+    static func label(_ minutes: Int) -> String {
+        let cal = Calendar.autoupdatingCurrent
+        let d = cal.date(bySettingHour: (minutes / 60) % 24, minute: minutes % 60, second: 0, of: cal.startOfDay(for: Date())) ?? Date()
+        return PanelView.timeString(d)
+    }
+
+    /// The next time on a step of `step` minutes, wrapping around midnight.
+    static func stepped(_ minutes: Int, by n: Int, step: Int = 15) -> Int {
+        let base = n > 0 ? (minutes / step) * step : ((minutes + step - 1) / step) * step   // off-grid times land on the grid first
+        return ((base + n * step) % 1440 + 1440) % 1440
+    }
+
+    private func step(_ n: Int) { Haptic.tap(.alignment); minutes = Self.stepped(minutes, by: n) }
+
+    private var spec: PickerSpec {
+        let times = Array(stride(from: 0, to: 1440, by: 30))
+        let ids = (times.contains(minutes) ? times : (times + [minutes]).sorted()).map(String.init)
+        return PickerSpec(id: id, title: title, items: ids.map { PickerItem(id: $0, title: Self.label(Int($0) ?? 0)) }, mode: .single(String(minutes)))
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { step(-1) } label: { Image(systemName: "minus").font(UI.chevron).frame(width: 22, height: CTL.h).contentShape(Rectangle()) }
+                .buttonStyle(.plain).accessibilityLabel(L("Earlier"))
+            ValueButton(id: id, title: title, value: Self.label(minutes), maxWidth: 90, spec: { spec }, onPick: { minutes = Int($0) ?? minutes })
+                .padding(.trailing, 6)
+            Button { step(1) } label: { Image(systemName: "plus").font(UI.chevron).frame(width: 22, height: CTL.h).contentShape(Rectangle()) }
+                .buttonStyle(.plain).accessibilityLabel(L("Later"))
+        }
+        .frame(height: CTL.h)
+        .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
+        .onScrollSteps(every: 12) { step($0) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
     }
 }
 
@@ -2467,13 +2530,23 @@ private final class AlertAnimation: ObservableObject {
     @Published var shown = false
 
     func start() {
+        let reduce = Motion.reduce
         withAnimation(.easeOut(duration: 0.25)) { shown = true }
-        for (i, value) in [0.55, 0, 0.55, 0].enumerated() {     // two flashes
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2 * Double(i)) {
-                withAnimation(.easeInOut(duration: 0.18)) { self.tint = value }
+        for (i, value) in Motion.flashes(reduce: reduce).enumerated() {     // two flashes (one soft tint with Reduce Motion)
+            DispatchQueue.main.asyncAfter(deadline: .now() + (reduce ? 0.5 : 0.2) * Double(i)) {
+                withAnimation(.easeInOut(duration: reduce ? 0.45 : 0.18)) { self.tint = value }
             }
         }
     }
+}
+
+/// The system's Reduce Motion setting: no morphing island, no strobing alert.
+private enum Motion {
+    static var reduce: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// The alert's full-screen tints: two quick white flashes, or one soft tint that fades.
+    static func flashes(reduce: Bool) -> [Double] { reduce ? [0.18, 0] : [0.55, 0, 0.55, 0] }
+    /// The island's open/close and its wings: springs, or no motion at all (it appears and goes at once).
+    static func island(_ a: Animation) -> Animation? { reduce ? nil : a }
 }
 
 /// Full-screen overlay on every screen: two quick flashes, then a card with the message for a few seconds.
@@ -3672,16 +3745,14 @@ private struct ClipboardPage: View {
                     }
                 }
                 .padding(.horizontal, Space.m).frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: CTL.radius).fill(Color.white.opacity(0.08)))
                 tool(h.favoritesOnly ? "star.fill" : "star", on: h.favoritesOnly, L("Favorites only")) { h.favoritesOnly.toggle() }
                 tool(h.paused ? "play.fill" : "pause.fill", on: h.paused, h.paused ? L("Resume") : L("Pause")) { h.paused.toggle() }
-                Menu {
-                    Button(L("Clear history (keeps favorites)")) { h.clearHistory() }
-                    Button(L("Delete everything…"), role: .destructive) { ClipboardUI.confirmDeleteEverything(h, from: .island) }
-                } label: {
-                    Image(systemName: "trash").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5))
+                tool("trash", on: false, L("Clear")) {
+                    IslandChoices.ask(L("Clear"), icon: "trash", IslandChoices.clipboardTrash) { id in
+                        if id == "clear" { h.clearHistory() } else { DispatchQueue.main.async { ClipboardUI.confirmDeleteEverything(h, from: .island) } }
+                    }
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28, height: 24).help(L("Clear"))
             }
             if list.isEmpty {
                 Text(h.items.isEmpty ? L("What you copy will show up here") : h.favoritesOnly && h.query.isEmpty ? L("No favorites yet") : L("Nothing matches"))
@@ -3703,7 +3774,7 @@ private struct ClipboardPage: View {
         Button { Haptic.tap(.alignment); action() } label: {
             Image(systemName: icon).font(.system(size: 12, weight: .medium)).foregroundStyle(on ? Island.accent : .white.opacity(0.5))
                 .frame(width: 28, height: 24)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(on ? 0.16 : 0)))
+                .background(RoundedRectangle(cornerRadius: CTL.radius).fill(Color.white.opacity(on ? 0.16 : 0)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(title).accessibilityLabel(title)
@@ -3808,9 +3879,57 @@ private struct ClipboardPage: View {
 
 /// Every question and message of the app, as in-app dialogs (Sources/InAppDialog.swift). The flows, the render tool and the
 /// tests use these same specs.
+/// Words for why Cocaine is on: the triggers that are true now, by name ("Xcode", "Charger"…).
+private enum TriggerWords {
+    static func reason(_ states: [TriggerKind: Bool], apps: [String], power: String) -> String? {
+        var out: [String] = []
+        if states[.agents] == true { out.append(L("AI")) }
+        if states[.apps] == true { out += apps.prefix(2) }
+        if states[.power] == true { out.append(power == "ac" ? L("Charger") : L("Battery")) }
+        if states[.display] == true { out.append(L("External display")) }
+        if states[.schedule] == true { out.append(L("Schedule")) }
+        return out.isEmpty ? nil : out.joined(separator: ", ")
+    }
+}
+
+/// A short list asked in the open island (a camera, a monitor's input, what to clear): the dialogs' card at the page's top,
+/// a row is the answer. In-app, so nothing opens under the notch or outside Cocaine's black.
+private enum IslandChoices {
+    static func spec(_ title: String, icon: String, _ choices: [DialogChoice]) -> DialogSpec {
+        DialogSpec(icon: icon, title: title, choices: choices, choiceMode: .act, buttons: [Dialogs.cancel], surface: .island)
+    }
+
+    static func ask(_ title: String, icon: String, _ choices: [DialogChoice], _ picked: @escaping (String) -> Void) {
+        DialogCenter.shared.present(spec(title, icon: icon, choices)) { r in
+            if case .choice(let id) = r { picked(id) }
+        }
+    }
+
+    /// The clipboard page's trash: empty the history (favorites stay) or delete everything (asks again).
+    static var clipboardTrash: [DialogChoice] {
+        [DialogChoice(id: "clear", title: L("Clear history (keeps favorites)"), symbol: "clock.arrow.circlepath"),
+         DialogChoice(id: "delete", title: L("Delete everything…"), symbol: "trash", destructive: true)]
+    }
+}
+
 private enum Dialogs {
     static var cancel: DialogButton { DialogButton(id: "cancel", title: L("Cancel"), role: .cancel) }
     static var ok: DialogButton { DialogButton(id: "ok", title: L("OK")) }
+
+    /// Removing old Shortcuts can't be undone: those iPhones stop working. Cancel is the default (Return keeps them).
+    static func removeOldShortcuts() -> DialogSpec {
+        DialogSpec(icon: "iphone.slash", title: L("Remove the old Shortcuts?"), message: L("Those iPhones stop working until you send them a new Shortcut."),
+                   critical: true, buttons: [DialogButton(id: "remove", title: L("Remove"), role: .destructive), cancel])
+    }
+
+    /// Accepting unprotected Shortcuts lowers the protection: asked, and Return (the default) says no.
+    static func allowOldShortcuts() -> DialogSpec {
+        DialogSpec(icon: "exclamationmark.shield", title: L("Accept unprotected Shortcuts for 14 days?"),
+                   message: L("Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them"), critical: true,
+                   buttons: [DialogButton(id: "allow", title: L("Allow 14 days")), DialogButton(id: "cancel", title: L("Don't Allow"), role: .cancel)],
+                   safeDefault: true)
+    }
+
 
     /// A message with an OK button (errors: the warning icon).
     static func message(_ title: String, _ text: String? = nil, error: Bool = true, surface: DialogSurface = .panel) -> DialogSpec {
@@ -3975,7 +4094,7 @@ extension IslandView {
                 } } }
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 250, alignment: .leading)                  // template A: Downloads 250 pt, Screenshots the rest
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Screenshots")).font(UI.section).foregroundStyle(UI.secondary)
                 if files.shots.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
@@ -3991,7 +4110,7 @@ extension IslandView {
                 Text(L("Drag a file out to drop it anywhere")).font(UI.detail).foregroundStyle(UI.hint)
                 Spacer(minLength: 0)
             }
-            .frame(width: 250, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -4005,24 +4124,21 @@ extension IslandView {
 
     fileprivate var calendarTab: some View {
         let loc = Language.locale
-        return HStack(alignment: .top, spacing: Space.gutter) {
+        return HStack(alignment: .top, spacing: Space.page) {           // template B: a 128 pt block, an 18 pt gutter (as Music)
             VStack(alignment: .leading, spacing: 0) {
                 Text(Date().formatted(.dateTime.weekday(.wide).locale(loc)).capitalized(with: loc)).font(UI.buttonSecondary).foregroundStyle(Island.accent)
                 Text(Date().formatted(.dateTime.day().locale(loc))).font(UI.hero)
                 Text(Date().formatted(.dateTime.month(.wide).year().locale(loc))).font(UI.value).foregroundStyle(UI.secondary)
             }
-            .frame(width: 170, alignment: .leading)
+            .frame(width: 128, alignment: .leading)
             VStack(alignment: .leading, spacing: Space.m) {
                 if !calendar.access {
                     Text(L("Show your next events here")).font(UI.value).foregroundStyle(UI.secondary)
                     if calendar.asked {
                         Text(L("Allow it in System Settings → Privacy & Security → Calendars")).font(UI.detail).foregroundStyle(UI.hint)
                     } else {
-                        Button { calendar.requestAccess() } label: {
-                            Text(L("Allow Calendar")).font(UI.button).padding(.horizontal, 14).frame(height: 28)
-                                .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
-                                .contentShape(Capsule())
-                        }.buttonStyle(.plain)
+                        Button(L("Allow Calendar")) { calendar.requestAccess() }
+                            .buttonStyle(CocaineButtonStyle(kind: .primary, height: CTL.hDialog))
                     }
                 } else if calendar.events.isEmpty {
                     Text(L("No events in the next two weeks")).font(UI.value).foregroundStyle(UI.hint)
@@ -4529,7 +4645,7 @@ extension IslandView {
 
     fileprivate var musicTab: some View {
         let mu = model.music
-        return HStack(alignment: .top, spacing: 18) {
+        return HStack(alignment: .top, spacing: Space.page) {
             Group {
                 if let a = mu.artwork { Image(nsImage: a).resizable().aspectRatio(contentMode: .fill) }
                 else { ZStack { Color.white.opacity(0.08); Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(.white.opacity(0.35)) } }
@@ -4586,16 +4702,14 @@ extension IslandView {
 
     fileprivate var mirrorTab: some View {
         let mr = model.mirror
-        return HStack(alignment: .top, spacing: Space.page) {
+        return HStack(alignment: .top, spacing: Space.gutter) {      // template A: 250 pt, a 22 pt gutter (as Home, Focus, Status)
             ZStack {
                 Color.white.opacity(0.08)
                 if mr.denied {
                     VStack(spacing: Space.m) {
                         Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(UI.detail).multilineTextAlignment(.center).foregroundStyle(UI.secondary)
-                        Button { Permissions.request(.camera) { mr.start() } } label: {
-                            Text(L("Allow")).font(UI.button).padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
-                                .contentShape(Capsule())
-                        }.buttonStyle(.plain)
+                        Button(L("Allow")) { Permissions.request(.camera) { mr.start() } }
+                            .buttonStyle(CocaineButtonStyle(kind: .primary, height: CTL.hDialog))
                     }.padding(12)
                 } else {
                     MirrorPreview(session: mr.session, flip: mr.flip)
@@ -4605,7 +4719,7 @@ extension IslandView {
                     }
                 }
             }
-            .frame(width: 290, height: 146).clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(width: 250, height: 146).clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))
             VStack(alignment: .leading, spacing: Space.l) {
                 HStack(spacing: Space.m) {
                     Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill").font(UI.icon).foregroundStyle(mr.flip ? Island.accent : UI.hint).frame(width: UI.iconColumn)
@@ -4615,11 +4729,13 @@ extension IslandView {
                 }
                 .help(L("On: like a mirror (left and right swapped). Off: as others see you."))
                 if mr.cameras.count > 1 {
-                    Menu {
-                        ForEach(mr.cameras) { c in Button { mr.configure(c.id) } label: { if c.id == mr.selected { Label(c.name, systemImage: "checkmark") } else { Text(c.name) } } }
-                    } label: { Label(mr.cameras.first { $0.id == mr.selected }?.name ?? L("Camera"), systemImage: "camera").font(UI.value).lineLimit(1) }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .accessibilityLabel(L("Camera"))
+                    HStack(spacing: Space.m) {
+                        Image(systemName: "camera").font(UI.icon).foregroundStyle(UI.hint).frame(width: UI.iconColumn)
+                        IslandValueButton(title: L("Camera"), value: mr.cameras.first { $0.id == mr.selected }?.name ?? L("Camera")) {
+                            IslandChoices.ask(L("Camera"), icon: "camera", mr.cameras.map { DialogChoice(id: $0.id, title: $0.name, symbol: $0.id == mr.selected ? "checkmark" : "camera") }) { mr.configure($0) }
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
                 Text(L("The camera runs only while this page is open.")).font(UI.detail).foregroundStyle(UI.hint).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -4643,17 +4759,18 @@ extension IslandView {
                     ForEach([("sun.max.fill", UInt8(0x10), "b"), ("circle.lefthalf.filled", UInt8(0x12), "c"), ("speaker.wave.2.fill", UInt8(0x62), "v")], id: \.1) { k in
                         HStack(spacing: Space.s) {
                             Image(systemName: k.0).font(.system(size: 11)).foregroundStyle(UI.secondary).frame(width: 14)   // a glyph
-                            Slider(value: Binding(get: { model.ddc.values["\(mon.id)\(k.2)"] ?? 50 },
-                                                  set: { model.ddc.values["\(mon.id)\(k.2)"] = $0; model.ddc.set(mon, code: k.1, value: Int($0)) }), in: 0...100)
-                                .controlSize(.mini).frame(width: 80)
+                            let v = model.ddc.values["\(mon.id)\(k.2)"] ?? 50
+                            CocaineSlider(value: v, range: 0...100, step: 5, name: k.2 == "b" ? L("Brightness") : k.2 == "c" ? L("Contrast") : L("Volume"),
+                                          valueText: "\(Int(v))%") { model.ddc.values["\(mon.id)\(k.2)"] = $0; model.ddc.set(mon, code: k.1, value: Int($0)) }
+                                .frame(width: 96)
                         }
                     }
-                    Menu {
-                        ForEach([("HDMI 1", 0x11), ("HDMI 2", 0x12), ("DisplayPort 1", 0x0F), ("DisplayPort 2", 0x10), ("USB-C", 0x1B)], id: \.1) { i in
-                            Button(i.0) { model.ddc.set(mon, code: 0x60, value: i.1) }
+                    IslandValueButton(title: L("Input"), value: L("Input")) {
+                        let inputs: [(String, Int)] = [("HDMI 1", 0x11), ("HDMI 2", 0x12), ("DisplayPort 1", 0x0F), ("DisplayPort 2", 0x10), ("USB-C", 0x1B)]
+                        IslandChoices.ask(L("Input"), icon: "cable.connector", inputs.map { DialogChoice(id: String($0.1), title: $0.0, symbol: "cable.connector") }) {
+                            if let code = Int($0) { model.ddc.set(mon, code: 0x60, value: code) }
                         }
-                    } label: { Label(L("Input"), systemImage: "cable.connector").font(UI.value) }
-                        .menuStyle(.borderlessButton).fixedSize()
+                    }
                 }
             }
             Text(L("Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back.")).font(UI.detail).foregroundStyle(UI.hint)
@@ -4664,25 +4781,13 @@ extension IslandView {
     }
 }
 
-/// A thin scrubber: drag or click to seek.
+/// The track position: the app's one slider, seeking when the drag ends (the knob follows the finger meanwhile).
 private struct Scrubber: View {
     let value: Double, total: Double
     let seek: (Double) -> Void
     var body: some View {
-        GeometryReader { r in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.15)).frame(height: 4)
-                Capsule().fill(Color.white.opacity(0.85)).frame(width: r.size.width * min(1, value / total), height: 4)
-                Circle().fill(.white).frame(width: 9, height: 9).offset(x: max(0, r.size.width * min(1, value / total) - 4.5))
-            }
-            .frame(height: 24)                                   // a 24 pt target around the 4 pt track
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onEnded { g in seek(min(total, max(0, g.location.x / r.size.width * total))) })
-        }
-        .frame(height: 24)
-        .accessibilityElement()
-        .accessibilityLabel(L("Position"))
-        .accessibilityValue(IslandView.clock(value) + " / " + IslandView.clock(total))
+        CocaineSlider(value: min(value, total), range: 0...max(1, total), step: 10, live: false, name: L("Position"),
+                      valueText: IslandView.clock(value) + " / " + IslandView.clock(total)) { seek($0) }
     }
 }
 
@@ -4870,16 +4975,10 @@ extension IslandView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: Space.m) {
-                Button { model.airDrop(model.shelf.urls) } label: {
-                    Label("AirDrop", systemImage: "airplayaudio").font(UI.button).padding(.horizontal, 14).frame(height: 28)
-                        .background(Capsule().fill(Island.accent)).foregroundStyle(.black).contentShape(Capsule())
-                }
-                .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
-                Button { model.shelf.clear() } label: {
-                    Text(L("Clear")).font(UI.buttonSecondary).padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Color.white.opacity(0.12)))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
+                Button { model.airDrop(model.shelf.urls) } label: { Label("AirDrop", systemImage: "airplayaudio") }
+                    .buttonStyle(CocaineButtonStyle(kind: .primary, height: CTL.hDialog)).disabled(model.shelf.urls.isEmpty)
+                Button(L("Clear")) { model.shelf.clear() }
+                    .buttonStyle(CocaineButtonStyle(height: CTL.hDialog)).disabled(model.shelf.urls.isEmpty)
                 Spacer(minLength: 0)
             }
             .frame(width: 110)
@@ -5337,9 +5436,9 @@ private struct IslandView: View {
         // zero minimums this frame takes the canvas's size, 656×228, and the hosting view centres that in the 38 pt closed window:
         // the closed island ended up 95 pt above the window, i.e. invisible. --island-selfcheck guards it.)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
-        .animation(open ? Island.openSpring : Island.closeSpring, value: open)
-        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.leftW)
-        .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.rightW)
+        .animation(Motion.island(open ? Island.openSpring : Island.closeSpring), value: open)
+        .animation(Motion.island(.spring(response: 0.3, dampingFraction: 0.84)), value: model.leftW)
+        .animation(Motion.island(.spring(response: 0.3, dampingFraction: 0.84)), value: model.rightW)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
         .preferredColorScheme(.dark)
@@ -5508,7 +5607,8 @@ private struct IslandView: View {
                 }
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text(L("Stay on for")).font(UI.section).foregroundStyle(UI.secondary)
-                    EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for")) { Dur.short(minutes: $0) }
+                    Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: { Dur.short(minutes: $0) },
+                             spoken: { $0 == 0 ? L("No limit") : nil })
                         .onScrollSteps(every: 24) { n in
                             let c = Settings.timerChoices
                             let i = c.firstIndex(of: m.timerMinutes) ?? c.firstIndex { $0 >= m.timerMinutes } ?? 0
@@ -5551,34 +5651,21 @@ private struct IslandView: View {
     private var focusTab: some View {
         HStack(alignment: .top, spacing: Space.gutter) {
             VStack(alignment: .leading, spacing: Space.l) {
-                HStack(spacing: Space.s) {
-                    ForEach([(false, L("Focus")), (true, L("Break"))], id: \.0) { b in
-                        Button { focus.setBreak(b.0) } label: {
-                            Text(b.1).font(UI.buttonSecondary).padding(.horizontal, 12).frame(height: 24)
-                                .background(Capsule().fill(Color.white.opacity(focus.isBreak == b.0 ? 0.18 : 0.06)))
-                                .foregroundStyle(focus.isBreak == b.0 ? Color.white : UI.secondary)
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(focus.isBreak == b.0 ? .isSelected : [])
-                    }
+                Segments(selection: Binding(get: { focus.isBreak }, set: { focus.setBreak($0) }), values: [false, true], name: L("Focus")) {
+                    $0 ? L("Break") : L("Focus")
                 }
+                .frame(width: 180)
                 Text(focus.text).font(UI.hero)
                     .contentTransition(.numericText())
                 HStack(spacing: Space.m) {
                     Button { focus.running ? focus.pause() : focus.start() } label: {
                         Label(focus.running ? L("Pause") : L("Start"), systemImage: focus.running ? "pause.fill" : "play.fill")
-                            .font(UI.button).padding(.horizontal, 14).frame(height: 28)
-                            .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
-                            .contentShape(Capsule())
-                    }.buttonStyle(.plain)
-                    if focus.active {
-                        Button { focus.reset() } label: {
-                            Image(systemName: "arrow.counterclockwise").font(UI.button).frame(width: 28, height: 28)
-                                .background(Circle().fill(Color.white.opacity(0.12)))
-                                .contentShape(Circle())
-                        }.buttonStyle(.plain).help(L("Reset")).accessibilityLabel(L("Reset"))
                     }
+                    .buttonStyle(CocaineButtonStyle(kind: .primary, height: CTL.hDialog))
+                    if focus.active {
+                        Button(L("Reset")) { focus.reset() }.buttonStyle(CocaineButtonStyle(height: CTL.hDialog))
+                    }
+
                 }
             }
             .frame(width: 250, alignment: .leading)
@@ -5610,7 +5697,7 @@ private struct IslandView: View {
                                 Text(item.name).font(UI.itemTitle).lineLimit(1)
                                 if item.charging { Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.green) }   // a badge glyph
                                 Spacer(minLength: 0)
-                                Text(item.parts.map { ($0.label.isEmpty ? "" : $0.label + " ") + "\($0.percent)%" }.joined(separator: "  "))
+                                Text(item.parts.map { (Self.partName($0.label).map { $0 + " " } ?? "") + "\($0.percent)%" }.joined(separator: "  "))
                                     .font(UI.metric).foregroundStyle(UI.primary).lineLimit(1)
                             }
                             Capsule().fill(Color.white.opacity(0.12)).frame(height: 4)
@@ -5626,6 +5713,18 @@ private struct IslandView: View {
     }
 
     private static func level(_ p: Int) -> Color { p <= 15 ? .red : p <= 30 ? .orange : .green }
+
+    /// A device part in the app's language: L / R for earbuds (S / D in Italian…), Case for their case.
+    static func partName(_ code: String) -> String? {
+        switch code {
+        case "": return nil
+        case "L": return L("Left, short")
+        case "R": return L("Right, short")
+        case "↳": return L("Case")
+        default: return code
+        }
+    }
+
 
     // MARK: usage
 
@@ -5701,7 +5800,7 @@ private struct ScrollSteps: NSViewRepresentable {
                 guard let self, let w = self.window, e.window === w else { return e }
                 let over = self.bounds.contains(self.convert(e.locationInWindow, from: nil))
                 guard Self.takes(phase: e.phase, momentum: e.momentumPhase, over: over, owned: &self.owned),
-                      DialogCenter.shared.current == nil else { return e }   // a question on top: nothing under it changes
+                      DialogCenter.shared.current == nil, !PickerCenter.shared.isOpen else { return e }   // a question or a dropdown on top: nothing under it changes
                 self.handle(e)
                 return nil                                       // used here: the panel behind doesn't scroll as well
             }
@@ -5963,7 +6062,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = NSHostingView(rootView: PanelDialogOverlay(m: model))
         overlay.sizingOptions = []                           // it takes the panel's size, never gives it one
         panel = MenuPanel(content: hostView, overlay: overlay)
+        // A dropdown that ends below the visible part of a long page: the page scrolls so all of it shows.
+        PickerCenter.shared.reveal = { [weak self] r in self?.hostView.scrollToVisible(r) }
         model.pageChanged = { [weak self] in                     // a new page starts at its top
+            PickerCenter.shared.close()
             guard let scroll = self?.panel.scroll else { return }
             scroll.contentView.scroll(to: .zero)
             scroll.reflectScrolledClipView(scroll.contentView)
@@ -6483,7 +6585,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
             if DialogCenter.shared.isShowing(on: .panel), DialogCenter.shared.handleKey(e) { return nil }   // Return/Esc: the dialog's
-            if e.keyCode == 53 {                                   // Esc: back from a page first, then close
+            if PickerCenter.shared.isOpen(on: .panel), PickerCenter.shared.handleKey(e) { return nil }     // ↑↓, Return, Space, Esc: the dropdown's
+            if e.keyCode == 53 {                                   // Esc: closes the panel
                 self?.hidePanel()
                 return nil
             }
@@ -6534,6 +6637,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         NSCursor.arrow.set()                                // in case it closed with the pointer on the mirror
         statusItem.button?.highlight(false)
         DialogCenter.shared.surfaceClosed(.panel)           // a question on it is answered Cancel (the next one, if any, reopens it)
+        PickerCenter.shared.surfaceClosed(.panel)
     }
 
     /// In-app dialogs: over the panel (opened, under the notch or the icon, when it isn't), or in the open island when asked from
@@ -6549,6 +6653,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return .panel                                   // the card is drawn over the visible area, wherever the page is scrolled
         }
         center.changed = { [weak self] in
+            if center.current != nil { PickerCenter.shared.close() }        // a question replaces an open dropdown
             self?.island.dialogChanged()
             self?.panel?.overlay.isHidden = !center.isShowing(on: .panel)
         }
@@ -6796,16 +6901,20 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         var states: [TriggerKind: Bool] = [:]
         if settings.triggerAgents { states[.agents] = board.anyLive() }
         let apps = settings.triggerApps.map { $0.lowercased() }
+        var openApps: [String] = []                        // the chosen programs running now (for "Turned on by Xcode")
         if !apps.isEmpty {
             let names = System.runningNames()
-            states[.apps] = apps.contains { names.contains($0) }
+            openApps = settings.triggerApps.filter { names.contains($0.lowercased()) }
+            states[.apps] = !openApps.isEmpty
         }
         let b = System.battery
+        // One battery level for everything: the power trigger lets go where Battery Guard acts (10 % when the guard is off).
         states[.power] = PowerRule.met(rule: settings.triggerPower, onAC: b?.onAC ?? PowerState.onAC, battery: b?.percent,
-                                       minimum: settings.triggerPowerMin)
+                                       minimum: PowerRule.batteryFloor(guardLevel: settings.batteryThreshold))
         states[.display] = DisplayRule.met(rule: settings.triggerDisplay, external: PowerState.externalDisplays)
         if settings.triggerSchedule { states[.schedule] = settings.schedule.contains(Date(), calendar: .autoupdatingCurrent) }
-        let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: lowBattery || heatGuard.tripped)
+        let blocked = lowBattery || heatGuard.tripped
+        let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: blocked)
         if !active { triggerGrace = grace }
         triggerActive = active
         switch autoOn.step(active: active, isOn: wantOn ?? on, now: Date(), grace: triggerGrace) {
@@ -6813,11 +6922,26 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case .turnOff: log.notice("smart trigger: off"); setCocaine(false, auto: true)
         case .none: break
         }
+        // What the panel says about it: which are true now, who turned Cocaine on, why they can't.
+        let live = Set(states.filter { $0.value == true }.map(\.key.rawValue))
+        if model.liveTriggers != live { model.liveTriggers = live }
+        let by: String? = autoOn.owned && active ? TriggerWords.reason(states, apps: openApps, power: settings.triggerPower) : nil
+
+        if model.triggeredBy != by { model.triggeredBy = by }
+        let hold: String? = !blocked || states.values.allSatisfy({ $0 != true }) ? nil
+            : lowBattery ? L("Triggers on hold: battery low") : L("Triggers on hold: too hot with the lid closed")
+        if model.triggerHold != hold { model.triggerHold = hold }
     }
 
     private func timerChanged() {
-        guard System.cocaineOn || model.on else { return }
+        // Picking a length while Cocaine is off means "keep it awake for that long": it turns on for it.
+        guard System.cocaineOn || model.on || wantOn == true else {
+            autoOn.userToggled(to: true, triggerActive: triggerActive)
+            setCocaine(true)                                  // by hand: starts the chosen timer
+            return
+        }
         let minutes = settings.timerMinutes
+
         settings.onUntil = minutes > 0 ? Date().addingTimeInterval(Double(minutes) * 60) : nil    // applies to now
         model.onUntil = settings.onUntil
     }
@@ -7319,10 +7443,70 @@ private func designSelfTest(_ check: (String, Bool) -> Void) {
     check("scroll steps: a mouse wheel steps only over the control", C.takes(phase: [], momentum: [], over: true, owned: &owned)
           && !C.takes(phase: [], momentum: [], over: false, owned: &owned))
 
-    let strip = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 185, left: 3, right: 2)
-    check("strip: on a 14\" notch (185 pt) back, General and AI alerts fit left of it, Automation and Quit right of it",
+    let strip = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 185, left: 3, right: 3)
+    check("strip: on a 14\" notch (185 pt) back, General and AI alerts fit left of it, Automation, Island and Quit right of it",
           strip != nil && strip!.problems().isEmpty && strip!.leftCells.last!.upperBound <= 127.5 && strip!.rightCells.first!.lowerBound >= 312.5)
+    designPass2SelfTest(check)
 }
+
+/// The second design pass (part of --selftest and --dialogs-test): in-app dropdowns instead of system menus, the panel's tabs,
+/// one battery level, the approval countdown, the schedule's time steps.
+private func designPass2SelfTest(_ check: (String, Bool) -> Void) {
+    ControlTests.pure(check)
+    // Tabs: Island only while it is on; General and AI alerts left of the notch, Automation and Island right of it (+ back, Quit).
+    check("tabs: General, AI alerts, Automation, Island while the island is on", PanelTabs.list(ai: true, island: true) == ["", "ai", "auto", "island"])
+    check("tabs: no Island tab with the island off, no AI tab without an AI tool", PanelTabs.list(ai: false, island: false) == ["", "auto"])
+    let split = PanelTabs.split(PanelTabs.list(ai: true, island: true))
+    check("tabs: [‹][General][AI] | notch | [Automation][Island][Quit]", split.left == ["", "ai"] && split.right == ["auto", "island"])
+    var stripsOK = true
+    for notch: CGFloat in [150, 165, 185, 200, 210, 220] {
+        for (ai, island) in [(true, true), (false, true)] {
+            let (l, r) = PanelTabs.split(PanelTabs.list(ai: ai, island: island))
+            if let s = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: notch, left: 1 + l.count, right: r.count + 1) {
+                if !s.problems().isEmpty { stripsOK = false }
+            } else { stripsOK = false }
+        }
+    }
+    check("tabs: every strip (150–220 pt notches, with and without AI) fits, nothing under the notch", stripsOK)
+    // A dropdown's list after its boxes change: what stays keeps its order, what is new follows A–Z.
+    check("dropdown: a changed list keeps the old order and appends the new A–Z",
+          PanelView.merged(["Xcode", "Slack"], ["Slack", "Mail", "Arc"]) == ["Slack", "Arc", "Mail"] && PanelView.merged(["A"], []) == [])
+    // One battery level: the power trigger lets go where Battery Guard acts.
+    check("battery: the power trigger lets go at Battery Guard's level (10 % with the guard off)",
+          PowerRule.batteryFloor(guardLevel: 20) == 20 && PowerRule.batteryFloor(guardLevel: 0) == 10
+          && PowerRule.met(rule: "battery", onAC: false, battery: 21, minimum: PowerRule.batteryFloor(guardLevel: 20)) == true
+          && PowerRule.met(rule: "battery", onAC: false, battery: 20, minimum: PowerRule.batteryFloor(guardLevel: 20)) == false)
+    // Why it's on.
+    check("status: who turned it on, by name", TriggerWords.reason([.apps: true, .power: false], apps: ["Xcode"], power: "ac") == "Xcode"
+          && TriggerWords.reason([.agents: true, .power: true], apps: [], power: "ac") == L("AI") + ", " + L("Charger")
+          && TriggerWords.reason([.apps: false], apps: [], power: "") == nil)
+    // Approvals: the time left before the terminal asks instead, never negative.
+    let now = Date()
+    check("approvals: the countdown says how long until the terminal asks (1:42, 0:05, 0:00)",
+          AgentListView.countdown(now.addingTimeInterval(102), now: now) == "1:42" && AgentListView.countdown(now.addingTimeInterval(4.2), now: now) == "0:05"
+          && AgentListView.countdown(now.addingTimeInterval(-3), now: now) == "0:00")
+    check("approvals: Allow is the filled button, Deny and Decline are grey",
+          AgentListView.kind(ApprovalChoice(label: "allow", decision: "allow"), index: 0) == .primary
+          && AgentListView.kind(ApprovalChoice(label: "deny", decision: "deny"), index: 1) == .secondary
+          && AgentListView.kind(ApprovalChoice(label: "decline", decision: "decline"), index: 0) == .secondary)
+    // The schedule's times: steps of 15 minutes around midnight; an odd time lands on the grid first.
+    check("schedule: time steps of 15 min, wrapping at midnight", TimeStepper.stepped(540, by: 1) == 555 && TimeStepper.stepped(0, by: -1) == 1425
+          && TimeStepper.stepped(1425, by: 1) == 0 && TimeStepper.stepped(545, by: 1) == 555 && TimeStepper.stepped(545, by: -1) == 540)
+    // The removed confirmations: irreversible or security-lowering actions ask first, and Return is the safe answer.
+    let remove = Dialogs.removeOldShortcuts(), allow = Dialogs.allowOldShortcuts()
+    check("dialogs: removing old Shortcuts asks first; Return keeps them", DialogLogic.defaultButton(remove) == "cancel"
+          && DialogLogic.key(remove, .returnKey, text: "", choice: nil) == .finish(.cancelled) && DialogLogic.drawOrder(remove).last?.id == "cancel")
+    check("dialogs: accepting unprotected Shortcuts asks first; Return says no", DialogLogic.defaultButton(allow) == "cancel"
+          && DialogLogic.key(allow, .returnKey, text: "", choice: nil) == .finish(.cancelled)
+          && DialogLogic.press(allow, "allow", text: "", choice: nil) == .finish(.button("allow", text: "", choice: nil)))
+    check("dialogs: the links question draws [Allow] [Don't Allow]: the safe default rightmost and the only filled one",
+          DialogLogic.drawOrder(Dialogs.links(URL(string: "cocaine://on")!)).map(\.id) == ["allow", "deny"]
+          && DialogLogic.kind(Dialogs.links(URL(string: "cocaine://on")!), DialogButton(id: "allow", title: "")) == .secondary)
+    check("motion: Reduce Motion turns the morph into a short fade and the flashes into one soft tint",
+          Motion.flashes(reduce: true) == [0.18, 0] && Motion.flashes(reduce: false) == [0.55, 0, 0.55, 0])
+    check("strings: \"Not paused\" (not \"Off\") when alerts aren't paused", L("Not paused") != L("Off"))
+}
+
 
 /// Smart Triggers on power, displays and schedules; screen-off mode; control links (part of --selftest).
 private func powerSelfTest(_ check: (String, Bool) -> Void) {
@@ -7602,13 +7786,13 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--layout-test"
     // the panel then shows its tabs as a segmented control, which is also fine.
     var stripFailures = 0
     for notch: CGFloat in [150, 165, 185, 200, 210, 220] {
-        for left in [2, 3] {
-            guard let s = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: notch, left: left, right: 2) else {
-                print("FAIL  strip, notch \(Int(notch)) pt, \(left)+2 cells: doesn't fit"); stripFailures += 1; continue
+        for left in [2, 3] {      // back + General (+ AI alerts) | Automation + Island + Quit
+            guard let s = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: notch, left: left, right: 3) else {
+                print("FAIL  strip, notch \(Int(notch)) pt, \(left)+3 cells: doesn't fit"); stripFailures += 1; continue
             }
             let p = s.problems()
             if !p.isEmpty { stripFailures += 1 }
-            print("\(p.isEmpty ? "PASS" : "FAIL")  strip, notch \(Int(notch)) pt, \(left)+2 cells: cell \(s.cell), highlight \(s.highlight), left \(s.leftCells.map { "\($0.lowerBound)…\($0.upperBound)" }), right \(s.rightCells.map { "\($0.lowerBound)…\($0.upperBound)" })" + (p.isEmpty ? "" : " " + p.joined(separator: "; ")))
+            print("\(p.isEmpty ? "PASS" : "FAIL")  strip, notch \(Int(notch)) pt, \(left)+3 cells: cell \(s.cell), highlight \(s.highlight), left \(s.leftCells.map { "\($0.lowerBound)…\($0.upperBound)" }), right \(s.rightCells.map { "\($0.lowerBound)…\($0.upperBound)" })" + (p.isEmpty ? "" : " " + p.joined(separator: "; ")))
         }
     }
     let tooWide = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 300, left: 3, right: 2)
@@ -7865,7 +8049,9 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test
     _ = NSApplication.shared
     var failed = 0
     dialogsSelfTest { name, ok in print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    designPass2SelfTest { name, ok in print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }   // the dropdowns too
     exit(failed == 0 ? 0 : 1)
+
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
     // `on|off|status [tool ids…] [--home <dir>]` for the AI alerts hooks: every tool on this Mac unless ids are given.
@@ -7942,7 +8128,8 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-tes
 /// The render tools fill a PanelModel with sample values, which writes some into the real settings: this puts back exactly what
 /// was there (removing them instead wiped the user's own Stay active, HUD and timer choices).
 private struct SavedSettings {
-    static let keys = ["timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
+    static let keys = ["triggerSchedule", "scheduleDays", "scheduleStart", "scheduleEnd", "triggerPower", "triggerDisplay", "triggerAll", "dimEnabled", "screenOff",
+                       "timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
                        "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD", "haptics", "alertDone", "alertInput", "alertFlash", "alertSpeak", "alertVoice",
                        "alertPerSession", "agentApprovals", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language"]
     let values: [String: Any] = Dictionary(uniqueKeysWithValues: keys.compactMap { k in UserDefaults.standard.object(forKey: k).map { (k, $0) } })
@@ -8059,6 +8246,12 @@ private func renderSampleDialog(_ args: [String], surface: DialogSurface) {
     case "wake": spec = Dialogs.message(L("Couldn't turn on the wake-ups"))
     case "shortcut": spec = Dialogs.message(L("Can't make the Shortcut"), L("Signing it needs an internet connection and iCloud (sign in to it in System Settings)."))
     case "airdrop": spec = Dialogs.message(L("Couldn't share it"), L("AirDrop isn't available on this Mac right now."))
+    case "trash": spec = IslandChoices.spec(L("Clear"), icon: "trash", IslandChoices.clipboardTrash)
+    case "input": spec = IslandChoices.spec(L("Input"), icon: "cable.connector", ["HDMI 1", "HDMI 2", "DisplayPort 1", "DisplayPort 2", "USB-C"].map { DialogChoice(id: $0, title: $0, symbol: "cable.connector") })
+    case "camera": spec = IslandChoices.spec(L("Camera"), icon: "camera", [DialogChoice(id: "a", title: "FaceTime HD Camera", symbol: "checkmark"), DialogChoice(id: "b", title: "iPhone Camera", symbol: "camera")])
+    case "removeold": spec = Dialogs.removeOldShortcuts()
+    case "allowold": spec = Dialogs.allowOldShortcuts()
+
     case "share":
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cocaine-render-\(getpid())")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -8218,7 +8411,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     }
     if let i = CommandLine.arguments.firstIndex(of: "--auto"), i + 1 < CommandLine.arguments.count {   // open a group of Automation
         let wanted = CommandLine.arguments[i + 1]
-        model.page = wanted == "none" || wanted == "timer" ? "" : (wanted == "ai" ? "ai" : "auto")
+        model.page = ["none", "timer", "battery", "general"].contains(wanted) ? "" : wanted == "ai" ? "ai" : wanted == "island" ? "island" : "auto"
+        if wanted == "island" { model.island = true }                 // the Island tab exists only while the island is on
+        if CommandLine.arguments.contains("--schedule") { model.triggerSchedule = true; model.scheduleDays = [2, 3, 4, 5, 6]; model.scheduleStart = 540; model.scheduleEnd = 1080 }
         model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
         model.phoneCount = CommandLine.arguments.contains("--no-phone") ? 0 : 1; model.phoneLinkUp = true; model.battery = "80%"
         model.phone = "Comando Rapido “Avvisa iPhone”"
@@ -8250,6 +8445,22 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     RunLoop.main.run(until: Date().addingTimeInterval(0.2))      // the dialog card's measured height reaches the panel
+    // --picker <id>: that row's dropdown open (language, sound, voice, pause, triggerApps, stayApps, excludedApps, patterns,
+    // scheduleStart…), checked to hang under its row, below the strip, inside the panel's frame.
+    var pickerReport: String?
+    if let i = CommandLine.arguments.firstIndex(of: "--picker"), i + 1 < CommandLine.arguments.count {
+        let id = CommandLine.arguments[i + 1]
+        if let open = PickerCenter.shared.openers[id] {
+            open()
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.15)) }
+            let c = PickerCenter.shared, top = PickerLayer.top(c.anchor)
+            let notchBottom = model.island ? Layout.overscan + (NotchGeometry.current()?.height ?? 0) : 0
+            let ok = c.isOpen && top > c.anchor.maxY && top >= notchBottom && c.cardHeight > 0
+            pickerReport = "\(ok ? "PASS" : "FAIL")  dropdown \(id): row bottom \(String(format: "%.1f", c.anchor.maxY)), card top \(String(format: "%.1f", top)) (under its row; strip ends at \(String(format: "%.1f", notchBottom))), card \(String(format: "%.0f", Layout.width - 2 * Space.frame))×\(String(format: "%.0f", c.cardHeight)) pt"
+        } else {
+            pickerReport = "FAIL  dropdown \(id): no such value button on this page (\(PickerCenter.shared.openers.keys.sorted().joined(separator: ", ")))"
+        }
+    }
     window.setContentSize(host.fittingSize)
     host.frame = NSRect(origin: .zero, size: host.fittingSize)
     host.layoutSubtreeIfNeeded()
@@ -8265,8 +8476,10 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         let ok = right <= Layout.width - 14 + 0.5
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
+    if let pickerReport { print(pickerReport) }
     sampleSettings.restore()                                // the sample values above must not stay in the real settings
     print(Bundle.main.preferredLocalizations.first ?? "?")
+
     exit(0)
 }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-demo-gif" {

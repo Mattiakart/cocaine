@@ -110,7 +110,7 @@
 "Shortcut" = "捷徑";
 "Shortcuts" = "快速鍵";
 "Smart Triggers" = "智慧觸發";
-"Stay on for" = "保持開啟時間";
+"Stay on for" = "保持喚醒時間";
 "Then" = "然後";
 "These programs are open" = "這些程式已開啟";
 "Timer over: Cocaine is off" = "計時結束：Cocaine 已關閉";
@@ -215,7 +215,7 @@
 "Replace system HUD" = "取代系統 HUD";
 "Shelf" = "暫存架";
 "Stay active" = "保持上線";
-"Stay available in chat apps" = "在聊天 App 中保持上線";
+"Stay available in chat apps" = "不顯示為離開";
 "The chat apps to keep available" = "要保持上線的聊天 App";
 "While these apps are open" = "這些 App 開啟時";
 "on/off" = "開/關";

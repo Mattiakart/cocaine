@@ -137,7 +137,7 @@ enum L10nCheck {
                 }
             }
         }
-        let pattern = try! NSRegularExpression(pattern: #"\b(?:L|updatesText)\("((?:[^"\\]|\\.)*)"\)"#)
+        let pattern = try! NSRegularExpression(pattern: #"\b(?:L|updatesText|agentsL)\("((?:[^"\\]|\\.)*)"\)"#)
         var used = Set<String>()
         for s in sources {
             guard let text = try? String(contentsOfFile: s, encoding: .utf8) else { print("FAIL  can't read \(s)"); problems += 1; continue }

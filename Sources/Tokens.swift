@@ -32,7 +32,7 @@ enum UI {
     static let secondary = Color.white.opacity(0.6)
     static let hint = Color.white.opacity(0.5)
     /// A whole control that can't be used now (once: the control or its container, never both).
-    static let disabledOpacity: Double = 0.45
+    static let disabledOpacity: Double = 0.4
 }
 
 /// The spacing scale: every gap and inset is one of these.

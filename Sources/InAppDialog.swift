@@ -27,6 +27,7 @@ struct DialogChoice: Identifiable {
     var title: String
     var symbol: String? = nil          // an SF Symbol…
     var image: NSImage? = nil          // …or an image (a sharing service's own icon)
+    var destructive = false            // an action row that destroys: red ink
 }
 
 struct DialogField {
@@ -47,7 +48,7 @@ struct DialogSpec {
     /// .pick: one row is selected (a check mark) and goes with the pressed button; .act: tapping a row is the answer.
     var choiceMode = ChoiceMode.pick
     var selected: String? = nil
-    /// In the order of NSAlert's buttons: the first is drawn rightmost.
+    /// In the order of NSAlert's buttons (the fallback); the card orders them by role (DialogLogic.drawOrder).
     var buttons: [DialogButton]
     /// A question that grants a permission: Return (and the highlighted button) is the safe answer, the Cancel-role button.
     var safeDefault = false
@@ -74,6 +75,23 @@ enum DialogLogic {
         let cancel = s.buttons.first { $0.role == .cancel }?.id
         if s.safeDefault { return cancel }
         return s.buttons.first { $0.role == .normal }?.id ?? cancel
+    }
+
+    /// Left to right as the card draws them: Cancel, then destructive ones, then other normal ones, and the default always
+    /// rightmost (macOS's place for it), so a destructive button sits left of a safe default and never takes its place.
+    static func drawOrder(_ s: DialogSpec) -> [DialogButton] {
+        let def = defaultButton(s)
+        func rank(_ b: DialogButton) -> Int {
+            if b.id == def { return 3 }
+            switch b.role { case .cancel: return 0; case .destructive: return 1; case .normal: return 2 }
+        }
+        return s.buttons.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+    }
+
+    /// How a button looks: the default is the one filled (accent) button; a destructive one has red ink; the rest are grey.
+    static func kind(_ s: DialogSpec, _ b: DialogButton) -> CocaineButtonKind {
+        if b.role == .destructive { return .destructive }
+        return b.id == defaultButton(s) ? .primary : .secondary
     }
 
     static func press(_ s: DialogSpec, _ id: String, text: String, choice: String?) -> Outcome {
@@ -267,8 +285,8 @@ struct InAppDialogCard: View {
             if let f = s.field {
                 DialogTextField(text: $center.text, placeholder: f.placeholder)
                     .frame(height: 24).padding(.horizontal, 8)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.08)))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(center.problem == nil ? Color.clear : style.warning.opacity(0.8), lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: CTL.radius).fill(Color.white.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: CTL.radius).strokeBorder(center.problem == nil ? Color.clear : style.warning.opacity(0.8), lineWidth: 1))
                 if let p = center.problem {
                     Label(p, systemImage: "exclamationmark.triangle.fill").font(style.detail).foregroundStyle(style.warning)
                         .fixedSize(horizontal: false, vertical: true)
@@ -282,63 +300,40 @@ struct InAppDialogCard: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.black))          // opaque over the dimmed page
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 12))    }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
 
     private func choices(_ s: DialogSpec) -> some View {
         let cols = s.choiceMode == .act && s.choices.count > 3 ? [GridItem(.flexible(), spacing: 6), GridItem(.flexible())] : [GridItem(.flexible())]
         return LazyVGrid(columns: cols, alignment: .leading, spacing: Space.s) {         // the same gap both ways
             ForEach(s.choices) { c in
                 let picked = s.choiceMode == .pick && center.choice == c.id
-                Button { center.tapChoice(c.id) } label: {
-                    HStack(spacing: 8) {
-                        Group {
-                            if let img = c.image { Image(nsImage: img).resizable().aspectRatio(contentMode: .fit) }
-                            else if let sym = c.symbol { Image(systemName: sym).font(style.icon).foregroundStyle(style.accent) }
-                        }
-                        .frame(width: 16, height: 16)
-                        Text(c.title).font(style.row).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 4)
-                        if s.choiceMode == .pick {
-                            Image(systemName: "checkmark").font(style.icon).foregroundStyle(style.accent).opacity(picked ? 1 : 0)
-                        }
-                    }
-                    .padding(.horizontal, 8).frame(minHeight: 28)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(picked || center.hovered == c.id ? 0.10 : 0.04)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { inside in if inside { center.hovered = c.id } else if center.hovered == c.id { center.hovered = nil } }
-                .accessibilityAddTraits(picked ? .isSelected : [])
+                let lead: ChoiceRow.Leading = c.image.map { .image($0) } ?? c.symbol.map { .symbol($0) } ?? .none
+                ChoiceRow(title: c.title, leading: lead, checked: picked, showsCheckColumn: s.choiceMode == .pick,
+                          highlighted: picked || center.hovered == c.id, destructive: c.destructive, lines: 2, font: style.row, iconFont: style.icon,
+                          action: { center.tapChoice(c.id) },
+                          hover: { inside in if inside { center.hovered = c.id } else if center.hovered == c.id { center.hovered = nil } })
             }
         }
     }
 
     private func buttons(_ s: DialogSpec) -> some View {
-        let def = DialogLogic.defaultButton(s)
-        let ordered = Array(s.buttons.reversed())               // NSAlert's first button is the rightmost
+        let ordered = DialogLogic.drawOrder(s)                  // the default rightmost
         return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.m) {
                 Spacer(minLength: 0)
-                ForEach(ordered, id: \.id) { b in button(b, isDefault: b.id == def).fixedSize() }
+                ForEach(ordered, id: \.id) { b in button(s, b).fixedSize() }
             }
-            VStack(alignment: .trailing, spacing: 6) {             // long labels (German): one under the other, full width
-                ForEach(s.buttons, id: \.id) { b in button(b, isDefault: b.id == def, wide: true) }
+            VStack(alignment: .trailing, spacing: Space.s) {       // long labels (German): one under the other, the default at the bottom
+                ForEach(ordered, id: \.id) { b in button(s, b, wide: true) }
             }
         }
         .padding(.top, 2)
     }
 
-    private func button(_ b: DialogButton, isDefault: Bool, wide: Bool = false) -> some View {
-        let fill: Color = b.role == .destructive ? Color(red: 0.92, green: 0.26, blue: 0.24) : isDefault ? style.accent : Color.white.opacity(0.12)
-        let ink: Color = b.role != .destructive && isDefault ? .black : .white
-        return Button { center.press(b.id) } label: {
-            Text(b.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                .padding(.horizontal, 14).padding(.vertical, 6)
-                .frame(maxWidth: wide ? .infinity : nil)
-                .background(Capsule().fill(fill)).foregroundStyle(ink)
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
+    private func button(_ s: DialogSpec, _ b: DialogButton, wide: Bool = false) -> some View {
+        Button(b.title) { center.press(b.id) }
+            .buttonStyle(CocaineButtonStyle(kind: DialogLogic.kind(s, b), height: CTL.hDialog, wide: wide))
     }
 }
 
@@ -424,6 +419,13 @@ enum DialogTests {
         check("dialogs: a permission question defaults to the safe answer", DialogLogic.defaultButton(grant) == "deny")
         check("dialogs: …so Return answers it with a refusal", DialogLogic.key(grant, .returnKey, text: "", choice: nil) == .finish(.cancelled))
         check("dialogs: Esc is Cancel", DialogLogic.key(confirm, .escape, text: "", choice: nil) == .finish(.cancelled))
+        check("dialogs: a delete confirmation draws [Delete] [Cancel]: the default rightmost, the destructive left of it",
+              DialogLogic.drawOrder(confirm).map(\.id) == ["delete", "cancel"])
+        check("dialogs: …only the default is filled; the destructive one is red ink, never a second filled button",
+              DialogLogic.kind(confirm, confirm.buttons[1]) == .primary && DialogLogic.kind(confirm, confirm.buttons[0]) == .destructive)
+        let three = DialogSpec(icon: "lock", title: "Keep?", buttons: [DialogButton(id: "keep", title: "Keep"), DialogButton(id: "delete", title: "Delete", role: .destructive),
+                                                                      DialogButton(id: "cancel", title: "Cancel", role: .cancel)])
+        check("dialogs: Cancel · Delete · Keep (default) left to right", DialogLogic.drawOrder(three).map(\.id) == ["cancel", "delete", "keep"])
 
         // Text validation.
         let field = DialogSpec(icon: "textformat", title: "Pattern", field: DialogField(placeholder: "", validate: { $0.isEmpty ? "empty" : $0 == "([" ? "bad" : nil }),

@@ -112,6 +112,9 @@ enum PowerRule {
         default: return nil                      // not enabled
         }
     }
+
+    /// One battery level for everything: on battery the trigger lets go where Battery Guard acts, or at 10 % with the guard off.
+    static func batteryFloor(guardLevel: Int) -> Int { guardLevel > 0 ? guardLevel : 10 }
 }
 
 enum DisplayRule {

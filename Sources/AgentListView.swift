@@ -69,6 +69,17 @@ struct AgentListView: View {
         .accessibilityLabel("\(e.from), \(Self.name(e.state))" + (e.project.map { ", \($0)" } ?? ""))
     }
 
+    /// The granting answer (Allow, Yes, the first choice) is primary; the others are grey.
+    static func kind(_ c: ApprovalChoice, index: Int) -> CocaineButtonKind {
+        ["allow", "yes"].contains(c.label) || (index == 0 && !["deny", "decline", "no"].contains(c.label)) ? .primary : .secondary
+    }
+
+    /// Time left before the request goes back to the terminal: "1:42" (never below 0:00).
+    static func countdown(_ deadline: Date, now: Date) -> String {
+        let s = max(0, Int(deadline.timeIntervalSince(now).rounded(.up)))
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
     private func choiceLabel(_ c: ApprovalChoice) -> String {
         ["allow": agentsL("Allow"), "deny": agentsL("Deny"), "decline": agentsL("Decline"), "yes": agentsL("Yes"), "no": agentsL("No")][c.label] ?? c.label
     }
@@ -95,15 +106,23 @@ struct AgentListView: View {
             HStack(spacing: Space.s) {
                 ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
                     Button(choiceLabel(c)) { answer(r.id, i) }
-                        .controlSize(.small)
+                        .buttonStyle(CocaineButtonStyle(kind: Self.kind(c, index: i)))       // Allow/Yes: the one filled button
                         .accessibilityLabel("\(choiceLabel(c)): \(r.title)")
                 }
                 Button(agentsL("In the terminal")) { release(r.id); focus(r.origin, r.from) }
-                    .controlSize(.small).help(agentsL("Hands the request back to the terminal and goes there"))
+                    .buttonStyle(CocaineButtonStyle(kind: .plain)).help(agentsL("Hands the request back to the terminal and goes there"))
             }
             .padding(.leading, UI.iconColumn + Space.m)
+            if r.answerable {                // how long the island holds it before the terminal asks instead
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text(String(format: agentsL("Back to the terminal in %@"), Self.countdown(r.deadline, now: ctx.date)))
+                        .font(UI.detail.monospacedDigit()).foregroundStyle(UI.secondary)
+                        .padding(.leading, UI.iconColumn + Space.m)
+                }
+            }
         }
         .padding(Self.inset)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(0.08)))
+
     }
 }

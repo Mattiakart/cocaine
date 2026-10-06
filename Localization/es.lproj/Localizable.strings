@@ -73,7 +73,7 @@
 "Silences every alert for a while" = "Silencia todos los avisos un rato";
 "Recent alerts" = "Avisos recientes";
 "Alerts you receive will show up here" = "Aquí aparecerán los avisos que recibas";
-"Clear" = "Borrar";
+"Clear" = "Vaciar";
 "Turn Cocaine on" = "Activar Cocaine";
 "Turn Cocaine off" = "Desactivar Cocaine";
 "Voice type" = "Tipo de voz";
@@ -110,7 +110,7 @@
 "Shortcut" = "Atajo";
 "Shortcuts" = "Atajos";
 "Smart Triggers" = "Activadores inteligentes";
-"Stay on for" = "Mantener activo durante";
+"Stay on for" = "Mantener despierto";
 "Then" = "Después";
 "These programs are open" = "Estos programas están abiertos";
 "Timer over: Cocaine is off" = "Tiempo terminado: Cocaine está apagado";
@@ -214,8 +214,8 @@
 "Remove" = "Quitar";
 "Replace system HUD" = "Sustituir el HUD del sistema";
 "Shelf" = "Estante";
-"Stay active" = "Seguir activo";
-"Stay available in chat apps" = "Seguir disponible en apps de chat";
+"Stay active" = "Seguir disponible";
+"Stay available in chat apps" = "No aparecer ausente";
 "The chat apps to keep available" = "Las apps de chat que mantener disponibles";
 "While these apps are open" = "Mientras estas apps estén abiertas";
 "on/off" = "on/off";

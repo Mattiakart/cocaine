@@ -110,7 +110,7 @@
 "Shortcut" = "Shortcut";
 "Shortcuts" = "Shortcuts";
 "Smart Triggers" = "Smart Triggers";
-"Stay on for" = "Stay on for";
+"Stay on for" = "Keep awake for";
 "Then" = "Then";
 "These programs are open" = "These programs are open";
 "Timer over: Cocaine is off" = "Timer over: Cocaine is off";
@@ -214,8 +214,8 @@
 "Remove" = "Remove";
 "Replace system HUD" = "Replace system HUD";
 "Shelf" = "Shelf";
-"Stay active" = "Stay active";
-"Stay available in chat apps" = "Stay available in chat apps";
+"Stay active" = "Stay available";
+"Stay available in chat apps" = "Don’t show me as away";
 "The chat apps to keep available" = "The chat apps to keep available";
 "While these apps are open" = "While these apps are open";
 "on/off" = "on/off";

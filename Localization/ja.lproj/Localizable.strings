@@ -110,7 +110,7 @@
 "Shortcut" = "ショートカット";
 "Shortcuts" = "キーボードショートカット";
 "Smart Triggers" = "スマートトリガー";
-"Stay on for" = "オンにしておく時間";
+"Stay on for" = "スリープしない時間";
 "Then" = "そのとき";
 "These programs are open" = "これらのプログラムが起動中";
 "Timer over: Cocaine is off" = "タイマー終了：Cocaine をオフにしました";
@@ -214,8 +214,8 @@
 "Remove" = "削除";
 "Replace system HUD" = "システムHUDを置き換える";
 "Shelf" = "シェルフ";
-"Stay active" = "アクティブを維持";
-"Stay available in chat apps" = "チャットアプリで在席を維持";
+"Stay active" = "在席を維持";
+"Stay available in chat apps" = "退席中と表示させない";
 "The chat apps to keep available" = "在席を維持するチャットアプリ";
 "While these apps are open" = "これらのアプリが開いている間";
 "on/off" = "オン/オフ";
