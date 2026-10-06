@@ -265,6 +265,7 @@ enum RemoteShortcut {
         var problems: [String] = []
         var outputs = Set<String>(), variables = Set<String>()
         var menuDepth = 0
+        var menuItems: [String: [String]] = [:], menuBranches: [String: [String]] = [:]
         func refs(_ any: Any, _ where_: String) {
             if let d = any as? [String: Any] {
                 if let u = d["OutputUUID"] as? String, !outputs.contains(u) { problems.append("\(where_): output used before it exists") }
@@ -292,6 +293,9 @@ enum RemoteShortcut {
             if id == "choosefrommenu", let mode = p["WFControlFlowMode"] as? Int {
                 if mode == 0 { menuDepth += 1 } else if mode == 2 { menuDepth -= 1 }
                 if menuDepth < 0 { problems.append("#\(i): menu closed before it opened") }
+                let group = p["GroupingIdentifier"] as? String ?? ""
+                if mode == 0 { menuItems[group] = p["WFMenuItems"] as? [String] ?? [] }
+                if mode == 1 { menuBranches[group, default: []].append(p["WFMenuItemTitle"] as? String ?? "") }
             }
             if id == "setvariable", let n = p["WFVariableName"] as? String { variables.insert(n) }
             if id == "text.replace", p["WFReplaceTextRegularExpression"] as? Bool == true,
@@ -305,6 +309,13 @@ enum RemoteShortcut {
             }
         }
         if menuDepth != 0 { problems.append("menus not balanced") }
+        // Choose from Menu runs the branch whose title equals the chosen item: every item needs exactly one branch with
+        // the very same (non-empty, unique) title, or that choice silently runs nothing (in any language).
+        for (group, items) in menuItems {
+            let branches = menuBranches[group] ?? []
+            if Set(items).count != items.count || items.contains(where: \.isEmpty) { problems.append("menu items empty or repeated: \(items)") }
+            if branches.sorted() != items.sorted() { problems.append("menu items \(items) don't match their branches \(branches)") }
+        }
         return problems
     }
 }
