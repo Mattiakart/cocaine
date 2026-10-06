@@ -72,7 +72,7 @@ private enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"
@@ -1405,6 +1405,10 @@ private enum UI {
     static let icon = Font.system(size: 12, weight: .medium)
     static let chevron = Font.system(size: 10, weight: .semibold)
     static let switchSize = CGSize(width: 38, height: 22)
+    /// In-app dialogs (Sources/InAppDialog.swift) in the same type scale and colors.
+    static var dialog: DialogStyle {
+        DialogStyle(title: groupTitle, body: value, row: title, detail: detail, icon: icon, accent: Island.accent, warning: warningColor)
+    }
 }
 
 /// Cocaine's one switch, the same size everywhere: grey track when off, accent color when on, a white knob. The main
@@ -1541,6 +1545,7 @@ private struct PanelView: View {
     @ObservedObject var m: PanelModel
     @ObservedObject var clip = ClipboardHistory.shared
     @ObservedObject var up = Updater.shared
+    @ObservedObject var dialogs = DialogCenter.shared
 
     private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
     static func timeString(_ d: Date) -> String { time.string(from: d) }
@@ -2229,32 +2234,35 @@ private struct PanelView: View {
     var body: some View {
         let g = m.island ? NotchGeometry.current() : nil
         return VStack(alignment: .leading, spacing: 10) {
-            if let g { strip(g) }
-            header
-            if g == nil {
-                EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
-                    .frame(maxWidth: .infinity)
-            }
-
-            switch m.page {
-            case "ai": aiTab
-            case "auto": automationTab
-            default: generalTab
-            }
-
-            if g == nil {
-                HStack(spacing: 8) {
-                    Button { Feedback.compose() } label: {
-                        Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
-                    }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help(L("Feedback or help") + " — " + Feedback.address)
-                    Spacer(minLength: 8)
-                    Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
-                        .help(L("Turns Cocaine off and quits"))
+            if let g { strip(g).disabled(dialogs.isShowing(on: .panel)) }
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                if g == nil {
+                    EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 10)
+
+                switch m.page {
+                case "ai": aiTab
+                case "auto": automationTab
+                default: generalTab
+                }
+
+                if g == nil {
+                    HStack(spacing: 8) {
+                        Button { Feedback.compose() } label: {
+                            Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help(L("Feedback or help") + " — " + Feedback.address)
+                        Spacer(minLength: 8)
+                        Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
+                            .help(L("Turns Cocaine off and quits"))
+                    }
+                    .padding(.horizontal, 10)
+                }
             }
+            .dialogHost(dialogs, .panel, UI.dialog)          // questions and messages: a card over the panel, never a system alert
         }
         .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, g == nil ? 14 : Layout.overscan)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
@@ -3539,7 +3547,7 @@ private struct ClipboardPage: View {
                 tool(h.paused ? "play.fill" : "pause.fill", on: h.paused, h.paused ? L("Resume") : L("Pause")) { h.paused.toggle() }
                 Menu {
                     Button(L("Clear history (keeps favorites)")) { h.clearHistory() }
-                    Button(L("Delete everything…"), role: .destructive) { ClipboardUI.confirmDeleteEverything(h) }
+                    Button(L("Delete everything…"), role: .destructive) { ClipboardUI.confirmDeleteEverything(h, from: .island) }
                 } label: {
                     Image(systemName: "trash").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5))
                 }
@@ -3668,62 +3676,139 @@ private struct ClipboardPage: View {
     }
 }
 
-/// The clipboard's confirmations and its little editors (alerts, centred on the screen, with the panel out of the way).
-private enum ClipboardUI {
-    static var beforeAlert: () -> Void = {}
+/// Every question and message of the app, as in-app dialogs (Sources/InAppDialog.swift). The flows, the render tool and the
+/// tests use these same specs.
+private enum Dialogs {
+    static var cancel: DialogButton { DialogButton(id: "cancel", title: L("Cancel"), role: .cancel) }
+    static var ok: DialogButton { DialogButton(id: "ok", title: L("OK")) }
 
-    static func setPersist(_ h: ClipboardHistory, _ on: Bool) {
-        if on { h.setPersist(true); return }
-        beforeAlert()
-        let a = NSAlert()
-        a.messageText = L("Stop saving the clipboard history?")
-        a.informativeText = L("The saved copy can be deleted now, with its Keychain key, or kept encrypted on this Mac for the next time you turn this on.")
-        a.addButton(withTitle: L("Delete it"))
-        a.addButton(withTitle: L("Keep it"))
-        a.addButton(withTitle: L("Cancel"))
-        switch a.runModal() {
-        case .alertFirstButtonReturn: h.setPersist(false, wipe: true)
-        case .alertSecondButtonReturn: h.setPersist(false, wipe: false)
-        default: break
-        }
+    /// A message with an OK button (errors: the warning icon).
+    static func message(_ title: String, _ text: String? = nil, error: Bool = true, surface: DialogSurface = .panel) -> DialogSpec {
+        DialogSpec(icon: error ? "exclamationmark.triangle.fill" : "info.circle", title: title, message: text, critical: error, buttons: [ok], surface: surface)
     }
 
-    static func confirmDeleteEverything(_ h: ClipboardHistory) {
-        beforeAlert()
-        let a = NSAlert()
-        a.alertStyle = .critical
-        a.messageText = L("Delete the whole clipboard history?")
-        a.informativeText = L("Everything, favorites included, plus the saved files and their Keychain key. It can't be undone.")
-        a.addButton(withTitle: L("Delete everything"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        if !h.deleteEverything() {
-            let e = NSAlert()
-            e.messageText = L("Some of it couldn't be deleted")
-            e.informativeText = ClipStore.defaultDir.path
-            e.runModal()
-        }
+    static func clipPersist(_ surface: DialogSurface) -> DialogSpec {
+        DialogSpec(icon: "doc.on.clipboard", title: L("Stop saving the clipboard history?"),
+                   message: L("The saved copy can be deleted now, with its Keychain key, or kept encrypted on this Mac for the next time you turn this on."),
+                   buttons: [DialogButton(id: "delete", title: L("Delete it"), role: .destructive), DialogButton(id: "keep", title: L("Keep it")), cancel],
+                   surface: surface)
     }
 
-    static func addPattern(_ h: ClipboardHistory) {
-        beforeAlert()
-        let a = NSAlert()
-        a.messageText = L("Exclude text matching a pattern")
-        a.informativeText = L("A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept.")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        a.accessoryView = field
-        a.window.initialFirstResponder = field
-        a.addButton(withTitle: L("Add"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        let p = field.stringValue.trimmingCharacters(in: .whitespaces)
-        guard ClipRules.validPattern(p) else {
-            let e = NSAlert(); e.messageText = L("That isn't a valid pattern"); e.informativeText = p; e.runModal()
+    static func clipDeleteAll(_ surface: DialogSurface) -> DialogSpec {
+        DialogSpec(icon: "trash", title: L("Delete the whole clipboard history?"),
+                   message: L("Everything, favorites included, plus the saved files and their Keychain key. It can't be undone."), critical: true,
+                   buttons: [DialogButton(id: "delete", title: L("Delete everything"), role: .destructive), cancel], surface: surface)
+    }
+
+    /// Why a pattern can't be used (after trimming spaces, as it is saved), or nil.
+    static func patternProblem(_ text: String) -> String? {
+        ClipRules.validPattern(text.trimmingCharacters(in: .whitespaces)) ? nil : L("That isn't a valid pattern")
+    }
+
+    static func clipPattern(_ surface: DialogSurface) -> DialogSpec {
+        DialogSpec(icon: "text.magnifyingglass", title: L("Exclude text matching a pattern"),
+                   message: L("A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept."),
+                   field: DialogField(placeholder: "^IBAN", validate: patternProblem),
+                   buttons: [DialogButton(id: "add", title: L("Add"), needsValidInput: true), cancel], surface: surface)
+    }
+
+    /// Something opened a cocaine:// link that changes the Mac's sleep. Granting is never the default: Return, Esc and a click
+    /// elsewhere all mean Don't Allow (the question can come up while you are typing, and a web page can open such a link).
+    static func links(_ url: URL) -> DialogSpec {
+        let shown = String(url.absoluteString.prefix(120)).replacingOccurrences(of: "\n", with: " ")
+        return DialogSpec(icon: "link", title: L("Allow Shortcuts and links to control Cocaine?"),
+                          message: String(format: L("Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts."), shown),
+                          buttons: [DialogButton(id: "allow", title: L("Allow")), DialogButton(id: "deny", title: L("Don't Allow"), role: .cancel)],
+                          safeDefault: true)
+    }
+
+    static func pairPhone() -> DialogSpec {
+        DialogSpec(icon: "iphone", title: L("Pair an iPhone"),
+                   message: L("The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices."),
+                   choices: [DialogChoice(id: "basic", title: L("Status, on/off and projects"), symbol: "power"),
+                             DialogChoice(id: "agents", title: L("Also start and steer AI agents"), symbol: "sparkles")],
+                   selected: "basic",
+                   buttons: [DialogButton(id: "send", title: L("Send")), cancel])
+    }
+
+    static func revokePhones() -> DialogSpec {
+        DialogSpec(icon: "iphone.slash", title: L("Remove every paired iPhone?"), message: L("They stop working until you send a new Shortcut."), critical: true,
+                   buttons: [DialogButton(id: "revoke", title: L("Revoke"), role: .destructive), cancel])
+    }
+
+    /// The share list: the ways macOS offers to send the file, AirDrop first, then Show in Finder. A row is the answer
+    /// ("s0", "s1"… for `services`, or "finder"); AirDrop, Messages and Mail then open their own window (Apple's: not embeddable).
+    static func share(_ services: [NSSharingService], surface: DialogSurface = .panel) -> DialogSpec {
+        DialogSpec(icon: "square.and.arrow.up", title: L("Send the Shortcut to your iPhone"),
+                   message: L("AirDrop, Messages and Mail then open their own macOS window to pick who gets it."),
+                   choices: services.enumerated().map { DialogChoice(id: "s\($0.offset)", title: $0.element.title, image: $0.element.image) }
+                       + [DialogChoice(id: "finder", title: L("Show in Finder"), symbol: "folder")],
+                   choiceMode: .act, buttons: [cancel], surface: surface)
+    }
+}
+
+/// Sharing files: the services macOS offers (AirDrop first), performed with the app in front (their windows can't open from a
+/// panel of an app that isn't), and a failure said in the app.
+private final class Sharing: NSObject, NSSharingServiceDelegate {
+    static let shared = Sharing()
+    private var surface = DialogSurface.panel
+
+    static func services(for items: [Any]) -> [NSSharingService] {
+        let all = NSSharingService.sharingServices(forItems: items)
+        let air = NSSharingService(named: .sendViaAirDrop)?.title
+        return all.filter { $0.title == air } + all.filter { $0.title != air }
+    }
+
+    func perform(_ service: NSSharingService?, _ items: [Any], surface: DialogSurface) {
+        self.surface = surface
+        guard let service, service.canPerform(withItems: items) else {
+            DialogCenter.shared.present(Dialogs.message(L("Couldn't share it"), L("AirDrop isn't available on this Mac right now."), surface: surface)) { _ in }
             return
         }
-        var s = h.settings
-        if !s.patterns.contains(p) { s.patterns.append(p) }
-        h.update(s)
+        NSApp.activate()
+        service.delegate = self
+        service.perform(withItems: items)
+    }
+
+    func sharingService(_ s: NSSharingService, didFailToShareItems items: [Any], error: Error) {
+        let e = error as NSError
+        guard !(e.domain == NSCocoaErrorDomain && e.code == NSUserCancelledError) else { return }     // closed by the user
+        log.notice("share failed: \(e.domain, privacy: .public) \(e.code, privacy: .public)")
+        DialogCenter.shared.present(Dialogs.message(L("Couldn't share it"), e.localizedDescription, surface: surface)) { _ in }
+    }
+}
+
+/// The clipboard's confirmations and its little editor, as in-app dialogs where they were asked from (the panel or the island).
+private enum ClipboardUI {
+    static func setPersist(_ h: ClipboardHistory, _ on: Bool, from surface: DialogSurface = .panel) {
+        if on { h.setPersist(true); return }
+        DialogCenter.shared.present(Dialogs.clipPersist(surface)) { r in
+            switch r.buttonID {
+            case "delete": h.setPersist(false, wipe: true)
+            case "keep": h.setPersist(false, wipe: false)
+            default: break                                    // Cancel, Esc, a click elsewhere: still saving
+            }
+        }
+    }
+
+    static func confirmDeleteEverything(_ h: ClipboardHistory, from surface: DialogSurface = .panel) {
+        DialogCenter.shared.present(Dialogs.clipDeleteAll(surface)) { r in
+            guard r.buttonID == "delete" else { return }
+            if !h.deleteEverything() {
+                DialogCenter.shared.present(Dialogs.message(L("Some of it couldn't be deleted"), ClipStore.defaultDir.path, surface: surface)) { _ in }
+            }
+        }
+    }
+
+    static func addPattern(_ h: ClipboardHistory, from surface: DialogSurface = .panel) {
+        DialogCenter.shared.present(Dialogs.clipPattern(surface)) { r in
+            guard case .button("add", let text, _) = r else { return }
+            let p = text.trimmingCharacters(in: .whitespaces)
+            guard ClipRules.validPattern(p) else { return }       // the dialog doesn't let a bad one through; never saved anyway
+            var s = h.settings
+            if !s.patterns.contains(p) { s.patterns.append(p) }
+            h.update(s)
+        }
     }
 
     /// Apps that are open now and could be excluded: name and bundle id.
@@ -4796,10 +4881,9 @@ private final class IslandController {
         model.mic.start()
         startPointerMonitors()
         model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
-        model.airDrop = { urls in
+        model.airDrop = { urls in                     // one tap: straight to AirDrop's own picker; a problem is said in the island
             guard !urls.isEmpty else { return }
-            NSApp.activate()
-            NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
+            Sharing.shared.perform(NSSharingService(named: .sendViaAirDrop), urls, surface: .island)
         }
         model.dropTargeted = { [weak self] t in
             guard t, let self else { return }
@@ -4812,7 +4896,7 @@ private final class IslandController {
 
     func setEnabled(_ on: Bool) {
         enabled = on
-        guard on else { panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop(); return }
+        guard on else { DialogCenter.shared.surfaceClosed(.island); panel?.orderOut(nil); watchTimer?.invalidate(); watchTimer = nil; model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop(); return }
         model.files.start(); model.clipboard.start(); model.music.start()
         syncHUD(panelModel?.replaceHUD ?? false)
         if panel == nil, let pm = panelModel {
@@ -4860,6 +4944,7 @@ private final class IslandController {
 
     func setOpen(_ open: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
+        if !open { DialogCenter.shared.surfaceClosed(.island) }       // a dialog in the island goes with it: cancelled
         guard model.open != open else { return }
         if open {
             Haptic.tap(.alignment)
@@ -4921,7 +5006,36 @@ private final class IslandController {
 
     private func hover(_ inside: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
+        if !inside && DialogCenter.shared.isShowing(on: .island) { return }     // a question stays until it's answered or clicked away
         setOpen(inside)                                    // no delay either way: as fast out as in
+    }
+
+    // MARK: a dialog in the island
+
+    private var dialogMonitors: [Any] = []
+
+    /// The island holds a dialog only while it is on and open (not behind the settings panel).
+    var canHoldDialog: Bool { enabled && !suspended && model.open && (panel?.isVisible ?? false) }
+
+    /// A dialog came or went: while one is in the island it takes the keyboard (Return, Esc, its text field) and a click in
+    /// another app cancels it; afterwards the island goes back to following the pointer.
+    func dialogChanged() {
+        let on = DialogCenter.shared.isShowing(on: .island)
+        guard on != !dialogMonitors.isEmpty else { return }
+        if on {
+            panel?.keyable = true
+            panel?.makeKey()
+            if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { e in DialogCenter.shared.handleKey(e) ? nil : e }) { dialogMonitors.append(m) }
+            if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+                DialogCenter.shared.surfaceClosed(.island)
+                if !(self?.hovering ?? true) { self?.setOpen(false) }
+            }) { dialogMonitors.append(m) }
+        } else {
+            dialogMonitors.forEach(NSEvent.removeMonitor)
+            dialogMonitors.removeAll()
+            model.setKeyable(model.open && model.tab == "clipboard")      // the clipboard's search field keeps it, nothing else
+            if !hovering { setOpen(false) }                              // the pointer left while the question was up
+        }
     }
 
     /// Once a second: hide during full-screen video and games, follow the screen, keep the closed width in step.
@@ -4988,6 +5102,7 @@ private struct IslandView: View {
     @ObservedObject var batteries: BatteryWatch
     @ObservedObject var mic: MicWatch
     @ObservedObject var usage: UsageWatch
+    @ObservedObject var dialogs = DialogCenter.shared
 
     private var g: NotchGeometry { model.geometry }
     fileprivate var files: FileShelf { model.files }
@@ -5147,6 +5262,7 @@ private struct IslandView: View {
         }
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
         .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
+        .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))
     }
 
     private var cellWidth: CGFloat { Island.tabs(external: Island.external).count >= 11 ? 28 : 31 }     // 11: room for the mic too
@@ -5550,7 +5666,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.island.setOpen(false)
             self?.showPanel(fromClick: false)
         }
-        ClipboardUI.beforeAlert = { [weak self] in self?.hidePanel(); self?.island.setOpen(false); NSApp.activate() }
+        setUpDialogs()
         model.presenceChanged = { [weak self] in
             guard let self else { return }
             self.updatePink()                                                // the pink powder pours in (or out) with the switch
@@ -5751,10 +5867,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.notice("command \(String(describing: req.action), privacy: .public)")
-        guard !req.action.guarded || linksAllowed(url) else {
-            if let e = req.failure, let r = ControlURL.reply(e, [("errorMessage", "not allowed")]) { NSWorkspace.shared.open(r) }
-            return
+        guard req.action.guarded else { runCommand(req); return }
+        linksAllowed(url) { [weak self] allowed in
+            guard allowed else {
+                if let e = req.failure, let r = ControlURL.reply(e, [("errorMessage", "not allowed")]) { NSWorkspace.shared.open(r) }
+                return
+            }
+            self?.runCommand(req)
         }
+    }
+
+    /// A control command that may run (allowed, or not guarded): does it and answers the caller's x-success.
+    private func runCommand(_ req: ControlRequest) {
         switch req.action {
         case .on(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes)
         case .off: autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
@@ -5774,31 +5898,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Links may change things when the switch is on; otherwise ask (one question at a time, and after a "Don't Allow"
-    /// links are ignored for 10 minutes, so a page can't flood the screen with questions).
-    private func linksAllowed(_ url: URL) -> Bool {
-        if settings.allowLinks { return true }
-        guard !asking, Date() >= linksRefusedUntil else { return false }
+    /// Links may change things when the switch is on; otherwise ask, in the panel (one question at a time, and after a "Don't
+    /// Allow" links are ignored for 10 minutes, so a page can't flood the screen with questions). Return, Esc and a click
+    /// elsewhere are Don't Allow (see Dialogs.links). `done` runs once, at once when there's nothing to ask.
+    private func linksAllowed(_ url: URL, _ done: @escaping (Bool) -> Void) {
+        if settings.allowLinks { done(true); return }
+        guard !asking, Date() >= linksRefusedUntil else { done(false); return }
         asking = true
-        defer { asking = false }
-        hidePanel()
-        NSApp.activate()
-        let a = NSAlert()
-        a.messageText = L("Allow Shortcuts and links to control Cocaine?")
-        let shown = String(url.absoluteString.prefix(120)).replacingOccurrences(of: "\n", with: " ")
-        a.informativeText = String(format: L("Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts."), shown)
-        a.addButton(withTitle: L("Allow"))
-        a.addButton(withTitle: L("Don't Allow"))
-        // Return must not say yes: the question takes the focus while you may be typing (a page can open the link at any time).
-        a.buttons[0].keyEquivalent = ""
-        a.buttons[1].keyEquivalent = "\r"
-        guard a.runModal() == .alertFirstButtonReturn else {
-            linksRefusedUntil = Date().addingTimeInterval(600)
-            return false
+        DialogCenter.shared.present(Dialogs.links(url)) { [weak self] r in
+            guard let self else { return }
+            self.asking = false
+            guard r.buttonID == "allow" else {
+                self.linksRefusedUntil = Date().addingTimeInterval(600)
+                done(false)
+                return
+            }
+            self.settings.allowLinks = true
+            self.model.allowLinks = true
+            done(true)
         }
-        settings.allowLinks = true
-        model.allowLinks = true
-        return true
     }
 
     private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String, _ origin: AgentOrigin? = nil) {
@@ -6131,6 +6249,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if !iconZone.contains(NSEvent.mouseLocation) { self?.hidePanel() }
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
+            if DialogCenter.shared.isShowing(on: .panel), DialogCenter.shared.handleKey(e) { return nil }   // Return/Esc: the dialog's
             if e.keyCode == 53 {                                   // Esc: back from a page first, then close
                 self?.hidePanel()
                 return nil
@@ -6181,6 +6300,24 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderOut(nil)
         NSCursor.arrow.set()                                // in case it closed with the pointer on the mirror
         statusItem.button?.highlight(false)
+        DialogCenter.shared.surfaceClosed(.panel)           // a question on it is answered Cancel (the next one, if any, reopens it)
+    }
+
+    /// In-app dialogs: over the panel (opened, under the notch or the icon, when it isn't), or in the open island when asked from
+    /// there. Only when neither can be shown (no screen) does NSAlert come up instead.
+    private func setUpDialogs() {
+        let center = DialogCenter.shared
+        center.show = { [weak self] want in
+            guard let self, self.panel != nil else { return nil }
+            if want == .island && self.island.canHoldDialog { return .island }
+            if !self.panel.isVisible { self.showPanel(fromClick: false) }
+            guard self.panel.isVisible else { return nil }
+            self.panel.makeKey()                            // Return, Esc and the text field (the panel never activates the app)
+            self.panel.scroll.contentView.scroll(to: .zero) // the card is at the top
+            self.panel.scroll.reflectScrolledClipView(self.panel.scroll.contentView)
+            return .panel
+        }
+        center.changed = { [weak self] in self?.island.dialogChanged() }
     }
 
     private func refreshPanelState() {
@@ -6216,12 +6353,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.ai = ai
                 log.notice("AI alerts for \(id, privacy: .public) \(enable ? "on" : "off", privacy: .public), failed: \(failed.count, privacy: .public)")
                 guard !failed.isEmpty else { return }
-                self.hidePanel()
-                NSApp.activate()
-                let a = NSAlert()
-                a.messageText = L("Can't change AI alerts")
-                a.informativeText = failed.map { $0.replacingOccurrences(of: NSHomeDirectory(), with: "~") }.joined(separator: "\n")
-                a.runModal()
+                DialogCenter.shared.present(Dialogs.message(L("Can't change AI alerts"),
+                                                            failed.map { $0.replacingOccurrences(of: NSHomeDirectory(), with: "~") }.joined(separator: "\n"))) { _ in }
             }
         }
     }
@@ -6491,7 +6624,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if !ok {
                 settings.wakeForPhone = false
                 model.wakeForPhone = false
-                let e = NSAlert(); e.messageText = L("Couldn't turn on the wake-ups"); e.runModal()
+                DialogCenter.shared.present(Dialogs.message(L("Couldn't turn on the wake-ups"))) { _ in }
                 return
             }
         }
@@ -6522,33 +6655,26 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Pairs a new iPhone: asks what it may do, makes a Shortcut carrying its own secret topics, and opens the share
     /// sheet (AirDrop, Messages, Mail…) on it.
     private func sendShortcutToPhone() {
-        hidePanel(); NSApp.activate()
-        let a = NSAlert()
-        a.messageText = L("Pair an iPhone")
-        a.informativeText = L("The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices.")
-        let level = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26))
-        level.addItems(withTitles: [L("Status, on/off and projects"), L("Also start and steer AI agents")])
-        a.accessoryView = level
-        a.addButton(withTitle: L("Send"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        guard let pairing = PhoneLink.newPairing(tier: level.indexOfSelectedItem == 1 ? "agents" : "basic") else { return }
+        DialogCenter.shared.present(Dialogs.pairPhone()) { [weak self] r in
+            guard case .button("send", _, let level) = r else { return }
+            self?.makeShortcut(tier: level == "agents" ? "agents" : "basic")
+        }
+    }
+
+    private func makeShortcut(tier: String) {
+        guard let pairing = PhoneLink.newPairing(tier: tier) else { return }
         model.makingShortcut = true
         DispatchQueue.global().async {
             let file = PhoneShortcut.signedFile(pairing)
             DispatchQueue.main.async {
                 self.model.makingShortcut = false
                 guard let file else {
-                    NSApp.activate()
-                    let e = NSAlert()
-                    e.messageText = L("Can't make the Shortcut")
-                    e.informativeText = L("Signing it needs an internet connection and iCloud (sign in to it in System Settings).")
-                    e.runModal()
+                    DialogCenter.shared.present(Dialogs.message(L("Can't make the Shortcut"),
+                        L("Signing it needs an internet connection and iCloud (sign in to it in System Settings)."))) { _ in }
                     return
                 }
                 guard let list = PhoneLink.loadForChange(), PhoneLink.save(list + [pairing]) else {
-                    NSApp.activate()
-                    let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
+                    DialogCenter.shared.present(Dialogs.message(L("Can't make the Shortcut"))) { _ in }
                     return
                 }
                 self.syncPhones()
@@ -6561,36 +6687,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func revokePhones() {
-        hidePanel(); NSApp.activate()
-        let a = NSAlert()
-        a.messageText = L("Remove every paired iPhone?")
-        a.informativeText = L("They stop working until you send a new Shortcut.")
-        a.addButton(withTitle: L("Revoke"))
-        a.addButton(withTitle: L("Cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        if !PhoneLink.save([]) {                          // couldn't write: delete it, and still stop answering now
-            try? FileManager.default.removeItem(at: PhoneLink.file)
-            let e = NSAlert(); e.messageText = L("Can't make the Shortcut"); e.runModal()
+        DialogCenter.shared.present(Dialogs.revokePhones()) { [weak self] r in
+            guard r.buttonID == "revoke" else { return }
+            if !PhoneLink.save([]) {                          // couldn't write: delete it, and still stop answering now
+                try? FileManager.default.removeItem(at: PhoneLink.file)
+                DialogCenter.shared.present(Dialogs.message(L("Can't make the Shortcut"))) { _ in }
+            }
+            self?.syncPhones([])
         }
-        syncPhones([])
     }
 
-    /// A menu of the ways to share the file (AirDrop, Messages, Mail, Notes…) plus "Show in Finder". The panel closes and
-    /// the app becomes active first: the sharing windows (AirDrop's, Notes') can't open from a panel that isn't.
-    private var shareServices: [NSSharingService] = []
+    /// The ways to share the file (AirDrop first, Messages, Mail, Notes…) plus "Show in Finder", as a list in the panel (opened
+    /// again if it was closed while the Shortcut was signed). One tap on a service and its own window opens: the panel closes
+    /// first (it floats above normal windows) and the app comes to the front (those windows can't open from a panel that isn't).
     private func presentShare(_ file: URL) {
-        hidePanel()
-        NSApp.activate()
-        shareServices = NSSharingService.sharingServices(forItems: [file])
-        let menu = NSMenu()
-        for service in shareServices {
-            let item = ClosureItem(title: service.title) { service.perform(withItems: [file]) }
-            item.image = service.image
-            menu.addItem(item)
+        let services = Sharing.services(for: [file])
+        DialogCenter.shared.present(Dialogs.share(services)) { [weak self] r in
+            guard case .choice(let id) = r else { return }
+            self?.hidePanel()
+            if id == "finder" { NSWorkspace.shared.activateFileViewerSelecting([file]); return }
+            guard let i = Int(id.dropFirst()), services.indices.contains(i) else { return }
+            Sharing.shared.perform(services[i], [file], surface: .panel)
         }
-        menu.addItem(.separator())
-        menu.addItem(ClosureItem(title: L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([file]) })
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     /// Fills the baggie gradually when Cocaine turns on, empties it when it turns off.
@@ -6835,15 +6953,73 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if enable { try svc.register() } else { try svc.unregister() }
             if svc.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         } catch {
-            hidePanel()
-            NSApp.activate()
-            let a = NSAlert()
-            a.messageText = L("Can't change Open at Login")
-            a.informativeText = "\(error.localizedDescription)\n\n" + L("You can add Cocaine manually in System Settings → General → Login Items.")
-            a.runModal()
+            DialogCenter.shared.present(Dialogs.message(L("Can't change Open at Login"),
+                "\(error.localizedDescription)\n\n" + L("You can add Cocaine manually in System Settings → General → Login Items."))) { _ in }
         }
         model.loginEnabled = svc.status == .enabled
     }
+}
+
+/// In-app dialogs (--dialogs-test, part of --selftest): the queue and the rules (Sources/InAppDialog.swift), then the app's real
+/// dialogs and flows on a stand-in surface (a clipboard history in a temporary folder; nothing of the user's is touched).
+private func dialogsSelfTest(_ check: (String, Bool) -> Void) {
+    DialogTests.pure(check)
+    func key(_ s: DialogSpec, _ k: DialogLogic.Key, _ text: String = "") -> DialogLogic.Outcome {
+        DialogLogic.key(s, k, text: text, choice: s.selected ?? s.choices.first?.id)
+    }
+    let link = Dialogs.links(URL(string: "cocaine://on?x=1")!)
+    check("dialogs: the links question defaults to Don't Allow (Return refuses)", DialogLogic.defaultButton(link) == "deny" && key(link, .returnKey) == .finish(.cancelled))
+    check("dialogs: …and only its Allow button grants", DialogLogic.press(link, "allow", text: "", choice: nil) == .finish(.button("allow", text: "", choice: nil)))
+    check("dialogs: Return never deletes: clipboard history, saved copy, paired iPhones",
+          key(Dialogs.clipDeleteAll(.panel), .returnKey) == .finish(.cancelled)
+          && key(Dialogs.clipPersist(.panel), .returnKey) == .finish(.button("keep", text: "", choice: nil))
+          && key(Dialogs.revokePhones(), .returnKey) == .finish(.cancelled))
+    check("dialogs: pairing starts on the basic level and Return sends it",
+          key(Dialogs.pairPhone(), .returnKey) == .finish(.button("send", text: "", choice: "basic")))
+    let pattern = Dialogs.clipPattern(.panel)
+    check("dialogs: a pattern is checked as it will be saved (spaces trimmed)", key(pattern, .returnKey, "  ^IBAN ") == .finish(.button("add", text: "  ^IBAN ", choice: nil)))
+    check("dialogs: an invalid or empty pattern is refused in the dialog", key(pattern, .returnKey, "([") == .invalid(L("That isn't a valid pattern"))
+          && key(pattern, .returnKey, "   ") == .invalid(L("That isn't a valid pattern")))
+    let share = Dialogs.share(Sharing.services(for: [URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")]))
+    check("dialogs: the share list ends with Show in Finder and has only Cancel to press",
+          share.choices.last?.id == "finder" && share.choiceMode == .act && share.buttons.map(\.id) == ["cancel"])
+    if let air = NSSharingService(named: .sendViaAirDrop)?.title, share.choices.contains(where: { $0.title == air }) {
+        check("dialogs: AirDrop is the first way to share", share.choices.first?.title == air)
+    }
+
+    // The clipboard's flows, through the shared center on a stand-in surface: no NSAlert, the same outcomes as before.
+    let center = DialogCenter.shared
+    let (show, fallback) = (center.show, center.fallback)
+    defer { center.show = show; center.fallback = fallback }
+    var alerts = 0
+    center.show = { $0 }
+    center.fallback = { _ in alerts += 1; return .cancelled }
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cocaine-dialogs-\(getpid())")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let fb = FakePasteboard()
+    let h = ClipboardHistory(defaults: MemoryDefaults(), dir: dir, keys: MemoryKeyStore(), board: fb)
+    ClipboardUI.addPattern(h, from: .island)
+    check("dialogs: the pattern editor shows in the island it was asked from", center.surface == .island && center.current?.spec.field != nil)
+    center.text = "(["
+    center.press("add")
+    check("dialogs: a bad pattern keeps the editor open with the reason, nothing saved", center.current != nil && center.problem != nil && h.settings.patterns.isEmpty)
+    center.text = "  ^IBAN  "
+    _ = center.handle(.returnKey)
+    check("dialogs: a good one is saved, trimmed", center.current == nil && h.settings.patterns == ["^IBAN"])
+    ClipboardUI.addPattern(h)
+    center.text = "secret"
+    center.surfaceClosed(.panel)
+    check("dialogs: closing the panel cancels the editor (nothing added)", center.current == nil && h.settings.patterns == ["^IBAN"])
+    h.frontApp = { "com.apple.TextEdit" }
+    fb.put(ClipSnapshot(types: ["public.utf8-plain-text"], text: "keep me"))
+    h.captureNow()
+    ClipboardUI.confirmDeleteEverything(h)
+    _ = center.handle(.returnKey)
+    check("dialogs: Return on Delete everything… keeps the history", h.items.count == 1 && center.current == nil)
+    ClipboardUI.confirmDeleteEverything(h)
+    center.press("delete")
+    check("dialogs: Delete everything deletes it", h.items.isEmpty)
+    check("dialogs: no system alert came up", alerts == 0)
 }
 
 /// Smart Triggers on power, displays and schedules; screen-off mode; control links (part of --selftest).
@@ -7345,7 +7521,15 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     _ = NSApplication.shared
     AgentTests.pure(check)                                 // AI sessions: order, restore, liveness, URLs, focus plan, requests
     RecoveryTest.selfChecks(check)
+    dialogsSelfTest(check)                                 // in-app dialogs: queue, default buttons, validation, the real flows
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
+    exit(failed == 0 ? 0 : 1)
+}
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test" {
+    // The in-app dialogs alone (also part of --selftest). PASS/FAIL lines, exit status.
+    _ = NSApplication.shared
+    var failed = 0
+    dialogsSelfTest { name, ok in print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
     exit(failed == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" {
@@ -7518,6 +7702,39 @@ private enum IslandCheck {
         return failed == 0 ? 0 : 1
     }
 }
+/// The render tools' dialogs (`--dialog <kind>`), each exactly as the app presents it, on the surface being drawn.
+private func renderSampleDialog(_ args: [String], surface: DialogSurface) {
+    guard let i = args.firstIndex(of: "--dialog"), i + 1 < args.count else { return }
+    let kind = args[i + 1]
+    var spec: DialogSpec
+    switch kind {
+    case "links": spec = Dialogs.links(URL(string: "cocaine://on?minutes=90&x-success=shortcuts://x-callback-url/run-shortcut")!)
+    case "pattern", "pattern-bad": spec = Dialogs.clipPattern(surface)
+    case "persist": spec = Dialogs.clipPersist(surface)
+    case "delete": spec = Dialogs.clipDeleteAll(surface)
+    case "deletefail": spec = Dialogs.message(L("Some of it couldn't be deleted"), ClipStore.defaultDir.path)
+    case "pair": spec = Dialogs.pairPhone()
+    case "revoke": spec = Dialogs.revokePhones()
+    case "ai": spec = Dialogs.message(L("Can't change AI alerts"), "~/.claude/settings.json\n~/.codex/hooks.json")
+    case "login": spec = Dialogs.message(L("Can't change Open at Login"),
+                                         "The operation couldn’t be completed. Operation not permitted\n\n" + L("You can add Cocaine manually in System Settings → General → Login Items."))
+    case "wake": spec = Dialogs.message(L("Couldn't turn on the wake-ups"))
+    case "shortcut": spec = Dialogs.message(L("Can't make the Shortcut"), L("Signing it needs an internet connection and iCloud (sign in to it in System Settings)."))
+    case "airdrop": spec = Dialogs.message(L("Couldn't share it"), L("AirDrop isn't available on this Mac right now."))
+    case "share":
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cocaine-render-\(getpid())")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("Cocaine.shortcut")
+        try? Data("sample".utf8).write(to: file)
+        spec = Dialogs.share(Sharing.services(for: [file]))
+        try? FileManager.default.removeItem(at: dir)
+    default: print("unknown dialog \(kind)"); return
+    }
+    spec.surface = surface
+    DialogCenter.shared.show = { _ in surface }
+    DialogCenter.shared.present(spec) { _ in }
+    if kind == "pattern-bad" { DialogCenter.shared.text = "([a-z"; DialogCenter.shared.press("add") }
+}
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--clipboard-test" {
     exit(ClipboardTests.run() == 0 ? 0 : 1)
 }
@@ -7578,6 +7795,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     }
     if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true; pm.pinkLevel = 1 }        // Stay active alone: the pink bag
     Island.forceExternal = args.contains("--external")
+    renderSampleDialog(args, surface: .island)                 // --dialog <kind>: a dialog in the open island
     if args.contains("--live-window") {
         // What the real window shows: the IslandView alone in a hosting view of the live window's size (closed: 465×38 on a
         // 185 pt notch), not the roomy canvas above. --island-selfcheck runs the same thing and checks the pixels.
@@ -7670,6 +7888,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     }
     if CommandLine.arguments.contains("--longsound") { model.alertDuration = 0; model.alertRepeatMinutes = 10 }
     if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
+    renderSampleDialog(CommandLine.arguments, surface: .panel)          // --dialog <kind>: a dialog over the panel
     let checkOverflow = CommandLine.arguments.contains("--overflow-check")
     let host = checkOverflow ? NSHostingView(rootView: PanelView(m: model).frame(width: Layout.width + 260, alignment: .topLeading))
                              : NSHostingView(rootView: PanelView(m: model).background(Color.black))

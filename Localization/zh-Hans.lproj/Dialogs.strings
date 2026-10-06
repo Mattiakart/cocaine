@@ -1,0 +1,7 @@
+/* In-app dialogs and the share list (Sources/InAppDialog.swift, Dialogs in main.swift). */
+
+"AirDrop isn't available on this Mac right now." = "此 Mac 目前无法使用隔空投送。";
+"AirDrop, Messages and Mail then open their own macOS window to pick who gets it." = "随后，隔空投送、信息和邮件会打开各自的 macOS 窗口，让你选择发送对象。";
+"Couldn't share it" = "无法共享";
+"OK" = "好";
+"Send the Shortcut to your iPhone" = "将快捷指令发送到你的 iPhone";

@@ -52,6 +52,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--signature-test" "$BIN" --signature-test
   run "--agents-test" "$BIN" --agents-test
   run "--clipboard-test" "$BIN" --clipboard-test
+  run "--dialogs-test" "$BIN" --dialogs-test
   run "--remote-test" "$BIN" --remote-test
   run "--recovery-test (stand-ins, temporary folders)" "$BIN" --recovery-test
   run "tests/engine-test.zsh (engine and remote.zsh on stubs)" zsh tests/engine-test.zsh

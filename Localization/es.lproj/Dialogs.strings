@@ -1,0 +1,7 @@
+/* In-app dialogs and the share list (Sources/InAppDialog.swift, Dialogs in main.swift). */
+
+"AirDrop isn't available on this Mac right now." = "AirDrop no está disponible en este Mac ahora mismo.";
+"AirDrop, Messages and Mail then open their own macOS window to pick who gets it." = "AirDrop, Mensajes y Mail abren luego su propia ventana de macOS para elegir a quién enviarlo.";
+"Couldn't share it" = "No se pudo compartir";
+"OK" = "OK";
+"Send the Shortcut to your iPhone" = "Envía el atajo a tu iPhone";
