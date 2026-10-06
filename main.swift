@@ -35,6 +35,8 @@ private let anyInput = CGEventType(rawValue: ~0)!   // kCGAnyInputEventType
 private enum Language {
     static let codes = ["en", "it", "zh-Hans", "zh-Hant", "es", "fr", "de", "ja"]
     private static var bundle = makeBundle(UserDefaults.standard.string(forKey: "language"))
+    /// The language in use now (nil = the Mac's), also when it isn't saved (the render tools).
+    private static var active = UserDefaults.standard.string(forKey: "language")
 
     /// nil = same as the Mac.
     static var chosen: String? { UserDefaults.standard.string(forKey: "language") }
@@ -45,7 +47,21 @@ private enum Language {
             else { UserDefaults.standard.removeObject(forKey: "language") }
         }
         bundle = makeBundle(code)
+        active = code
     }
+
+    /// Dates, times, numbers and sizes in the app's language (with the Mac's region, so a 24-hour Mac keeps its clock):
+    /// never Italian month names in an English panel because the Mac is set to Italian.
+    static var locale: Locale {
+        let code = active ?? system
+        if active == nil, Locale.current.language.languageCode?.identifier == Locale(identifier: code).language.languageCode?.identifier {
+            return Locale.current
+        }
+        return Locale(identifier: code + (Locale.current.region.map { "_" + $0.identifier } ?? ""))
+    }
+
+    /// A calendar in that locale (weekday names, the first day of the week stays the Mac's).
+    static var calendar: Calendar { var c = Calendar.autoupdatingCurrent; c.locale = locale; return c }
 
     private static func makeBundle(_ code: String?) -> Bundle {
         guard let code, let path = Bundle.main.path(forResource: code, ofType: "lproj"), let b = Bundle(path: path)
@@ -72,7 +88,7 @@ private enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"
@@ -93,6 +109,8 @@ private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShort
 private func L(_ key: String) -> String { Language.text(key) }
 /// L() for Sources/Agent*.swift (L itself is private to this file).
 func agentsL(_ key: String) -> String { L(key) }
+/// The app's language as a Locale, for formatters in Sources/ (Language is private to this file).
+func appLocale() -> Locale { Language.locale }
 /// The same lookup for the updater and signature code in Sources/ (L is private to this file).
 func updatesText(_ key: String) -> String { Language.text(key) }
 
@@ -1389,7 +1407,7 @@ private final class PanelModel: ObservableObject {
         var v = raw.rounded()
         if let near = Self.magnets.min(by: { abs($0 - raw) < abs($1 - raw) }), abs(near - raw) <= 1.2 { v = near }
         guard v != levelPercent else { return }
-        if Self.magnets.contains(v) { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
+        if Self.magnets.contains(v) { Haptic.tap(.alignment) }        // through Haptic: silent when Haptic feedback is off
         levelPercent = v
         settings.level = Float(v) / 100
     }
@@ -1402,15 +1420,8 @@ private let warningColor = Color(nsColor: NSColor(name: nil) { appearance in
         : NSColor(srgbRed: 0.63, green: 0.28, blue: 0.0, alpha: 1)
 })
 
-/// The panel's type scale and control sizes, so every row, icon and switch matches.
-private enum UI {
-    static let title = Font.system(size: 13)
-    static let groupTitle = Font.system(size: 13, weight: .medium)
-    static let value = Font.system(size: 12)                 // summaries, picked values
-    static let detail = Font.system(size: 11)                // descriptions, status, secondary lines
-    static let icon = Font.system(size: 12, weight: .medium)
-    static let chevron = Font.system(size: 10, weight: .semibold)
-    static let switchSize = CGSize(width: 38, height: 22)
+// The type scale, text inks and spacing live in Sources/Tokens.swift (UI, Space), shared with the dialogs and the agent list.
+fileprivate extension UI {
     /// In-app dialogs (Sources/InAppDialog.swift) in the same type scale and colors.
     static var dialog: DialogStyle {
         DialogStyle(title: groupTitle, body: value, row: title, detail: detail, icon: icon, accent: Island.accent, warning: warningColor)
@@ -1424,6 +1435,7 @@ private struct CocaineSwitch: View {
     var powder: CGFloat? = nil
     let action: () -> Void
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.dimmedByContainer) private var dimmedByContainer
 
     init(on: Bool, powder: CGFloat? = nil, action: @escaping () -> Void) {
         self.on = on; self.powder = powder; self.action = action
@@ -1450,9 +1462,27 @@ private struct CocaineSwitch: View {
             .contentShape(Capsule())
         }
         .buttonStyle(PressScale())
-        .opacity(enabled ? 1 : 0.45)
-        .accessibilityValue(on ? "1" : "0")
+        .opacity(enabled || dimmedByContainer ? 1 : UI.disabledOpacity)        // dimmed once: by itself, or by its group
+        .accessibilityValue(on ? L("On") : L("Off"))
         .accessibilityAddTraits(.isToggle)
+    }
+}
+
+private struct DimmedByContainerKey: EnvironmentKey { static let defaultValue = false }
+private extension EnvironmentValues {
+    /// A whole group is dimmed and disabled (dimGroup): its controls don't dim themselves again.
+    var dimmedByContainer: Bool {
+        get { self[DimmedByContainerKey.self] }
+        set { self[DimmedByContainerKey.self] = newValue }
+    }
+}
+
+private extension View {
+    /// Disables a group of rows and dims it once (text, values and switches alike), never twice.
+    func dimGroup(_ off: Bool) -> some View {
+        self.disabled(off).allowsHitTesting(!off)
+            .opacity(off ? UI.disabledOpacity : 1)
+            .transformEnvironment(\.dimmedByContainer) { if off { $0 = true } }
     }
 }
 
@@ -1508,6 +1538,7 @@ private extension View {
 private struct EqualSegments<T: Hashable>: NSViewRepresentable {
     @Binding var selection: T
     let values: [T]
+    var name: String? = nil                  // what VoiceOver calls the group ("Stay on for", "After"…)
     let label: (T) -> String
 
     func makeNSView(context: Context) -> NSSegmentedControl {
@@ -1525,9 +1556,15 @@ private struct EqualSegments<T: Hashable>: NSViewRepresentable {
     func updateNSView(_ c: NSSegmentedControl, context: Context) {
         context.coordinator.parent = self
         if c.segmentCount != values.count { c.segmentCount = values.count }
-        for (i, v) in values.enumerated() { c.setLabel(label(v), forSegment: i); c.setWidth(0, forSegment: i) }
+        for (i, v) in values.enumerated() {
+            let text = label(v)
+            c.setLabel(text, forSegment: i); c.setWidth(0, forSegment: i)
+            c.setToolTip(text == "∞" ? L("No limit") : nil, forSegment: i)
+        }
         c.selectedSegment = values.firstIndex(of: selection) ?? -1
-        c.isEnabled = context.environment.isEnabled
+        c.setAccessibilityLabel(name)
+        // A group dimmed as a whole (dimGroup) keeps the control's own look, so it isn't dimmed twice; it can't be clicked anyway.
+        c.isEnabled = context.environment.isEnabled || context.environment.dimmedByContainer
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView c: NSSegmentedControl, context: Context) -> CGSize? {
@@ -1553,7 +1590,15 @@ private struct PanelView: View {
     @ObservedObject var up = Updater.shared
     @ObservedObject var dialogs = DialogCenter.shared
 
-    private static let time: DateFormatter = { let f = DateFormatter(); f.timeStyle = .short; return f }()
+    /// Clock times in the app's language (rebuilt when it changes).
+    private static var timeCache: DateFormatter?
+    private static var time: DateFormatter {
+        let loc = Language.locale
+        if let f = timeCache, f.locale == loc { return f }
+        let f = DateFormatter(); f.timeStyle = .short; f.locale = loc
+        timeCache = f
+        return f
+    }
     static func timeString(_ d: Date) -> String { time.string(from: d) }
 
     // MARK: Building blocks
@@ -1562,18 +1607,19 @@ private struct PanelView: View {
     private func card<Trailing: View, Content: View>(_ icon: String, _ title: String, warning: Bool = false,
                                                      @ViewBuilder trailing: () -> Trailing,
                                                      @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(UI.icon).foregroundStyle(Island.accent).frame(width: 16)
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.m) {
+                Image(systemName: icon).font(UI.icon).foregroundStyle(Island.accent)
+                    .frame(width: UI.iconColumn, height: UI.iconColumn)    // wide symbols (battery, badges) stay centred on the column
                 Text(title).font(UI.groupTitle).lineLimit(1)
                 if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.m)
                 trailing().fixedSize()
             }
             .frame(minHeight: 22)
-            VStack(alignment: .leading, spacing: 6) { content() }
+            VStack(alignment: .leading, spacing: Space.s) { content() }
         }
-        .padding(10)
+        .padding(Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 12))     // whatever it holds is cut at the card's edge, never drawn outside
         .panelCard()
@@ -1587,18 +1633,20 @@ private struct PanelView: View {
     /// One row: its name on the left, its control on the right edge. Always one line for the control; the name wraps.
     private func row<Control: View>(_ title: String, detail: String? = nil, tip: String? = nil, warning: Bool = false,
                                     @ViewBuilder _ control: () -> Control) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(title).font(UI.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 if let detail {
-                    Text(detail).font(UI.detail).foregroundStyle(warning ? AnyShapeStyle(warningColor) : AnyShapeStyle(Color.white.opacity(0.7)))
+                    Text(detail).font(UI.detail).foregroundStyle(warning ? warningColor : UI.secondary)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .padding(.vertical, detail == nil ? 0 : Space.rowAir)      // a two-line row keeps the same air as one-line rows
             .frame(maxWidth: .infinity, alignment: .leading)
             control().fixedSize()
         }
         .frame(minHeight: 22)
+        .fixedSize(horizontal: false, vertical: true)
         .help(tip ?? detail ?? title)
     }
 
@@ -1639,12 +1687,7 @@ private struct PanelView: View {
     private func repeatName(_ min: Int) -> String { min == 0 ? L("Never") : String(format: L("Every %d min"), min) }
 
     /// "∞" for no limit, else "45 min", "2 h" or "2 h 30 min": any length, not just the presets.
-    private func durationLabel(_ minutes: Int) -> String {
-        if minutes <= 0 { return "∞" }
-        if minutes < 60 { return String(format: L("%d min"), minutes) }
-        let h = String(format: L("%d h"), minutes / 60)
-        return minutes % 60 == 0 ? h : "\(h) \(String(format: L("%d min"), minutes % 60))"
-    }
+    private func durationLabel(_ minutes: Int) -> String { Dur.short(minutes: minutes) }   // the same words as the island's
 
     private var status: String {
         if m.needsAuth { return L("Admin password needed") }
@@ -1659,7 +1702,7 @@ private struct PanelView: View {
 
     private func stepButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
         Button(action: { Haptic.tap(.alignment); action() }) {
-            Image(systemName: symbol).font(UI.chevron).frame(width: 24, height: 20).contentShape(Rectangle())
+            Image(systemName: symbol).font(UI.chevron).frame(width: 24, height: 24).contentShape(Rectangle())   // a 24 pt target
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -1674,11 +1717,11 @@ private struct PanelView: View {
                 Text(durationLabel(1425)).hidden()
                 Text(durationLabel(m.timerMinutes))
             }
-            .font(UI.value.monospacedDigit()).lineLimit(1).padding(.horizontal, 8)
+            .font(UI.value.monospacedDigit()).lineLimit(1).padding(.horizontal, Space.m)
             Divider().frame(height: 12)
             stepButton("plus", L("Longer")) { m.timerMinutes = min(1440, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15) }
         }
-        .frame(height: 20)
+        .frame(height: 24)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
         .fixedSize()
         .onScrollSteps(every: 10) { m.timerMinutes = min(1440, max(15, (m.timerMinutes <= 0 ? 60 : m.timerMinutes) + 15 * $0)) }
@@ -1694,7 +1737,7 @@ private struct PanelView: View {
 
     private var timerCard: some View {
         card("timer", L("Stay on for"), trailing: { customTimer }) {
-            EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, label: durationLabel)
+            EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: durationLabel)
                 .frame(maxWidth: .infinity)
                 .onScrollSteps(every: 24) { n in stepTimerPreset(n) }
         }
@@ -1704,30 +1747,31 @@ private struct PanelView: View {
     private var screenCard: some View {
         card("sun.min", L("Dim the screen when idle"), trailing: { toggle(L("Dim the screen when idle"), $m.dimEnabled) }) {
             Group {
-                HStack(spacing: 8) {
-                    Image(systemName: "sun.min").font(UI.icon).foregroundStyle(.secondary).frame(width: 16)
+                HStack(spacing: Space.m) {
+                    Image(systemName: "sun.min").font(UI.icon).foregroundStyle(UI.secondary).frame(width: UI.iconColumn)
                     Slider(value: Binding(get: { m.levelPercent }, set: { m.setLevel($0) }), in: 1...50)
+                        .accessibilityLabel(L("Dim the screen when idle"))
                     Text("\(Int(m.levelPercent))%").font(UI.value.monospacedDigit()).frame(width: 34, alignment: .trailing)
                     Button(L("Preview")) { m.preview() }.controlSize(.small).disabled(m.previewing)
                         .help(L("Shows the minimum brightness for 3 seconds"))
                 }
-                .disabled(m.screenOff).opacity(m.screenOff ? 0.45 : 1)
+                .dimGroup(m.screenOff && m.dimEnabled)            // (when the whole card is off it is dimmed once, below)
                 row(L("Turn the screen off instead"),
                     detail: L("The Mac keeps working with the screen off."),
                     tip: L("While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings.")) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.s) {
                         Button(L("Now")) { m.screenOffNow() }.controlSize(.small).help(L("Turn the screens off now"))
                         toggle(L("Turn the screen off instead"), $m.screenOff)
                     }
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: Space.m) {
                     Text(L("After")).font(UI.title).fixedSize()
-                    EqualSegments(selection: $m.delayMinutes, values: Settings.delayChoices) { String(format: L("%d min"), $0) }
+                    EqualSegments(selection: $m.delayMinutes, values: Settings.delayChoices, name: L("After")) { Dur.short(minutes: $0) }
                         .frame(maxWidth: .infinity)
                 }
+                .frame(minHeight: 22)
             }
-            .disabled(!m.dimEnabled)
-            .opacity(m.dimEnabled ? 1 : 0.45)
+            .dimGroup(!m.dimEnabled)
         }
         .help(L("Goes back to normal as soon as you touch anything"))
     }
@@ -1738,17 +1782,18 @@ private struct PanelView: View {
             card("sparkles", L("Agents")) {             // all of them, those that need you first; a click goes to the session
                 AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: false, accent: Island.accent,
                               warning: warningColor, maxHeight: 260, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
+                    .padding(.horizontal, -AgentListView.inset)   // the rows' icons on the content edge, request cards into the padding
             }
         } else if m.ai.available {
             card("bell", L("Recent alerts"), trailing: {
                 if !m.history.isEmpty { Button(L("Clear")) { m.clearHistory() }.buttonStyle(.link).font(UI.detail) }
             }) {
                 if m.history.isEmpty {
-                    Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(.tertiary)
+                    Text(L("Alerts you receive will show up here")).font(UI.detail).foregroundStyle(UI.hint)
                 } else {
                     ForEach(m.history.prefix(3)) { r in         // a click goes back to the session that sent it
                         Button { m.focusAgent(r.origin, r.from) } label: {
-                            activityRow("bell.fill", Color.secondary, r.from, r.message, r.project, Self.time.string(from: r.at)).contentShape(Rectangle())
+                            activityRow("bell.fill", UI.secondary, r.from, r.message, r.project, Self.time.string(from: r.at)).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).help(L("Go to this session"))
                     }
@@ -1757,20 +1802,21 @@ private struct PanelView: View {
         }
     }
 
-    /// An icon, who and what (the message gives way before the project), and when, on the right edge.
+    /// An icon, who and what (the message gives way before the project), and when, on the right edge: the same look as an
+    /// agent's row, which takes this place while sessions are live.
     private func activityRow(_ icon: String, _ color: Color, _ title: String, _ message: String, _ project: String?, _ when: String) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Image(systemName: icon).font(UI.icon).foregroundStyle(color).frame(width: 16)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title).font(UI.title).lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(message).lineLimit(1)
+        HStack(alignment: .center, spacing: Space.m) {
+            Image(systemName: icon).font(UI.icon).foregroundStyle(color).frame(width: UI.iconColumn)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(UI.itemTitle).lineLimit(1)
+                HStack(spacing: Space.xs) {
+                    Text(message.prefix(1).uppercased(with: Language.locale) + message.dropFirst()).lineLimit(1)   // "Has finished", like "Working"
                     if let project { Text("·"); Text(project).lineLimit(1).layoutPriority(1) }
                 }
-                .font(UI.detail).foregroundStyle(.secondary)
+                .font(UI.detail).foregroundStyle(UI.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(when).font(UI.detail.monospacedDigit()).foregroundStyle(.secondary).fixedSize()
+            Text(when).font(UI.detail.monospacedDigit()).foregroundStyle(UI.secondary).fixedSize()
         }
     }
 
@@ -1805,6 +1851,9 @@ private struct PanelView: View {
                 .menuIndicator(.visible)
                 .accessibilityLabel(L("Language"))
             }
+            row(L("Feedback or help"), detail: Feedback.address) {
+                Button(L("Write…")) { Feedback.compose() }.controlSize(.small).help(L("Feedback or help") + " — " + Feedback.address)
+            }
         }
     }
 
@@ -1834,7 +1883,7 @@ private struct PanelView: View {
                     row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.controlSize(.small) }
                 }
             }
-            Text(SigningTier.current.panelLine).font(UI.detail).foregroundStyle(.secondary)   // what the permissions are tied to
+            Text(SigningTier.current.panelLine).font(UI.detail).foregroundStyle(UI.secondary)   // what the permissions are tied to
                 .lineLimit(3).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1945,9 +1994,9 @@ private struct PanelView: View {
                     tip: L("Not for every agent or task that finishes: only when the whole session has had nothing going on for a minute")) {
                     toggle(L("One alert per session"), $m.alertPerSession)
                 }
-                row(L("Answer from the notch"),
-                    tip: L("Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.")) {
-                    toggle(L("Answer from the notch"), $m.agentApprovals)
+                row(L("Answer from the island"),
+                    tip: L("Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.")) {
+                    toggle(L("Answer from the island"), $m.agentApprovals)
                 }
                 row(L("Pause"), tip: L("Silences every alert for a while")) {
                     Menu {
@@ -1971,7 +2020,7 @@ private struct PanelView: View {
                     .accessibilityLabel(L("Pause"))
                 }
             }
-            card("rays", L("How"), trailing: {
+            card("speaker.wave.2", L("How"), trailing: {
                 Button(L("Test")) { m.testAlert() }.controlSize(.small).help(L("Shows an alert with these settings"))
             }) {
                 row(L("Flash"), tip: L("Wakes the screens and flashes them")) { toggle(L("Flash"), $m.alertFlash) }
@@ -1998,9 +2047,9 @@ private struct PanelView: View {
 
     /// The schedule: the days (in the order this Mac's calendar starts its week) and the hours, on the wall clock.
     @ViewBuilder private var scheduleRows: some View {
-        let cal = Calendar.autoupdatingCurrent
+        let cal = Language.calendar                         // weekday letters in the app's language
         let order = (0..<7).map { (cal.firstWeekday - 1 + $0) % 7 + 1 }
-        HStack(spacing: 4) {
+        HStack(spacing: Space.xs) {
             ForEach(order, id: \.self) { day in
                 let on = m.scheduleDays.contains(day)
                 Button {
@@ -2008,14 +2057,15 @@ private struct PanelView: View {
                     if on { m.scheduleDays.removeAll { $0 == day } } else { m.scheduleDays = (m.scheduleDays + [day]).sorted() }
                 } label: {
                     Text(cal.veryShortStandaloneWeekdaySymbols[day - 1]).font(UI.value)
-                        .frame(maxWidth: .infinity, minHeight: 22)
+                        .frame(maxWidth: .infinity, minHeight: 24)
                         .background(RoundedRectangle(cornerRadius: 6).fill(on ? Island.accent : Color.white.opacity(0.10)))
-                        .foregroundStyle(on ? Color.white : Color.primary)
+                        .foregroundStyle(on ? Color.black : Color.primary)        // black on the accent, as every accent fill (8:1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(cal.standaloneWeekdaySymbols[day - 1])
-                .accessibilityValue(on ? "1" : "0")
+                .accessibilityValue(on ? L("On") : L("Off"))
+                .accessibilityAddTraits(on ? [.isToggle, .isSelected] : .isToggle)
             }
         }
         row(L("Hours"), detail: m.scheduleEnd <= m.scheduleStart ? L("Ends the next day") : nil,
@@ -2066,6 +2116,7 @@ private struct PanelView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.visible)
+                    .accessibilityLabel(L("These programs are open"))
                 }
                 row(L("Power"), tip: L("On while the Mac is on the charger, or on battery above a level; off 30 seconds after")) {
                     choice(L("Power"), $m.triggerPower, ["", "ac", "battery"]) {
@@ -2101,7 +2152,7 @@ private struct PanelView: View {
                 row(L("When"), tip: L("Only while one of the chosen apps is open, or all the time")) {
                     choice(L("When"), $m.stayActiveAlways, [false, true]) { $0 ? L("Always") : L("While these apps are open") }
                 }
-                .disabled(!m.stayActive).opacity(m.stayActive ? 1 : 0.45)
+                .dimGroup(!m.stayActive)
                 row(L("Apps"), tip: L("The chat apps to keep available")) {
                     Menu {
                         ForEach(Array(Set(Presence.defaultApps + m.stayActiveApps)).sorted(), id: \.self) { app in
@@ -2119,8 +2170,9 @@ private struct PanelView: View {
                             .frame(maxWidth: 190, alignment: .trailing)
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.visible)
+                    .accessibilityLabel(L("Apps"))
                 }
-                .disabled(!m.stayActive).opacity(m.stayActive ? 1 : 0.45)
+                .dimGroup(!m.stayActive)
                 if m.stayActive && !m.presenceAccess {
                     row(L("Needs permission to send input"), detail: L("Allow Cocaine in Privacy & Security → Accessibility"), warning: true) {
                         Button(L("Allow")) { m.requestPresence() }.controlSize(.small)
@@ -2131,33 +2183,32 @@ private struct PanelView: View {
                 row(L("When the battery reaches"), detail: m.battery.map { String(format: L("On battery only. Now %@"), $0) } ?? L("On battery only")) {
                     EmptyView()
                 }
-                EqualSegments(selection: $m.batteryThreshold, values: Settings.batteryChoices) { $0 == 0 ? L("Off") : "\($0)%" }
+                EqualSegments(selection: $m.batteryThreshold, values: Settings.batteryChoices, name: L("Battery Guard")) { $0 == 0 ? L("Off") : "\($0)%" }
                     .frame(maxWidth: .infinity)
                 row(L("Then"), tip: L("What Cocaine does at that level")) {
                     choice(L("Then"), $m.batteryTurnsOff, [true, false]) { $0 ? L("Turn Cocaine off") : L("Only warn me") }
                 }
-                .disabled(m.batteryThreshold == 0).opacity(m.batteryThreshold == 0 ? 0.45 : 1)
+                .dimGroup(m.batteryThreshold == 0)
             }
             card("iphone.gen3", L("Remote work")) {
                 row(L("iPhone"), detail: m.phoneCount == 0 ? L("Not set up: send it a Shortcut")
-                    : "\(m.phoneCount) \(L("paired")) · \(m.phoneLinkUp ? L("Connected") : L("Connecting…"))") {
-                    HStack(spacing: 6) {
-                        Button(m.makingShortcut ? "…" : L("Send")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
+                    : String(format: L("Paired: %d"), m.phoneCount) + " · " + (m.phoneLinkUp ? L("Connected") : L("Connecting…"))) {
+                    HStack(spacing: Space.s) {
+                        Button(m.makingShortcut ? "…" : L("Send…")) { m.sendShortcut() }.controlSize(.small).disabled(m.makingShortcut)
                             .help(L("Send the Shortcut to your iPhone"))
-                        if m.phoneCount + m.oldPhones > 0 { Button(L("Revoke")) { m.revokePhones() }.controlSize(.small) }
+                        if m.phoneCount + m.oldPhones > 0 { Button(L("Revoke…")) { m.revokePhones() }.controlSize(.small) }
                     }
                 }
                 if m.oldPhones > 0 {
                     row(L("Old Shortcuts"), detail: m.oldPhonesAllowedUntil.map { String(format: L("Unprotected, still accepted (status, on/off) until %@"),
-                                                                                       $0.formatted(date: .abbreviated, time: .omitted)) }
-                        ?? String(format: L("%d without protection or expired: send a new Shortcut"), m.oldPhones)) {
-                        HStack(spacing: 6) {
+                                                                                       $0.formatted(.dateTime.day().month(.abbreviated).year().locale(Language.locale))) }
+                        ?? String(format: L("%d without protection or expired: send a new Shortcut"), m.oldPhones), warning: true) {   // warning: the detail only
+                        HStack(spacing: Space.s) {
                             Button(m.oldPhonesAllowedUntil == nil ? L("Allow 14 days") : L("Stop")) { m.allowOldPhones(m.oldPhonesAllowedUntil == nil) }
                                 .controlSize(.small).help(L("Old Shortcuts send plain, unauthenticated text: anyone who learns their relay topic could use them"))
                             Button(L("Remove")) { m.removeOldPhones() }.controlSize(.small)
                         }
                     }
-                    .foregroundStyle(.orange)
                 }
                 row(L("Wake for iPhone"), tip: L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
                     toggle(L("Wake for iPhone"), $m.wakeForPhone)
@@ -2170,7 +2221,7 @@ private struct PanelView: View {
             }
             card("keyboard", L("Shortcuts")) {
                 row(L("Global shortcuts"), tip: L("Work from any app")) { toggle(L("Global shortcuts"), $m.hotkeys) }
-                Text("⌃⌥⌘C  \(L("on/off"))  ·  ⌃⌥⌘O  \(L("panel"))  ·  ⌃⌥⌘P  \(L("pause alerts"))").font(UI.detail).foregroundStyle(.secondary)
+                Text("⌃⌥⌘C  \(L("on/off"))  ·  ⌃⌥⌘O  \(L("panel"))  ·  ⌃⌥⌘P  \(L("pause alerts"))").font(UI.detail).foregroundStyle(UI.secondary)
                     .lineLimit(1).minimumScaleFactor(0.75)
                     .help("⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts"))
                     .opacity(m.hotkeys ? 1 : 0.45)
@@ -2188,37 +2239,50 @@ private struct PanelView: View {
 
     private var tabs: [String] { m.ai.available ? ["", "ai", "auto"] : ["", "auto"] }
 
-    private func stripButton(_ icon: String, _ title: String, selected: Bool = false, _ action: @escaping () -> Void) -> some View {
+    /// A cell of the top strip: as wide as the strip's layout allows for this notch, its highlight derived from it.
+    private func stripButton(_ icon: String, _ title: String, _ s: StripLayout, height: CGFloat, selected: Bool = false,
+                             _ action: @escaping () -> Void) -> some View {
         Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
-                Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(selected ? Color.white : Color.white.opacity(0.5))
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: s.highlight, height: min(26, height - 2))
+                Image(systemName: icon).font(UI.tabIcon).foregroundStyle(selected ? Color.white : UI.hint)
             }
-            .frame(width: 38, height: NotchGeometry.current()?.height ?? 32)              // the whole cell around the icon
+            .frame(width: s.cell, height: height)              // the whole cell around the icon
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func tabIcon(_ id: String) -> String { id == "ai" ? "sparkles" : id == "auto" ? "bolt.badge.automatic" : "house.fill" }
 
-    /// The panel's top strip, like the island's: the tabs left of the notch, Feedback and Quit right of it.
-    private func strip(_ g: NotchGeometry) -> some View {
+    /// The strip's cells for this notch: back and the tabs left of it, Automation and Quit right of it (nil: they don't fit;
+    /// then the tabs are a segmented control under the header).
+    private func stripLayout(_ g: NotchGeometry) -> StripLayout? {
+        StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: g.notchWidth,
+                         left: 1 + tabs.filter { $0 != "auto" }.count, right: 2)
+    }
+
+    /// The panel's top strip, like the island's: each side gets exactly what the notch leaves, so nothing is ever under it.
+    private func strip(_ g: NotchGeometry, _ s: StripLayout) -> some View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
-                stripButton("chevron.backward", L("Back to the island")) { m.backToIsland() }      // from the island's gear: back to it
-                ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } }
+                stripButton("chevron.backward", L("Back to the island"), s, height: g.height) { m.backToIsland() }   // from the island's gear: back to it
+                ForEach(tabs.filter { $0 != "auto" }, id: \.self) { t in
+                    stripButton(tabIcon(t), tabTitle(t), s, height: g.height, selected: m.page == t) { m.page = t }
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Color.clear.frame(width: g.notchWidth)
+            .padding(.leading, s.edgeInset)
+            .frame(width: s.side, alignment: .leading)
+            Color.clear.frame(width: s.notchWidth)
             HStack(spacing: 0) {
-                stripButton("envelope", L("Feedback or help") + " — " + Feedback.address) { Feedback.compose() }
-                stripButton("power", L("Turns Cocaine off and quits")) { m.quit() }
+                stripButton(tabIcon("auto"), tabTitle("auto"), s, height: g.height, selected: m.page == "auto") { m.page = "auto" }
+                stripButton("xmark.circle", L("Quit Cocaine"), s, height: g.height) { m.quit() }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, s.edgeInset)
+            .frame(width: s.side, alignment: .trailing)
         }
-        .padding(.horizontal, 4)
-        .frame(height: g.height)
+        .frame(width: Layout.width - 2 * Space.frame, height: g.height)
     }
 
     private var header: some View {
@@ -2226,11 +2290,11 @@ private struct PanelView: View {
             Image(nsImage: Baggie.imageOnDark(level: m.bagLevel, pouring: m.bagPouring, size: 28, pink: m.bagPink))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text("Cocaine").font(.headline)
-                    Text(appVersion).font(UI.detail).foregroundStyle(.tertiary)   // e.g. "1.7"
+                    Text("Cocaine").font(UI.appTitle)
+                    Text(appVersion).font(UI.detail).foregroundStyle(UI.hint)   // e.g. "1.7"
                 }
                 Text(status).font(UI.detail).lineLimit(1)
-                    .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? AnyShapeStyle(warningColor) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(m.needsAuth || (m.on && m.holdMissing) ? warningColor : UI.secondary)
             }
             Spacer(minLength: 8)
             CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
@@ -2242,12 +2306,16 @@ private struct PanelView: View {
 
     var body: some View {
         let g = m.island ? NotchGeometry.current() : nil
-        return VStack(alignment: .leading, spacing: 10) {
-            if let g { strip(g).disabled(dialogs.isShowing(on: .panel)) }
-            VStack(alignment: .leading, spacing: 10) {
+        let s = g.flatMap(stripLayout)
+        let asking = dialogs.isShowing(on: .panel)
+        return VStack(alignment: .leading, spacing: Space.l) {
+            if let g {
+                if let s { strip(g, s) } else { Color.clear.frame(height: g.height) }      // the notch: nothing goes under it
+            }
+            VStack(alignment: .leading, spacing: Space.l) {
                 header
-                if g == nil {
-                    EqualSegments(selection: $m.page, values: tabs, label: tabTitle)
+                if s == nil {
+                    EqualSegments(selection: $m.page, values: tabs, name: L("Settings"), label: tabTitle)
                         .frame(maxWidth: .infinity)
                 }
 
@@ -2257,29 +2325,64 @@ private struct PanelView: View {
                 default: generalTab
                 }
 
-                if g == nil {
-                    HStack(spacing: 8) {
-                        Button { Feedback.compose() } label: {
-                            Label(L("Feedback"), systemImage: "envelope").font(UI.detail)
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.secondary)
-                        .help(L("Feedback or help") + " — " + Feedback.address)
-                        Spacer(minLength: 8)
+                if s == nil {
+                    HStack(spacing: Space.m) {
+                        Spacer(minLength: Space.m)
                         Button(L("Quit")) { m.quit() }.controlSize(.small).fixedSize()
-                            .help(L("Turns Cocaine off and quits"))
+                            .help(L("Quit Cocaine"))
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, Space.l)
                 }
             }
-            .dialogHost(dialogs, .panel, UI.dialog)          // questions and messages: a card over the panel, never a system alert
         }
-        .padding(.horizontal, 14).padding(.bottom, 14).padding(.top, g == nil ? 14 : Layout.overscan)
+        .disabled(asking)                                    // a question is on top (PanelDialogOverlay): nothing under it reacts
+        .padding(.horizontal, Space.frame).padding(.bottom, Space.frame).padding(.top, g == nil ? Space.frame : Layout.overscan)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
+        // A dialog taller than the page: the panel grows to hold it (the card is drawn over the panel's top, see the overlay).
+        .frame(minHeight: asking ? PanelDialogOverlay.reserved(dialogs.cardHeight, notch: g) : 0, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
         .focusEffectDisabled()
         .environment(\.colorScheme, .dark)
+        .environment(\.locale, Language.locale)
     }
+}
+
+/// The panel's dialog, drawn over the panel's visible area rather than inside its scrolling content, so a question asked from
+/// the bottom of a long page (Delete everything…) shows where the user is looking, never above it. What is under it is dimmed
+/// and a click there is Cancel. The app hosts it above the scroll view (MenuPanel.overlay); the render tool stacks it on the page.
+private struct PanelDialogOverlay: View {
+    @ObservedObject var m: PanelModel                    // m.island: the panel hangs from the notch (the card goes under the strip)
+    @ObservedObject var dialogs = DialogCenter.shared
+
+    /// The top of the card: below the strip when the panel hangs from the notch, else at the panel's top inset.
+    static func top(notch g: NotchGeometry?) -> CGFloat { g.map { Layout.overscan + $0.height + Space.l } ?? Space.frame }
+    /// How tall the panel must be to hold the card.
+    static func reserved(_ card: CGFloat, notch g: NotchGeometry?) -> CGFloat { top(notch: g) + card + Space.frame }
+
+    var body: some View {
+        let on = dialogs.isShowing(on: .panel)
+        ZStack(alignment: .top) {
+            if on {
+                Color.black.opacity(0.55).contentShape(Rectangle()).onTapGesture { dialogs.cancel() }
+                InAppDialogCard(center: dialogs, style: UI.dialog)
+                    .background(GeometryReader { r in Color.clear.preference(key: DialogCardHeight.self, value: r.size.height) })
+                    .padding(.horizontal, Space.frame)
+                    .padding(.top, Self.top(notch: m.island ? NotchGeometry.current() : nil))
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onPreferenceChange(DialogCardHeight.self) { h in if abs(dialogs.cardHeight - h) > 0.5 { dialogs.cardHeight = h } }
+        .animation(.easeOut(duration: 0.15), value: dialogs.current?.id)
+        .environment(\.colorScheme, .dark)
+        .environment(\.locale, Language.locale)
+    }
+}
+
+private struct DialogCardHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 // MARK: - Voices
@@ -2916,8 +3019,11 @@ private final class MenuPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
     /// The content scrolls when it is taller than the screen allows (the app sizes the window; see fitPanel).
     let scroll = NSScrollView()
+    /// The dialog layer above the scroll view (PanelDialogOverlay): pinned to the visible area, hidden while no dialog is up.
+    let overlay: NSView
 
-    init(content: NSView) {
+    init(content: NSView, overlay: NSView) {
+        self.overlay = overlay
         super.init(contentRect: .zero, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -2944,7 +3050,14 @@ private final class MenuPanel: NSPanel {
         content.translatesAutoresizingMaskIntoConstraints = false
         scroll.documentView = content
         fx.addSubview(scroll)
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.isHidden = true
+        fx.addSubview(overlay)
         NSLayoutConstraint.activate([      // the document is pinned to the top: the app sizes the window, top edge fixed
+            overlay.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: fx.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: fx.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: fx.topAnchor),
@@ -3031,7 +3144,11 @@ private struct NotchGeometry: Equatable {
     var centerX: CGFloat       // the notch's middle, in screen coordinates
     var hasNotch: Bool
 
+    /// The render tools (`--notch-width`): another Mac's notch, to see the panel and the island as they'd be there.
+    static var override: NotchGeometry?
+
     static func current() -> NotchGeometry? {
+        if let override { return override }
         let screens = NSScreen.screens
         guard let s = screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first else { return nil }
         if s.safeAreaInsets.top > 0, let l = s.auxiliaryTopLeftArea, let r = s.auxiliaryTopRightArea {
@@ -3539,18 +3656,22 @@ private struct ClipboardPage: View {
 
     var body: some View {
         let list = h.visible
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
-                    TextField(L("Search"), text: $h.query).textFieldStyle(.plain).font(.system(size: 12))
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(spacing: Space.s) {
+                HStack(spacing: Space.s) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(UI.hint)       // a glyph
+                    TextField(L("Search"), text: $h.query).textFieldStyle(.plain).font(UI.value)
                         .onExitCommand { h.query = "" }
                     if !h.query.isEmpty {
-                        Button { h.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4)) }
-                            .buttonStyle(.plain).help(L("Clear search"))
+                        Button { h.query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(UI.hint)
+                                .frame(width: 24, height: 24).contentShape(Rectangle())                         // a 24 pt target
+                        }
+                        .buttonStyle(.plain).help(L("Clear search")).accessibilityLabel(L("Clear search"))
+                        .padding(.trailing, -Space.m)                    // the target may reach into the field's padding
                     }
                 }
-                .padding(.horizontal, 8).frame(height: 24)
+                .padding(.horizontal, Space.m).frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.08)))
                 tool(h.favoritesOnly ? "star.fill" : "star", on: h.favoritesOnly, L("Favorites only")) { h.favoritesOnly.toggle() }
                 tool(h.paused ? "play.fill" : "pause.fill", on: h.paused, h.paused ? L("Resume") : L("Pause")) { h.paused.toggle() }
@@ -3564,10 +3685,10 @@ private struct ClipboardPage: View {
             }
             if list.isEmpty {
                 Text(h.items.isEmpty ? L("What you copy will show up here") : h.favoritesOnly && h.query.isEmpty ? L("No favorites yet") : L("Nothing matches"))
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                    .font(UI.value).foregroundStyle(UI.hint)
             }
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], alignment: .leading, spacing: 7) {
+            FadingScroll {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.l), GridItem(.flexible())], alignment: .leading, spacing: Space.s) {
                     ForEach(list) { c in row(c) }
                 }
             }
@@ -3590,32 +3711,33 @@ private struct ClipboardPage: View {
 
     private func row(_ c: ClipItem) -> some View {
         let gone = h.missing.contains(c.id), hover = h.hovered == c.id
-        return HStack(spacing: 7) {
+        return HStack(spacing: 0) {
             Button { copy(c) } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: Space.s) {
                     leading(c)
-                    Text(title(c)).font(.system(size: 12)).lineLimit(1).truncationMode(c.kind == .files ? .middle : .tail)
-                        .foregroundStyle(gone ? Color.white.opacity(0.4) : Color.white)
-                    if gone { Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(warningColor) }
+                    Text(title(c)).font(UI.value).lineLimit(1).truncationMode(c.kind == .files ? .middle : .tail)
+                        .foregroundStyle(gone ? UI.hint : UI.primary)
+                    if gone { Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(warningColor) }   // a badge glyph
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The two icons: small glyphs, 24 pt targets (side by side, they reach into the row's padding).
             if hover {
                 Button { h.remove(c.id) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.5)).frame(width: 14, height: 20).contentShape(Rectangle())
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(UI.hint).frame(width: 24, height: 24).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help(L("Delete")).accessibilityLabel(L("Delete"))
             }
             Button { Haptic.tap(.alignment); h.togglePin(c.id) } label: {
                 Image(systemName: c.pinned ? "star.fill" : "star").font(.system(size: 10))
-                    .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.5 : 0.18)).frame(width: 14, height: 20).contentShape(Rectangle())
+                    .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.5 : 0.18)).frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain).help(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
             .accessibilityLabel(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
         }
-        .padding(.leading, 10).padding(.trailing, 6).frame(height: 28)
+        .padding(.leading, Space.l).padding(.trailing, 1).frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
         .onHover { inside in if inside { h.hovered = c.id } else if h.hovered == c.id { h.hovered = nil } }
         .help(gone ? L("The file is no longer there") : tip(c))
@@ -3653,11 +3775,11 @@ private struct ClipboardPage: View {
         var parts: [String] = []
         switch c.kind {
         case .text: parts.append(String(c.text.prefix(300)))
-        case .image: parts.append(L("Image") + " · \(c.width)×\(c.height) · " + ByteCountFormatter.string(fromByteCount: Int64(c.bytes), countStyle: .file))
+        case .image: parts.append(L("Image") + " · \(c.width)×\(c.height) · " + Int64(c.bytes).formatted(.byteCount(style: .file).locale(Language.locale)))
         case .files: parts.append(c.paths.prefix(5).joined(separator: "\n"))
         }
         if let app = ClipboardHistory.appName(c.source) { parts.append(app) }
-        parts.append(c.date.formatted(date: .abbreviated, time: .shortened))
+        parts.append(c.date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(Language.locale)))
         return parts.joined(separator: "\n")
     }
 
@@ -3673,13 +3795,13 @@ private struct ClipboardPage: View {
     /// Where the history is kept, said plainly; a problem (no Keychain, unreadable file) takes its place.
     @ViewBuilder private var footer: some View {
         if let p = h.problem {
-            Label(p, systemImage: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(warningColor).lineLimit(1).help(p)
+            Label(p, systemImage: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor).lineLimit(1).help(p)
         } else if h.paused {
-            Label(L("Paused: what you copy now isn't kept."), systemImage: "pause.fill").font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+            Label(L("Paused: what you copy now isn't kept."), systemImage: "pause.fill").font(UI.detail).foregroundStyle(UI.hint)
         } else if h.saving {
-            Label(L("Saved on this Mac, encrypted. Never from password managers."), systemImage: "lock.fill").font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
+            Label(L("Saved on this Mac, encrypted. Never from password managers."), systemImage: "lock.fill").font(UI.detail).foregroundStyle(UI.hint)
         } else {
-            Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+            Text(L("Kept only in memory, never from password managers. Click to copy again.")).font(UI.detail).foregroundStyle(UI.hint)
         }
     }
 }
@@ -3740,7 +3862,7 @@ private enum Dialogs {
     }
 
     static func revokePhones() -> DialogSpec {
-        DialogSpec(icon: "iphone.slash", title: L("Remove every paired iPhone?"), message: L("They stop working until you send a new Shortcut."), critical: true,
+        DialogSpec(icon: "iphone.slash", title: L("Revoke every paired iPhone?"), message: L("They stop working until you send a new Shortcut."), critical: true,
                    buttons: [DialogButton(id: "revoke", title: L("Revoke"), role: .destructive), cancel])
     }
 
@@ -3834,30 +3956,30 @@ extension IslandView {
     // MARK: files
 
     fileprivate var filesTab: some View {
-        HStack(alignment: .top, spacing: 22) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Downloads")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
-                if files.downloads.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-                ScrollView(.vertical, showsIndicators: false) { VStack(alignment: .leading, spacing: 8) { ForEach(files.downloads) { it in
+        HStack(alignment: .top, spacing: Space.gutter) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text(L("Downloads")).font(UI.section).foregroundStyle(UI.secondary)
+                if files.downloads.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
+                FadingScroll(cap: 112) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
                     Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Space.m) {
                             Image(nsImage: NSWorkspace.shared.icon(forFile: it.url.path)).resizable().frame(width: 20, height: 20)
-                            Text(it.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength: 4)
-                            Text(ByteCountFormatter.string(fromByteCount: it.size, countStyle: .file)).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                            Text(it.name).font(UI.value).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: Space.xs)
+                            Text(it.size.formatted(.byteCount(style: .file).locale(Language.locale))).font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint)
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .onDrag { NSItemProvider(object: it.url as NSURL) }
-                } } }.frame(maxHeight: 112)
+                } } }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Screenshots")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
-                if files.shots.isEmpty { Text(L("Nothing here yet")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)) }
-                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text(L("Screenshots")).font(UI.section).foregroundStyle(UI.secondary)
+                if files.shots.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
+                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: Space.m) {
                     ForEach(files.shots) { it in
                         FileThumb(url: it.url, side: 62)
                             .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([it.url]) }
@@ -3866,7 +3988,7 @@ extension IslandView {
                     }
                 } }
                 .mask(HStack(spacing: 0) { Rectangle(); LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 22) })
-                Text(L("Drag a file out to drop it anywhere")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+                Text(L("Drag a file out to drop it anywhere")).font(UI.detail).foregroundStyle(UI.hint)
                 Spacer(minLength: 0)
             }
             .frame(width: 250, alignment: .leading)
@@ -3882,39 +4004,41 @@ extension IslandView {
     // MARK: calendar
 
     fileprivate var calendarTab: some View {
-        HStack(alignment: .top, spacing: 22) {
+        let loc = Language.locale
+        return HStack(alignment: .top, spacing: Space.gutter) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(Date().formatted(.dateTime.weekday(.wide)).capitalized).font(.system(size: 12, weight: .medium)).foregroundStyle(Island.accent)
-                Text(Date().formatted(.dateTime.day())).font(.system(size: 54, weight: .semibold, design: .rounded)).monospacedDigit()
-                Text(Date().formatted(.dateTime.month(.wide).year())).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                Text(Date().formatted(.dateTime.weekday(.wide).locale(loc)).capitalized(with: loc)).font(UI.buttonSecondary).foregroundStyle(Island.accent)
+                Text(Date().formatted(.dateTime.day().locale(loc))).font(UI.hero)
+                Text(Date().formatted(.dateTime.month(.wide).year().locale(loc))).font(UI.value).foregroundStyle(UI.secondary)
             }
             .frame(width: 170, alignment: .leading)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 if !calendar.access {
-                    Text(L("Show your next events here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    Text(L("Show your next events here")).font(UI.value).foregroundStyle(UI.secondary)
                     if calendar.asked {
-                        Text(L("Allow it in System Settings → Privacy & Security → Calendars")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                        Text(L("Allow it in System Settings → Privacy & Security → Calendars")).font(UI.detail).foregroundStyle(UI.hint)
                     } else {
                         Button { calendar.requestAccess() } label: {
-                            Text(L("Allow Calendar")).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                            Text(L("Allow Calendar")).font(UI.button).padding(.horizontal, 14).frame(height: 28)
                                 .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                                .contentShape(Capsule())
                         }.buttonStyle(.plain)
                     }
                 } else if calendar.events.isEmpty {
-                    Text(L("No events in the next two weeks")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                    Text(L("No events in the next two weeks")).font(UI.value).foregroundStyle(UI.hint)
                 } else {
-                    ScrollView(.vertical, showsIndicators: false) { VStack(alignment: .leading, spacing: 8) { ForEach(calendar.events) { e in
-                        HStack(spacing: 9) {
+                    FadingScroll(cap: 124) { VStack(alignment: .leading, spacing: Space.m) { ForEach(calendar.events) { e in
+                        HStack(spacing: Space.m) {
                             Capsule().fill(e.color).frame(width: 3, height: 28)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(e.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Text(e.allDay ? e.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + " · " + L("All day")
-                                     : e.start.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
-                                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                                Text(e.title).font(UI.itemTitle).lineLimit(1)
+                                Text(e.allDay ? e.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(loc)) + " · " + L("All day")
+                                     : e.start.formatted(.dateTime.weekday(.abbreviated).hour().minute().locale(loc)))
+                                    .font(UI.detail).foregroundStyle(UI.secondary)
                             }
                             Spacer(minLength: 0)
                         }
-                    } } }.frame(maxHeight: 124)
+                    } } }
                 }
                 Spacer(minLength: 0)
             }
@@ -4411,34 +4535,33 @@ extension IslandView {
                 else { ZStack { Color.white.opacity(0.08); Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(.white.opacity(0.35)) } }
             }
             .frame(width: 128, height: 128).clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 if let t = mu.track {
-                    Text(t.title).font(.system(size: 16, weight: .bold)).lineLimit(1)
-                    Text(t.artist + (t.album.isEmpty ? "" : " — " + t.album)).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    Text(t.title).font(UI.pageTitle).lineLimit(1)
+                    Text(t.artist + (t.album.isEmpty ? "" : " — " + t.album)).font(UI.value).foregroundStyle(UI.secondary).lineLimit(1)
                     TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                        VStack(spacing: 2) {
+                        VStack(spacing: 0) {
                             Scrubber(value: mu.now, total: max(1, t.duration)) { mu.seek($0) }
                             HStack { Text(Self.clock(mu.now)); Spacer(); Text("-" + Self.clock(max(0, t.duration - mu.now))) }
-                                .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.45))
+                                .font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint)
                         }
                     }
-                    HStack(spacing: 20) {
-                        Button { mu.toggleShuffle() } label: { Image(systemName: "shuffle").foregroundStyle(mu.shuffle ? Island.accent : .white.opacity(0.5)) }
-                        Button { mu.previous() } label: { Image(systemName: "backward.fill") }
-                        Button { mu.playPause() } label: { Image(systemName: mu.playing ? "pause.fill" : "play.fill").font(.system(size: 20)) }
-                        Button { mu.next() } label: { Image(systemName: "forward.fill") }
+                    // Glyph buttons with 24 pt targets (the gap between them is part of no target).
+                    HStack(spacing: 12) {
+                        transport("shuffle", L("Shuffle"), on: mu.shuffle) { mu.toggleShuffle() }
+                        transport("backward.fill", L("Previous track")) { mu.previous() }
+                        transport(mu.playing ? "pause.fill" : "play.fill", mu.playing ? L("Pause") : L("Play"), size: 20) { mu.playPause() }
+                        transport("forward.fill", L("Next track")) { mu.next() }
                         Spacer(minLength: 0)
-                        Button { mu.setLyrics(!mu.lyricsOn) } label: { Image(systemName: "quote.bubble").foregroundStyle(mu.lyricsOn ? Island.accent : .white.opacity(0.5)) }
-                            .help(mu.lyricsOn ? L("Hide lyrics") : L("Show lyrics (looks up the title and artist on lrclib.net)"))
+                        transport("quote.bubble", mu.lyricsOn ? L("Hide lyrics") : L("Show lyrics (looks up the title and artist on lrclib.net)"), on: mu.lyricsOn) { mu.setLyrics(!mu.lyricsOn) }
                     }
-                    .buttonStyle(.plain).font(.system(size: 14))
                     TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                         Text(mu.currentLine ?? (mu.lyricsOn ? (mu.lyrics.isEmpty ? L("No synced lyrics found") : "♪") : ""))
-                            .font(.system(size: 13, weight: .medium)).foregroundStyle(Island.accent).lineLimit(1)
+                            .font(UI.groupTitle).foregroundStyle(Island.accent).lineLimit(1)
                     }
                 } else {
                     Text(mu.denied ? L("Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation") : L("Play something in Music or Spotify"))
-                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
+                        .font(UI.value).foregroundStyle(UI.hint).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
@@ -4448,44 +4571,57 @@ extension IslandView {
 
     fileprivate static func clock(_ s: Double) -> String { let i = Int(s); return String(format: "%d:%02d", i / 60, i % 60) }
 
+    /// A music control: a glyph (accent while its mode is on), a 24 pt target, a name for VoiceOver and the tooltip.
+    fileprivate func transport(_ symbol: String, _ title: String, on: Bool? = nil, size: CGFloat = 14, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: size))
+                .foregroundStyle(on.map { $0 ? Island.accent : UI.hint } ?? UI.primary)
+                .frame(minWidth: 24, minHeight: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .accessibilityAddTraits(on == true ? .isSelected : [])
+    }
+
     // MARK: mirror
 
     fileprivate var mirrorTab: some View {
         let mr = model.mirror
-        return HStack(alignment: .top, spacing: 18) {
+        return HStack(alignment: .top, spacing: Space.page) {
             ZStack {
                 Color.white.opacity(0.08)
                 if mr.denied {
-                    VStack(spacing: 8) {
-                        Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(.system(size: 11)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
+                    VStack(spacing: Space.m) {
+                        Text(L("Allow the camera in System Settings → Privacy & Security → Camera")).font(UI.detail).multilineTextAlignment(.center).foregroundStyle(UI.secondary)
                         Button { Permissions.request(.camera) { mr.start() } } label: {
-                            Text(L("Allow")).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                            Text(L("Allow")).font(UI.button).padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                                .contentShape(Capsule())
                         }.buttonStyle(.plain)
                     }.padding(12)
                 } else {
                     MirrorPreview(session: mr.session, flip: mr.flip)
                     if !mr.hasFrames {
                         Text(mr.stalled ? L("No picture from the camera. Is another app using it?") : L("Starting the camera…"))
-                            .font(.system(size: 11)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.55)).padding(12)
+                            .font(UI.detail).multilineTextAlignment(.center).foregroundStyle(UI.secondary).padding(12)
                     }
                 }
             }
             .frame(width: 290, height: 146).clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill").font(.system(size: 12)).foregroundStyle(mr.flip ? Island.accent : .white.opacity(0.5)).frame(width: 18)
-                    Text(L("Mirror")).font(.system(size: 12)).lineLimit(1)
-                    Spacer(minLength: 4)
+            VStack(alignment: .leading, spacing: Space.l) {
+                HStack(spacing: Space.m) {
+                    Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill").font(UI.icon).foregroundStyle(mr.flip ? Island.accent : UI.hint).frame(width: UI.iconColumn)
+                    Text(L("Mirror")).font(UI.value).lineLimit(1)
+                    Spacer(minLength: Space.xs)
                     CocaineSwitch(on: mr.flip) { mr.flip.toggle() }.accessibilityLabel(L("Mirror"))
                 }
                 .help(L("On: like a mirror (left and right swapped). Off: as others see you."))
                 if mr.cameras.count > 1 {
                     Menu {
                         ForEach(mr.cameras) { c in Button { mr.configure(c.id) } label: { if c.id == mr.selected { Label(c.name, systemImage: "checkmark") } else { Text(c.name) } } }
-                    } label: { Label(mr.cameras.first { $0.id == mr.selected }?.name ?? L("Camera"), systemImage: "camera").font(.system(size: 11)).lineLimit(1) }
+                    } label: { Label(mr.cameras.first { $0.id == mr.selected }?.name ?? L("Camera"), systemImage: "camera").font(UI.value).lineLimit(1) }
                     .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel(L("Camera"))
                 }
-                Text(L("The camera runs only while this page is open.")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
+                Text(L("The camera runs only while this page is open.")).font(UI.detail).foregroundStyle(UI.hint).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -4497,16 +4633,16 @@ extension IslandView {
     // MARK: external monitors
 
     fileprivate var displayTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.l) {
             if model.ddc.monitors.isEmpty {
-                Text(L("No external monitor found, or it doesn't support DDC/CI")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
+                Text(L("No external monitor found, or it doesn't support DDC/CI")).font(UI.value).foregroundStyle(UI.hint)
             }
             ForEach(model.ddc.monitors.prefix(2)) { mon in
                 HStack(spacing: 14) {
-                    Text(mon.name).font(.system(size: 12, weight: .semibold)).lineLimit(1).frame(width: 130, alignment: .leading)
+                    Text(mon.name).font(UI.itemTitle).lineLimit(1).frame(width: 130, alignment: .leading)
                     ForEach([("sun.max.fill", UInt8(0x10), "b"), ("circle.lefthalf.filled", UInt8(0x12), "c"), ("speaker.wave.2.fill", UInt8(0x62), "v")], id: \.1) { k in
-                        HStack(spacing: 6) {
-                            Image(systemName: k.0).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).frame(width: 14)
+                        HStack(spacing: Space.s) {
+                            Image(systemName: k.0).font(.system(size: 11)).foregroundStyle(UI.secondary).frame(width: 14)   // a glyph
                             Slider(value: Binding(get: { model.ddc.values["\(mon.id)\(k.2)"] ?? 50 },
                                                   set: { model.ddc.values["\(mon.id)\(k.2)"] = $0; model.ddc.set(mon, code: k.1, value: Int($0)) }), in: 0...100)
                                 .controlSize(.mini).frame(width: 80)
@@ -4516,13 +4652,14 @@ extension IslandView {
                         ForEach([("HDMI 1", 0x11), ("HDMI 2", 0x12), ("DisplayPort 1", 0x0F), ("DisplayPort 2", 0x10), ("USB-C", 0x1B)], id: \.1) { i in
                             Button(i.0) { model.ddc.set(mon, code: 0x60, value: i.1) }
                         }
-                    } label: { Label(L("Input"), systemImage: "cable.connector").font(.system(size: 11)) }
+                    } label: { Label(L("Input"), systemImage: "cable.connector").font(UI.value) }
                         .menuStyle(.borderlessButton).fixedSize()
                 }
             }
-            Text(L("Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+            Text(L("Controls the monitor itself, over DDC/CI. Values start at 50 because monitors can't be read back.")).font(UI.detail).foregroundStyle(UI.hint)
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)          // on the page's text edge, like every other page
         .onAppear { model.ddc.refresh() }
     }
 }
@@ -4538,11 +4675,14 @@ private struct Scrubber: View {
                 Capsule().fill(Color.white.opacity(0.85)).frame(width: r.size.width * min(1, value / total), height: 4)
                 Circle().fill(.white).frame(width: 9, height: 9).offset(x: max(0, r.size.width * min(1, value / total) - 4.5))
             }
-            .frame(height: 12)
+            .frame(height: 24)                                   // a 24 pt target around the 4 pt track
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onEnded { g in seek(min(total, max(0, g.location.x / r.size.width * total))) })
         }
-        .frame(height: 12)
+        .frame(height: 24)
+        .accessibilityElement()
+        .accessibilityLabel(L("Position"))
+        .accessibilityValue(IslandView.clock(value) + " / " + IslandView.clock(total))
     }
 }
 
@@ -4697,41 +4837,47 @@ private final class ShelfStore: ObservableObject {
 
 extension IslandView {
     fileprivate var shelfTab: some View {
-        HStack(alignment: .top, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Shelf")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+        HStack(alignment: .top, spacing: Space.page) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text(L("Shelf")).font(UI.section).foregroundStyle(UI.secondary)
                 if model.shelf.urls.isEmpty {
                     RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])).foregroundStyle(.white.opacity(0.25))
-                        .overlay(Text(L("Drag files onto the notch, then drop them here")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4)).multilineTextAlignment(.center).padding(.horizontal, 12))
+                        .overlay(Text(L("Drag files onto the notch, then drop them here")).font(UI.value).foregroundStyle(UI.hint).multilineTextAlignment(.center).padding(.horizontal, 12))
                         .frame(height: 96)
                 } else {
-                    ScrollView(.vertical, showsIndicators: false) { LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 10), count: 5), alignment: .leading, spacing: 8) {
+                    // 5 × 80 + 4 × 8 = 432 pt: inside the 448 pt this column has (the old 5 × 84 + 4 × 10 spilled 6 pt left).
+                    FadingScroll(cap: 118) { LazyVGrid(columns: Array(repeating: GridItem(.fixed(80), spacing: Space.m), count: 5), alignment: .leading, spacing: Space.m) {
                         ForEach(model.shelf.urls, id: \.self) { u in
                             VStack(spacing: 3) {
                                 Image(nsImage: NSWorkspace.shared.icon(forFile: u.path)).resizable().frame(width: 40, height: 40)
-                                Text(u.lastPathComponent).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundStyle(.white.opacity(0.75))
+                                Text(u.lastPathComponent).font(UI.detail).lineLimit(1).truncationMode(.middle).foregroundStyle(UI.primary)
                             }
-                            .frame(width: 84)
+                            .frame(width: 80)
                             .overlay(alignment: .topTrailing) {
-                                Button { model.shelf.remove(u) } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)) }
-                                    .buttonStyle(.plain).accessibilityLabel(L("Remove"))
+                                Button { model.shelf.remove(u) } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(UI.secondary)
+                                        .frame(width: 24, height: 24).contentShape(Rectangle())                   // a 24 pt target
+                                }
+                                .buttonStyle(.plain).help(L("Remove")).accessibilityLabel(L("Remove"))
+                                .offset(x: 6, y: -6)
                             }
                             .onDrag { NSItemProvider(object: u as NSURL) }
                             .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([u]) }
                         }
-                    } }.frame(maxHeight: 118)
+                    }.padding(.top, 6) }
                 }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .trailing, spacing: Space.m) {
                 Button { model.airDrop(model.shelf.urls) } label: {
-                    Label("AirDrop", systemImage: "airplayaudio").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
-                        .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                    Label("AirDrop", systemImage: "airplayaudio").font(UI.button).padding(.horizontal, 14).frame(height: 28)
+                        .background(Capsule().fill(Island.accent)).foregroundStyle(.black).contentShape(Capsule())
                 }
                 .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
                 Button { model.shelf.clear() } label: {
-                    Text(L("Clear")).font(.system(size: 12)).padding(.horizontal, 14).padding(.vertical, 6).background(Capsule().fill(Color.white.opacity(0.12)))
+                    Text(L("Clear")).font(UI.buttonSecondary).padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain).disabled(model.shelf.urls.isEmpty).opacity(model.shelf.urls.isEmpty ? 0.4 : 1)
                 Spacer(minLength: 0)
@@ -4784,8 +4930,9 @@ private struct MediaApp: Identifiable {
 
 extension IslandView {
     fileprivate var mediaTab: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(104), spacing: 8), count: 5), alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.m) {
+            // Five equal tiles flush with both page edges (fixed 104 pt tiles left a 24 pt hole on the right).
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 5), alignment: .leading, spacing: Space.m) {
                 ForEach(MediaApp.all) { app in
                     let url = app.installedURL
                     Button { Haptic.tap(.generic); app.open() } label: {
@@ -4798,17 +4945,17 @@ extension IslandView {
                                     Image(systemName: "globe").font(.system(size: 9, weight: .bold)).padding(2).background(Circle().fill(.black)).foregroundStyle(.white).offset(x: 3, y: 3)
                                 }
                             }
-                            Text(app.name).font(.system(size: 11)).lineLimit(1).foregroundStyle(.white.opacity(0.85))
+                            Text(app.name).font(UI.detail).lineLimit(1).foregroundStyle(UI.primary)
                         }
-                        .frame(width: 104, height: 66)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+                        .frame(maxWidth: .infinity, minHeight: 66)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))
                 }
             }
-            Text(L("Opens the app, or the website if it isn't installed.")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35))
+            Text(L("Opens the app, or the website if it isn't installed.")).font(UI.detail).foregroundStyle(UI.hint)
         }
     }
 }
@@ -5194,6 +5341,7 @@ private struct IslandView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.leftW)
         .animation(.spring(response: 0.3, dampingFraction: 0.84), value: model.rightW)
         .environment(\.colorScheme, .dark)
+        .environment(\.locale, Language.locale)
         .preferredColorScheme(.dark)
     }
 
@@ -5203,7 +5351,8 @@ private struct IslandView: View {
     /// live (it melts into the gear), the tabs and the gear. Tabs wait behind the notch while closed and slide out of it on opening.
     @ViewBuilder private func strip(_ s: IslandPose, _ l: IslandLayout) -> some View {
         let tabs = Island.tabs(external: Island.external), half = (tabs.count + 1) / 2, cell = cellWidth
-        let left0 = l.cx - IslandLayout.openBody / 2 + 16, right1 = l.cx + IslandLayout.openBody / 2 - 16
+        // The outermost highlights' edges on the page's text edge (18 pt in), whatever the cell width.
+        let left0 = Self.stripStart(l.cx, cell: cell), right1 = 2 * l.cx - left0
         let leftTabs = Array(tabs.prefix(half).enumerated()), rightTabs = Array(tabs.dropFirst(half).enumerated()), nRight = tabs.count - half
         ForEach(leftTabs, id: \.element.id) { i, t in
             Group { if i == 0 { homeButton(t, s) } else { tabButton(t) } }
@@ -5222,7 +5371,7 @@ private struct IslandView: View {
                                              width: cell, order: nRight - j, fade: .reveal))
         }
         Button { model.showSettings() } label: {
-            Image(systemName: "gearshape").font(.system(size: 13)).foregroundStyle(.white.opacity(0.5))
+            Image(systemName: "gearshape").font(UI.tabIcon).foregroundStyle(UI.hint)
                 .frame(width: cell, height: g.height).contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
@@ -5235,7 +5384,7 @@ private struct IslandView: View {
         let selected = model.tab == t.id
         return Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: 30, height: 26)
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: Self.highlight(cellWidth), height: 26)
                     .modifier(CellMorph(pose: s, kind: .highlight))
                 Image(nsImage: Self.bag(level: m.bagLevel, pouring: m.bagPouring, pink: m.bagPink)).frame(width: 20, height: 20)
                     .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
@@ -5265,23 +5414,32 @@ private struct IslandView: View {
                 Capsule().fill(Color.white.opacity(0.2)).frame(width: 78, height: 5)
                     .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: 78 * min(1, max(0, l)), height: 5) }
             } else {
-                Text(f.text).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle).padding(.horizontal, 8)
+                // The start of a file name says which file it is; the end is cut (".dmg" isn't news).
+                Text(f.text).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1).truncationMode(.tail).padding(.horizontal, Space.m)
             }
         }
         else if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
         else if waiting { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
         else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
-        else if working { ProgressView().controlSize(.mini).tint(.white) }
+        else if working { aiAtWork }
         else if model.music.playing { Visualizer(playing: true) }
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
         else if m.stayActive || m.presenceActive { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Color(red: 1, green: 0.5, blue: 0.72)) }
     }
 
-    private static func remaining(_ until: Date) -> String {
-        let s = Int(until.timeIntervalSinceNow)
-        guard s > 0 else { return "∞" }
-        return s >= 3600 ? "\(s / 3600)h" : "\(max(1, s / 60))m"
+    /// AIs at work: the same sparkles as in the lists, and how many (not a spinner, which reads as "Cocaine is busy").
+    private var aiAtWork: some View {
+        let n = m.board.filter { $0.state == "working" }.count
+        return HStack(spacing: 3) {
+            Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold))     // a glyph, sized to the wing
+            Text("\(n)").font(.system(size: 11, weight: .semibold).monospacedDigit())
+        }
+        .foregroundStyle(Island.accent)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(format: L("%d AI at work"), n))
     }
+
+    private static func remaining(_ until: Date) -> String { Dur.left(seconds: Int(until.timeIntervalSinceNow)) }
 
     // MARK: open
 
@@ -5307,20 +5465,26 @@ private struct IslandView: View {
         .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))
     }
 
-    private var cellWidth: CGFloat { Island.tabs(external: Island.external).count >= 11 ? 28 : 31 }     // 11: room for the mic too
+    private var cellWidth: CGFloat { Self.cellWidth(tabs: Island.tabs(external: Island.external).count) }
+    static func cellWidth(tabs: Int) -> CGFloat { tabs >= 11 ? 28 : 31 }     // 11: room for the mic too
+    /// A tab's highlight: never wider than its cell (it would cover the neighbours).
+    static func highlight(_ cell: CGFloat) -> CGFloat { min(30, cell - 2) }
+    /// Where the strip's first cell starts, so its highlight's left edge is on the page's text edge.
+    static func stripStart(_ cx: CGFloat, cell: CGFloat) -> CGFloat { cx - IslandLayout.openBody / 2 + Space.page - (cell - highlight(cell)) / 2 }
 
     private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
         Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: 30, height: 26)
-                Image(systemName: t.icon).font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(model.tab == t.id ? Color.white : Color.white.opacity(0.5))
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: Self.highlight(cellWidth), height: 26)
+                Image(systemName: t.icon).font(UI.tabIcon)
+                    .foregroundStyle(model.tab == t.id ? Color.white : UI.hint)
             }
             .frame(width: cellWidth, height: g.height)            // the whole cell, the full height of the strip
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
         .allowsHitTesting(model.open).accessibilityHidden(!model.open)
+        .accessibilityAddTraits(model.tab == t.id ? .isSelected : [])
     }
 
     // MARK: home: Cocaine and what the AIs are doing
@@ -5332,46 +5496,49 @@ private struct IslandView: View {
     }
 
     private var homeTab: some View {
-        HStack(alignment: .top, spacing: 22) {
+        HStack(alignment: .top, spacing: Space.gutter) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Cocaine").font(.system(size: 17, weight: .bold))
-                        Text(statusText).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(2)
+                HStack(spacing: Space.l) {
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        Text("Cocaine").font(UI.pageTitle)
+                        Text(statusText).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(2)
                     }
-                    Spacer(minLength: 6)
-                    CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
+                    Spacer(minLength: Space.s)
+                    CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }.accessibilityLabel("Cocaine")
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L("Stay on for")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
-                    EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices) { $0 == 0 ? "∞" : ($0 < 60 ? "\($0)m" : "\($0 / 60)h") }
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Text(L("Stay on for")).font(UI.section).foregroundStyle(UI.secondary)
+                    EqualSegments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for")) { Dur.short(minutes: $0) }
                         .onScrollSteps(every: 24) { n in
                             let c = Settings.timerChoices
                             let i = c.firstIndex(of: m.timerMinutes) ?? c.firstIndex { $0 >= m.timerMinutes } ?? 0
                             m.timerMinutes = c[min(c.count - 1, max(0, i + n))]
                         }
                 }
-                HStack(spacing: 8) {
-                    Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 12)).foregroundStyle(m.presenceActive ? Island.accent : .white.opacity(0.5))
-                    Text(L("Stay active")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
-                    Spacer(minLength: 4)
-                    CocaineSwitch($m.stayActive)
+                HStack(spacing: Space.m) {
+                    Image(systemName: "person.crop.circle.badge.checkmark").font(UI.icon).foregroundStyle(m.presenceActive ? Island.accent : UI.hint)
+                        .frame(width: UI.iconColumn)
+                    Text(L("Stay active")).font(UI.value).foregroundStyle(UI.primary).lineLimit(1)
+                    Spacer(minLength: Space.xs)
+                    CocaineSwitch($m.stayActive).accessibilityLabel(L("Stay active"))
                 }
                 .help(L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away."))
             }
             .frame(width: 250)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 HStack {
-                    Text(L("Agents")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                    Text(L("Agents")).font(UI.section).foregroundStyle(UI.secondary)
                     if m.board.count + m.approvals.count > 3 {
-                        Text("\(m.board.count)").font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
+                        Text("\(m.board.count + m.approvals.count)").font(UI.section.monospacedDigit()).foregroundStyle(UI.hint)
                     }
                 }
+                .padding(.top, 3)                               // on the cap line of "Cocaine" beside it
                 if m.board.isEmpty && m.approvals.isEmpty && m.agentNotice == nil {
-                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(UI.value).foregroundStyle(UI.hint)
                 } else {                                    // all of them, scrolling; those that need you first
                     AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: true, accent: Island.accent,
                                   warning: warningColor, maxHeight: .infinity, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
+                        .padding(.horizontal, -AgentListView.inset)   // icons on the column's edge
                 }
                 Spacer(minLength: 0)
             }
@@ -5382,40 +5549,45 @@ private struct IslandView: View {
     // MARK: focus
 
     private var focusTab: some View {
-        HStack(alignment: .top, spacing: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: Space.gutter) {
+            VStack(alignment: .leading, spacing: Space.l) {
+                HStack(spacing: Space.s) {
                     ForEach([(false, L("Focus")), (true, L("Break"))], id: \.0) { b in
                         Button { focus.setBreak(b.0) } label: {
-                            Text(b.1).font(.system(size: 12, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 4)
+                            Text(b.1).font(UI.buttonSecondary).padding(.horizontal, 12).frame(height: 24)
                                 .background(Capsule().fill(Color.white.opacity(focus.isBreak == b.0 ? 0.18 : 0.06)))
-                                .foregroundStyle(focus.isBreak == b.0 ? Color.white : Color.white.opacity(0.55))
-                        }.buttonStyle(.plain)
+                                .foregroundStyle(focus.isBreak == b.0 ? Color.white : UI.secondary)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(focus.isBreak == b.0 ? .isSelected : [])
                     }
                 }
-                Text(focus.text).font(.system(size: 46, weight: .semibold, design: .rounded).monospacedDigit())
+                Text(focus.text).font(UI.hero)
                     .contentTransition(.numericText())
-                HStack(spacing: 8) {
+                HStack(spacing: Space.m) {
                     Button { focus.running ? focus.pause() : focus.start() } label: {
                         Label(focus.running ? L("Pause") : L("Start"), systemImage: focus.running ? "pause.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                            .font(UI.button).padding(.horizontal, 14).frame(height: 28)
                             .background(Capsule().fill(Island.accent)).foregroundStyle(.black)
+                            .contentShape(Capsule())
                     }.buttonStyle(.plain)
                     if focus.active {
                         Button { focus.reset() } label: {
-                            Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .semibold)).padding(7)
+                            Image(systemName: "arrow.counterclockwise").font(UI.button).frame(width: 28, height: 28)
                                 .background(Circle().fill(Color.white.opacity(0.12)))
+                                .contentShape(Circle())
                         }.buttonStyle(.plain).help(L("Reset")).accessibilityLabel(L("Reset"))
                     }
                 }
             }
             .frame(width: 250, alignment: .leading)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Minutes")).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text(L("Minutes")).font(UI.section).foregroundStyle(UI.secondary)
                 MinuteRuler(minutes: Binding(get: { focus.minutes }, set: { if !focus.active { focus.minutes = $0 } }))
                     .opacity(focus.active ? 0.4 : 1)
                 Text(L("Drag the ruler to set the length. Cocaine keeps the Mac awake while a focus runs."))
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4)).fixedSize(horizontal: false, vertical: true)
+                    .font(UI.detail).foregroundStyle(UI.hint).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -5424,22 +5596,22 @@ private struct IslandView: View {
     // MARK: batteries
 
     private var batteryTab: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: Space.m) {
             if batteries.items.isEmpty {
-                Text(L("No devices")).font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
+                Text(L("No devices")).font(UI.value).foregroundStyle(UI.hint)
             }
             let cols = [GridItem(.flexible())]
-            LazyVGrid(columns: cols, alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: cols, alignment: .leading, spacing: Space.l) {
                 ForEach(batteries.items.prefix(4)) { item in
-                    HStack(spacing: 9) {
-                        Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(.white.opacity(0.75)).frame(width: 20)
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Text(item.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                if item.charging { Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.green) }
+                    HStack(spacing: Space.m) {
+                        Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(UI.secondary).frame(width: 20)   // a device glyph
+                        VStack(alignment: .leading, spacing: Space.xs) {
+                            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                                Text(item.name).font(UI.itemTitle).lineLimit(1)
+                                if item.charging { Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.green) }   // a badge glyph
                                 Spacer(minLength: 0)
                                 Text(item.parts.map { ($0.label.isEmpty ? "" : $0.label + " ") + "\($0.percent)%" }.joined(separator: "  "))
-                                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                                    .font(UI.metric).foregroundStyle(UI.primary).lineLimit(1)
                             }
                             Capsule().fill(Color.white.opacity(0.12)).frame(height: 4)
                                 .overlay(alignment: .leading) {
@@ -5459,46 +5631,48 @@ private struct IslandView: View {
 
     /// Batteries on the left, the AI tools' usage on the right.
     private var statusTab: some View {
-        HStack(alignment: .top, spacing: 24) {
+        HStack(alignment: .top, spacing: Space.gutter) {
             batteryTab.frame(width: 250, alignment: .topLeading)
             usageTab.frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
     private var usageTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Codex").font(.system(size: 13, weight: .semibold))
-                    if usage.codex.isEmpty {
-                        Text(usage.loaded ? L("Nothing found") : "…").font(.system(size: 12)).foregroundStyle(.white.opacity(0.4))
-                    }
-                    ForEach(usage.codex) { l in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack { Text(l.name).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)); Spacer()
-                                Text("\(Int(l.percent))%").font(.system(size: 11, weight: .medium).monospacedDigit()) }
-                            Capsule().fill(Color.white.opacity(0.12)).frame(height: 5)
-                                .overlay(alignment: .leading) { GeometryReader { r in Capsule().fill(Island.accent).frame(width: r.size.width * min(1, l.percent / 100)) } }
-                            if let d = l.resets { Text(String(format: L("Resets %@"), d.formatted(date: .abbreviated, time: .shortened))).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)) }
+        VStack(alignment: .leading, spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.m) {
+                Text("Codex").font(UI.groupTitle)
+                if usage.codex.isEmpty {
+                    Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint)
+                }
+                ForEach(usage.codex) { l in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline) { Text(l.name).font(UI.detail).foregroundStyle(UI.secondary); Spacer()
+                            Text("\(Int(l.percent))%").font(UI.metric) }
+                        Capsule().fill(Color.white.opacity(0.12)).frame(height: 5)
+                            .overlay(alignment: .leading) { GeometryReader { r in Capsule().fill(Island.accent).frame(width: r.size.width * min(1, l.percent / 100)) } }
+                        if let d = l.resets {
+                            Text(String(format: L("Resets %@"), d.formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Language.locale))))
+                                .font(UI.detail).foregroundStyle(UI.hint)
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Claude Code").font(.system(size: 13, weight: .semibold))
-                    tokenRow(L("Last 5 hours"), usage.claudeFive)
-                    tokenRow(L("Last 7 days"), usage.claudeWeek)
-                    Text(L("Tokens in your conversations on this Mac")).font(.system(size: 10)).foregroundStyle(.white.opacity(0.4))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text("Claude Code").font(UI.groupTitle)
+                tokenRow(L("Last 5 hours"), usage.claudeFive)
+                tokenRow(L("Last 7 days"), usage.claudeWeek)
+                Text(L("Tokens in your conversations on this Mac")).font(UI.detail).foregroundStyle(UI.hint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { usage.refresh() }
     }
 
+    /// A label and a count, on one baseline: "Last 7 days … 8,6 Mln" in the app's language.
     private func tokenRow(_ label: String, _ n: Int) -> some View {
-        HStack { Text(label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)); Spacer()
-            Text(n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1e6) : n >= 1000 ? "\(n / 1000)k" : "\(n)").font(.system(size: 13, weight: .semibold).monospacedDigit()) }
+        HStack(alignment: .firstTextBaseline) { Text(label).font(UI.detail).foregroundStyle(UI.secondary); Spacer()
+            Text(Dur.count(n, locale: Language.locale)).font(UI.metric) }
     }
 }
 
@@ -5525,14 +5699,27 @@ private struct ScrollSteps: NSViewRepresentable {
             guard window != nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
                 guard let self, let w = self.window, e.window === w else { return e }
-                let p = self.convert(e.locationInWindow, from: nil)
-                guard self.bounds.contains(p) else { return e }
+                let over = self.bounds.contains(self.convert(e.locationInWindow, from: nil))
+                guard Self.takes(phase: e.phase, momentum: e.momentumPhase, over: over, owned: &self.owned),
+                      DialogCenter.shared.current == nil else { return e }   // a question on top: nothing under it changes
                 self.handle(e)
                 return nil                                       // used here: the panel behind doesn't scroll as well
             }
         }
 
         deinit { if let m = monitor { NSEvent.removeMonitor(m) } }
+
+        /// Whether this control takes a scroll event. A trackpad gesture belongs to the control only if it *started* over it: a
+        /// scroll of the panel that slides across the timer keeps scrolling the panel (and changes nothing); the momentum after
+        /// lifting the fingers never steps. A mouse wheel (no phases) steps while the pointer is over the control.
+        var owned = false
+        static func takes(phase: NSEvent.Phase, momentum: NSEvent.Phase, over: Bool, owned: inout Bool) -> Bool {
+            if !momentum.isEmpty { return false }
+            if phase.contains(.mayBegin) || phase.contains(.began) { owned = over; return owned }
+            if phase.contains(.ended) || phase.contains(.cancelled) { let was = owned; owned = false; return was && over }
+            if phase.isEmpty { return over }                             // a wheel click
+            return owned && over                                         // .changed (and .stationary)
+        }
 
         private func handle(_ e: NSEvent) {
             if e.phase == .began || e.phase == .mayBegin { acc = 0 }
@@ -5568,8 +5755,10 @@ private struct MinuteRuler: View {
                     if big { g.draw(Text("\(v)").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)), at: CGPoint(x: x, y: size.height - 5)) }
                 }
             }
-            RoundedRectangle(cornerRadius: 1.5).fill(Island.accent).frame(width: 3, height: 34).position(x: mid, y: 22)
-            Text("\(minutes)").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(Island.accent).position(x: mid, y: -4)
+            .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))   // the ticks fade at the ends
+            RoundedRectangle(cornerRadius: 1.5).fill(Island.accent).frame(width: 3, height: 26).position(x: mid, y: 27)
+            // The length, inside the frame and outside the fade (it used to sit above the frame and was masked away).
+            Text("\(minutes)").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(Island.accent).position(x: mid, y: 6)
         }
         .frame(height: 52)
         .contentShape(Rectangle())
@@ -5580,7 +5769,6 @@ private struct MinuteRuler: View {
             minutes = new
         }.onEnded { _ in drag.start = nil })
         .onScrollSteps(every: 5) { minutes = min(120, max(5, minutes + $0)) }       // (the tap comes from the scroll itself)
-        .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
     }
 }
 
@@ -5772,7 +5960,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         hostView = PanelHostingView(rootView: PanelView(m: model))
         hostView.sizingOptions = [.intrinsicContentSize]
         hostView.onSizeChange = { [weak self] in DispatchQueue.main.async { self?.fitPanel(animated: true) } }
-        panel = MenuPanel(content: hostView)
+        let overlay = NSHostingView(rootView: PanelDialogOverlay(m: model))
+        overlay.sizingOptions = []                           // it takes the panel's size, never gives it one
+        panel = MenuPanel(content: hostView, overlay: overlay)
         model.pageChanged = { [weak self] in                     // a new page starts at its top
             guard let scroll = self?.panel.scroll else { return }
             scroll.contentView.scroll(to: .zero)
@@ -6356,11 +6546,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             if !self.panel.isVisible { self.showPanel(fromClick: false) }
             guard self.panel.isVisible else { return nil }
             self.panel.makeKey()                            // Return, Esc and the text field (the panel never activates the app)
-            self.panel.scroll.contentView.scroll(to: .zero) // the card is at the top
-            self.panel.scroll.reflectScrolledClipView(self.panel.scroll.contentView)
-            return .panel
+            return .panel                                   // the card is drawn over the visible area, wherever the page is scrolled
         }
-        center.changed = { [weak self] in self?.island.dialogChanged() }
+        center.changed = { [weak self] in
+            self?.island.dialogChanged()
+            self?.panel?.overlay.isHidden = !center.isShowing(on: .panel)
+        }
     }
 
     private func refreshPanelState() {
@@ -7094,6 +7285,45 @@ private func dialogsSelfTest(_ check: (String, Bool) -> Void) {
     check("dialogs: no system alert came up", alerts == 0)
 }
 
+/// The design pass (part of --selftest): the app's language reaches dates and durations, two-finger scrolling over a control
+/// only steps it when the gesture started there, and the panel strip never puts a cell under the notch.
+private func designSelfTest(_ check: (String, Bool) -> Void) {
+    let saved = Language.chosen
+    defer { Language.set(saved, persist: false) }
+    Language.set("de", persist: false)
+    check("locale: German UI → German weekday names and relative times, whatever the Mac's language",
+          Language.calendar.standaloneWeekdaySymbols.contains("Montag") && Language.locale.language.languageCode?.identifier == "de")
+    let rel = RelativeDateTimeFormatter(); rel.unitsStyle = .abbreviated; rel.locale = appLocale()
+    check("locale: \"8 h ago\" is German in a German UI (\(rel.localizedString(for: Date().addingTimeInterval(-8 * 3600), relativeTo: Date())))",
+          rel.localizedString(for: Date().addingTimeInterval(-8 * 3600), relativeTo: Date()).hasPrefix("vor"))
+    Language.set("it", persist: false)
+    check("durations: island, panel and agent list say it the same way (\(Dur.short(minutes: 30)), \(Dur.short(minutes: 120)), \(Dur.ago(seconds: 360)))",
+          Dur.short(minutes: 30) == String(format: L("%d min"), 30) && Dur.short(minutes: 120) == String(format: L("%d h"), 2)
+          && Dur.ago(seconds: 360) == String(format: L("%d min"), 6) && Dur.ago(seconds: 20) == L("now") && Dur.left(seconds: 7200) == String(format: L("%d h"), 2)
+          && Dur.short(minutes: 150) == String(format: L("%d h"), 2) + " " + String(format: L("%d min"), 30) && Dur.short(minutes: 0) == "∞")
+    check("numbers: token counts in the app's language (\(Dur.count(8_600_000, locale: Language.locale)))",
+          Dur.count(8_600_000, locale: Language.locale).contains("8,6") && !Dur.count(8_600_000, locale: Locale(identifier: "en")).contains(","))
+    check("strings: the agent state and the alert toggle are separate keys (no \"when it needs you\" as a state)",
+          AgentListView.name("waiting") == L("Waiting for you") && L("Waiting for you") != L("Needs you"))
+    check("strings: Focus's Break isn't the Pause button's word", L("Break") != L("Pause"))
+
+    typealias C = ScrollSteps.Catcher
+    var owned = false
+    check("scroll steps: a gesture that starts over the control steps it", C.takes(phase: .began, momentum: [], over: true, owned: &owned)
+          && C.takes(phase: .changed, momentum: [], over: true, owned: &owned))
+    check("scroll steps: …not its momentum after the fingers lift", !C.takes(phase: [], momentum: .changed, over: true, owned: &owned))
+    _ = C.takes(phase: .ended, momentum: [], over: true, owned: &owned)
+    check("scroll steps: a panel scroll that slides across the control doesn't change it",
+          !C.takes(phase: .began, momentum: [], over: false, owned: &owned) && !C.takes(phase: .changed, momentum: [], over: true, owned: &owned)
+          && !C.takes(phase: .ended, momentum: [], over: true, owned: &owned))
+    check("scroll steps: a mouse wheel steps only over the control", C.takes(phase: [], momentum: [], over: true, owned: &owned)
+          && !C.takes(phase: [], momentum: [], over: false, owned: &owned))
+
+    let strip = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 185, left: 3, right: 2)
+    check("strip: on a 14\" notch (185 pt) back, General and AI alerts fit left of it, Automation and Quit right of it",
+          strip != nil && strip!.problems().isEmpty && strip!.leftCells.last!.upperBound <= 127.5 && strip!.rightCells.first!.lowerBound >= 312.5)
+}
+
 /// Smart Triggers on power, displays and schedules; screen-off mode; control links (part of --selftest).
 private func powerSelfTest(_ check: (String, Bool) -> Void) {
     func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
@@ -7367,7 +7597,28 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--layout-test"
         let f = AppDelegate.panelFrame(size: size, anchorX: x, top: vis.maxY - 6, visible: vis)
         print("\(name): panel \(f.debugDescription)  inside that screen: \(vis.contains(f))")
     }
-    exit(0)
+    // The panel's top strip on other Macs' notches (14" ≈ 185 pt; scaled resolutions make it narrower or wider): no cell under
+    // the notch, all inside the frame, none narrower than 24 pt; with and without the AI tab. Too wide a notch: no strip (nil),
+    // the panel then shows its tabs as a segmented control, which is also fine.
+    var stripFailures = 0
+    for notch: CGFloat in [150, 165, 185, 200, 210, 220] {
+        for left in [2, 3] {
+            guard let s = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: notch, left: left, right: 2) else {
+                print("FAIL  strip, notch \(Int(notch)) pt, \(left)+2 cells: doesn't fit"); stripFailures += 1; continue
+            }
+            let p = s.problems()
+            if !p.isEmpty { stripFailures += 1 }
+            print("\(p.isEmpty ? "PASS" : "FAIL")  strip, notch \(Int(notch)) pt, \(left)+2 cells: cell \(s.cell), highlight \(s.highlight), left \(s.leftCells.map { "\($0.lowerBound)…\($0.upperBound)" }), right \(s.rightCells.map { "\($0.lowerBound)…\($0.upperBound)" })" + (p.isEmpty ? "" : " " + p.joined(separator: "; ")))
+        }
+    }
+    let tooWide = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 300, left: 3, right: 2)
+    print(tooWide == nil ? "PASS  strip, notch 300 pt: no strip (tabs fall back to the segmented control)" : "FAIL  strip, notch 300 pt: cells of \(tooWide!.cell) pt")
+    if tooWide != nil { stripFailures += 1 }
+    // The old layout (4 cells of 38 pt left of a 185 pt notch) must be refused: it put the Automation tab under the notch.
+    let old = StripLayout(panelWidth: Layout.width, frameInset: Space.frame, notchWidth: 185, cell: 38, side: 113.5, edgeInset: 4, left: 4, right: 2)
+    print(old.problems().isEmpty ? "FAIL  strip: the old 4×38 pt layout isn't caught" : "PASS  strip: the old 4×38 pt layout is caught (\(old.problems()[0]))")
+    if old.problems().isEmpty { stripFailures += 1 }
+    exit(stripFailures == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--gamma-test" {
     // Software dimming on the main screen for a moment (what non-Apple monitors get), then restored.
@@ -7605,6 +7856,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     AgentTests.pure(check)                                 // AI sessions: order, restore, liveness, URLs, focus plan, requests
     RecoveryTest.selfChecks(check)
     dialogsSelfTest(check)                                 // in-app dialogs: queue, default buttons, validation, the real flows
+    designSelfTest(check)                                  // language in dates and durations, scroll steps, the panel strip
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }
@@ -7776,8 +8028,11 @@ private enum IslandCheck {
         im.pm = pm; im.geometry = g; im.open = true
         let rep = render(im, pm, frame: opened)
         let l = IslandLayout(notch: g.notchWidth, notchH: g.height)
-        let cell: CGFloat = Island.tabs(external: Island.external).count >= 11 ? 28 : 31
-        let homeX = opened.width / 2 - IslandLayout.openBody / 2 + 16 + cell / 2
+        let cell = IslandView.cellWidth(tabs: Island.tabs(external: Island.external).count)
+        let homeX = IslandView.stripStart(opened.width / 2, cell: cell) + cell / 2
+        check("island open: the first tab's highlight starts on the page's text edge, 18 pt in",
+              abs(IslandView.stripStart(0, cell: cell) + (cell - IslandView.highlight(cell)) / 2 - (-IslandLayout.openBody / 2 + Space.page)) < 0.01
+              && IslandView.highlight(28) <= 26 && IslandView.highlight(31) <= 29)
         let home = count(rep, NSRect(x: homeX - 11, y: midY - 11, width: 22, height: 22), pointWidth: opened.width)
         check("island open: the Home tab is in the strip (\(home.bright) px)", home.bright > 20)
         let page = count(rep, NSRect(x: opened.width / 2 - IslandLayout.openBody / 2, y: l.top + g.height + 8, width: IslandLayout.openBody, height: 150), pointWidth: opened.width)
@@ -7848,7 +8103,9 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     if let i = args.firstIndex(of: "--pink-level"), i + 1 < args.count, let v = Double(args[i + 1]) { pm.pinkLevel = CGFloat(v); pm.pinkPouring = v < 1 }        // a frame of the pink powder filling
     let im = IslandModel()
     im.pm = pm
-    im.geometry = NotchGeometry(frame: .zero, notchWidth: 185, height: 32, centerX: 0, hasNotch: true)
+    // --notch-width 210: another Mac's notch (a 14" is 185 pt; scaled resolutions change it).
+    let notchW = args.firstIndex(of: "--notch-width").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }.map { CGFloat($0) } ?? 185
+    im.geometry = NotchGeometry(frame: .zero, notchWidth: notchW, height: 32, centerX: 0, hasNotch: true)
     im.open = args.contains("--open")
     if let i = args.firstIndex(of: "--tab"), i + 1 < args.count { im.tab = args[i + 1] }
     if args.contains("--focus") { im.focus.start() }
@@ -7893,7 +8150,7 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
     let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
     func frame(_ p: CGFloat?) -> NSBitmapImageRep {
         if let p { im.renderProgress = p; im.open = p > 0 }
-        let l = IslandLayout(notch: 185, notchH: 32)
+        let l = IslandLayout(notch: notchW, notchH: 32)
         let view = ZStack(alignment: .top) {
             LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
             IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
@@ -7904,6 +8161,8 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-islan
         let host = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))      // measured sizes (lists that fade when cut) settle
         host.layoutSubtreeIfNeeded()
         let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -7948,6 +8207,14 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
         model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
                          ("Cursor", "has finished", "Gestionale", 4000)]
             .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
+    } else {
+        model.history = []                                         // never the user's real alerts (project names) in a render
+    }
+    // --island / --no-island: hanging from the notch (the strip) or not, whatever the real setting; --notch-width 210: another Mac's notch.
+    if CommandLine.arguments.contains("--island") { model.island = true }
+    if CommandLine.arguments.contains("--no-island") { model.island = false }
+    if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {
+        NotchGeometry.override = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: CGFloat(w), height: 32, centerX: 756, hasNotch: true)
     }
     if let i = CommandLine.arguments.firstIndex(of: "--auto"), i + 1 < CommandLine.arguments.count {   // open a group of Automation
         let wanted = CommandLine.arguments[i + 1]
@@ -7973,13 +8240,18 @@ if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel
     if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
     renderSampleDialog(CommandLine.arguments, surface: .panel)          // --dialog <kind>: a dialog over the panel
     let checkOverflow = CommandLine.arguments.contains("--overflow-check")
-    let host = checkOverflow ? NSHostingView(rootView: PanelView(m: model).frame(width: Layout.width + 260, alignment: .topLeading))
-                             : NSHostingView(rootView: PanelView(m: model).background(Color.black))
-    let size = host.fittingSize
-    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
+    // The page with its dialog layer on top, as the panel's window stacks them (the dialog is over the visible area).
+    let surface = PanelView(m: model).overlay(alignment: .top) { PanelDialogOverlay(m: model) }
+    let host = checkOverflow ? NSHostingView(rootView: AnyView(surface.frame(width: Layout.width + 260, alignment: .topLeading)))
+                             : NSHostingView(rootView: AnyView(surface.background(Color.black)))
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
     if CommandLine.arguments.contains("--dark") { window.appearance = NSAppearance(named: .darkAqua) }
     if CommandLine.arguments.contains("--light") { window.appearance = NSAppearance(named: .aqua) }
     window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.2))      // the dialog card's measured height reaches the panel
+    window.setContentSize(host.fittingSize)
+    host.frame = NSRect(origin: .zero, size: host.fittingSize)
     host.layoutSubtreeIfNeeded()
     let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
     host.cacheDisplay(in: host.bounds, to: rep)

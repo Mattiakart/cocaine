@@ -1,8 +1,6 @@
 /* Cocaine — en: AI sessions (going back to them, requests answered from the notch) */
 
 "Go to this session" = "Go to this session";
-"Answer from the notch" = "Answer from the notch";
-"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.";
 "asks you a question" = "asks you a question";
 "needs your approval" = "needs your approval";
 "That request was no longer waiting: answer it in the terminal." = "That request was no longer waiting: answer it in the terminal.";

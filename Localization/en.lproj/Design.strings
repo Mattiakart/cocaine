@@ -1,0 +1,18 @@
+/* Cocaine — en: the design pass (panel strip, island wording, accessibility labels) */
+
+"Quit Cocaine" = "Quit Cocaine";
+"Write…" = "Write…";
+"Waiting for you" = "Waiting for you";
+"Answer from the island" = "Answer from the island";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.";
+"Paired: %d" = "Paired: %d";
+"Revoke every paired iPhone?" = "Revoke every paired iPhone?";
+"Revoke…" = "Revoke…";
+"Send…" = "Send…";
+"%d AI at work" = "%d AI at work";
+"On" = "On";
+"Shuffle" = "Shuffle";
+"Previous track" = "Previous track";
+"Next track" = "Next track";
+"Play" = "Play";
+"Position" = "Position";

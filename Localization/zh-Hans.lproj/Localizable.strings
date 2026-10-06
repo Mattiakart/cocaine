@@ -138,11 +138,9 @@
 "Also start and steer AI agents" = "还可启动和操控 AI 智能体";
 "Connected" = "已连接";
 "Connecting…" = "正在连接…";
-"paired" = "已配对";
 "Not set up: send it a Shortcut" = "未设置：给它发一个快捷指令";
 "Pair an iPhone" = "配对 iPhone";
 "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices." = "该快捷指令包含一个密钥，持有者可在你选择的级别内控制这台 Mac。只发给你自己的设备。";
-"Remove every paired iPhone?" = "要移除所有已配对的 iPhone 吗？";
 "They stop working until you send a new Shortcut." = "在你发送新的快捷指令之前，它们将无法使用。";
 "Last reply" = "最近的回复";
 "Command (for example: start claude my-project Fix the tests)" = "命令（例如：start claude my-project Fix the tests）";

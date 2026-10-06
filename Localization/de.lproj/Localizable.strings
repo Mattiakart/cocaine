@@ -76,7 +76,7 @@
 "Clear" = "Löschen";
 "Turn Cocaine on" = "Cocaine einschalten";
 "Turn Cocaine off" = "Cocaine ausschalten";
-"Voice type" = "Stimme";
+"Voice type" = "Stimmtyp";
 "The Mac's voices for your language; you hear it as you pick" = "Die Stimmen des Mac für deine Sprache; du hörst sie beim Auswählen";
 "Automatic" = "Automatisch";
 "Enhanced" = "Verbessert";
@@ -138,11 +138,9 @@
 "Also start and steer AI agents" = "Auch KI-Agenten starten und steuern";
 "Connected" = "Verbunden";
 "Connecting…" = "Verbinde …";
-"paired" = "gekoppelt";
 "Not set up: send it a Shortcut" = "Nicht eingerichtet: sende ihm einen Kurzbefehl";
 "Pair an iPhone" = "iPhone koppeln";
 "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices." = "Der Kurzbefehl enthält ein Geheimnis, mit dem jeder, der ihn hat, diesen Mac im gewählten Umfang steuern kann. Sende ihn nur an deine eigenen Geräte.";
-"Remove every paired iPhone?" = "Alle gekoppelten iPhones entfernen?";
 "They stop working until you send a new Shortcut." = "Sie funktionieren nicht mehr, bis du einen neuen Kurzbefehl sendest.";
 "Last reply" = "Letzte Antwort";
 "Command (for example: start claude my-project Fix the tests)" = "Befehl (zum Beispiel: start claude mein-projekt Behebe die Tests)";
@@ -157,7 +155,7 @@
 "Any length, in steps of 15 minutes" = "Beliebige Dauer, in 15-Minuten-Schritten";
 "Home" = "Start";
 "Focus" = "Fokus";
-"Break" = "Pause";
+"Break" = "Erholung";
 "Settings" = "Einstellungen";
 "Start" = "Starten";
 "Reset" = "Zurücksetzen";

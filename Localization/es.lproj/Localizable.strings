@@ -2,7 +2,7 @@
 
 "Your Mac stays awake" = "El Mac se mantiene activo";
 "Your Mac sleeps as usual" = "El Mac reposa como siempre";
-"Keeping the screen on…" = "Reactivando la pantalla…";
+"Keeping the screen on…" = "Manteniendo la pantalla encendida…";
 "Admin password needed" = "Se necesita la contraseña";
 "Dim the screen when idle" = "Atenuar la pantalla si está inactivo";
 "Goes back to normal as soon as you touch anything" = "Vuelve a la normalidad en cuanto tocas algo";
@@ -138,11 +138,9 @@
 "Also start and steer AI agents" = "También iniciar y dirigir agentes de IA";
 "Connected" = "Conectado";
 "Connecting…" = "Conectando…";
-"paired" = "vinculado";
 "Not set up: send it a Shortcut" = "Sin configurar: envíale un atajo";
 "Pair an iPhone" = "Vincular un iPhone";
 "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices." = "El atajo lleva un secreto que permite controlar este Mac a quien lo tenga, dentro del nivel que elijas. Envíalo solo a tus propios dispositivos.";
-"Remove every paired iPhone?" = "¿Quitar todos los iPhone vinculados?";
 "They stop working until you send a new Shortcut." = "Dejarán de funcionar hasta que envíes un atajo nuevo.";
 "Last reply" = "Última respuesta";
 "Command (for example: start claude my-project Fix the tests)" = "Comando (por ejemplo: start claude mi-proyecto Arregla los tests)";

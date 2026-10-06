@@ -138,11 +138,9 @@
 "Also start and steer AI agents" = "Also start and steer AI agents";
 "Connected" = "Connected";
 "Connecting…" = "Connecting…";
-"paired" = "paired";
 "Not set up: send it a Shortcut" = "Not set up: send it a Shortcut";
 "Pair an iPhone" = "Pair an iPhone";
 "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices." = "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices.";
-"Remove every paired iPhone?" = "Remove every paired iPhone?";
 "They stop working until you send a new Shortcut." = "They stop working until you send a new Shortcut.";
 "Last reply" = "Last reply";
 "Command (for example: start claude my-project Fix the tests)" = "Command (for example: start claude my-project Fix the tests)";

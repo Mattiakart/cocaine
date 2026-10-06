@@ -1,0 +1,18 @@
+/* Cocaine — zh-Hans: the design pass (panel strip, island wording, accessibility labels) */
+
+"Quit Cocaine" = "退出 Cocaine";
+"Write…" = "写邮件…";
+"Waiting for you" = "等你回应";
+"Answer from the island" = "在灵动岛中回应";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code 和 Codex：在灵动岛中允许或拒绝请求（或回答 MCP 问题）。绝不会自动允许：2 分钟内没有回应，终端会照常询问。";
+"Paired: %d" = "已配对：%d";
+"Revoke every paired iPhone?" = "撤销所有已配对的 iPhone？";
+"Revoke…" = "撤销…";
+"Send…" = "发送…";
+"%d AI at work" = "%d 个 AI 正在工作";
+"On" = "开";
+"Shuffle" = "随机播放";
+"Previous track" = "上一首";
+"Next track" = "下一首";
+"Play" = "播放";
+"Position" = "播放位置";

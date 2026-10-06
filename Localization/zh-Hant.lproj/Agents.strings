@@ -1,8 +1,6 @@
 /* Cocaine — zh-Hant: AI sessions (going back to them, requests answered from the notch) */
 
 "Go to this session" = "前往此工作階段";
-"Answer from the notch" = "在瀏海處回應";
-"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code 與 Codex：在瀏海處允許或拒絕請求（或回答 MCP 問題）。絕不會自動允許：2 分鐘內沒有回應，終端機會照常詢問。";
 "asks you a question" = "向你提問";
 "needs your approval" = "需要你的核准";
 "That request was no longer waiting: answer it in the terminal." = "該請求已不再等待：請在終端機中回應。";

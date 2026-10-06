@@ -4,7 +4,7 @@
 "%d items" = "%d elementi";
 "1 day" = "1 giorno";
 "1 week" = "1 settimana";
-"A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept." = "Un'espressione regolare, es. ^IBAN o \\briservato\\b. Il testo che corrisponde non viene tenuto.";
+"A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept." = "Un’espressione regolare, es. ^IBAN o \\briservato\\b. Il testo che corrisponde non viene tenuto.";
 "Add to favorites" = "Aggiungi ai preferiti";
 "Add" = "Aggiungi";
 "Add…" = "Aggiungi…";
@@ -50,7 +50,7 @@
 "Stop saving the clipboard history?" = "Smettere di salvare la cronologia degli appunti?";
 "Text matching one of these regular expressions isn't kept" = "Il testo che corrisponde a una di queste espressioni regolari non viene tenuto";
 "That isn't a valid pattern" = "Non è un modello valido";
-"The file is no longer there" = "Il file non c'è più";
+"The file is no longer there" = "Il file non c’è più";
 "The saved copy can be deleted now, with its Keychain key, or kept encrypted on this Mac for the next time you turn this on." = "La copia salvata si può eliminare ora, con la sua chiave nel Portachiavi, oppure tenere cifrata su questo Mac per la prossima volta che lo attivi.";
 "%d saved items couldn't be read." = "%d elementi salvati non si sono potuti leggere.";
 "Can't use the Keychain (%@): the history stays in memory only." = "Impossibile usare il Portachiavi (%@): la cronologia resta solo in memoria.";

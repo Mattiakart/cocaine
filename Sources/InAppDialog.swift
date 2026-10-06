@@ -106,6 +106,8 @@ final class DialogCenter: ObservableObject {
     @Published var choice: String?
     @Published private(set) var problem: String?       // the text field's validation message, after a press
     @Published var hovered: String?                     // the choice row under the pointer
+    /// The card's height as last laid out: the panel grows to at least that (its card is drawn over it, not inside it).
+    @Published var cardHeight: CGFloat = 0
     private(set) var queue: [Request] = []
     private var finishing = false
 
@@ -254,12 +256,12 @@ struct InAppDialogCard: View {
     private func card(_ s: DialogSpec) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: s.icon).font(style.icon).foregroundStyle(s.critical ? style.warning : style.accent).frame(width: 16)
+                Image(systemName: s.icon).font(style.icon).foregroundStyle(s.critical ? style.warning : style.accent).frame(width: UI.iconColumn)
                 Text(s.title).font(style.title).fixedSize(horizontal: false, vertical: true)
             }
             .frame(minHeight: 22)
             if let m = s.message, !m.isEmpty {
-                Text(m).font(style.body).foregroundStyle(Color.white.opacity(0.75)).fixedSize(horizontal: false, vertical: true)
+                Text(m).font(style.body).foregroundStyle(UI.secondary).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
             if let f = s.field {
@@ -284,7 +286,7 @@ struct InAppDialogCard: View {
 
     private func choices(_ s: DialogSpec) -> some View {
         let cols = s.choiceMode == .act && s.choices.count > 3 ? [GridItem(.flexible(), spacing: 6), GridItem(.flexible())] : [GridItem(.flexible())]
-        return LazyVGrid(columns: cols, alignment: .leading, spacing: 4) {
+        return LazyVGrid(columns: cols, alignment: .leading, spacing: Space.s) {         // the same gap both ways
             ForEach(s.choices) { c in
                 let picked = s.choiceMode == .pick && center.choice == c.id
                 Button { center.tapChoice(c.id) } label: {

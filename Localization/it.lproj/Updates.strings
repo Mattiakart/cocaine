@@ -22,14 +22,14 @@
 "Downloading… %d%%" = "Download… %d%%";
 "Verifying and installing…" = "Verifica e installazione…";
 "You're offline." = "Sei offline.";
-"Not enough disk space for the update." = "Spazio su disco insufficiente per l'aggiornamento.";
+"Not enough disk space for the update." = "Spazio su disco insufficiente per l’aggiornamento.";
 "The download didn't match the signed release and was deleted." = "Il download non corrispondeva alla release firmata ed è stato eliminato.";
 "Refused a download from outside GitHub." = "Rifiutato un download non proveniente da GitHub.";
 "Couldn't reach GitHub. Try again later." = "Impossibile raggiungere GitHub. Riprova più tardi.";
 "The new version failed the authenticity check. Nothing was installed." = "La nuova versione non ha superato la verifica di autenticità. Non è stato installato nulla.";
 "The release on GitHub isn't usable for an update." = "La release su GitHub non è utilizzabile per un aggiornamento.";
-"Cocaine can't write to its folder. Download the update from GitHub." = "Cocaine non può scrivere nella sua cartella. Scarica l'aggiornamento da GitHub.";
-"The update couldn't be installed. Nothing was changed." = "Impossibile installare l'aggiornamento. Non è stato modificato nulla.";
+"Cocaine can't write to its folder. Download the update from GitHub." = "Cocaine non può scrivere nella sua cartella. Scarica l’aggiornamento da GitHub.";
+"The update couldn't be installed. Nothing was changed." = "Impossibile installare l’aggiornamento. Non è stato modificato nulla.";
 "This copy's signature can't be read." = "Impossibile leggere la firma di questa copia.";
 "Installed. Quit and reopen Cocaine to start the new version." = "Installato. Esci e riapri Cocaine per avviare la nuova versione.";
 "Signature: missing or damaged. Reinstall Cocaine." = "Firma: assente o danneggiata. Reinstalla Cocaine.";

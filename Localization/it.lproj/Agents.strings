@@ -1,18 +1,16 @@
 /* Cocaine — it: AI sessions (going back to them, requests answered from the notch) */
 
 "Go to this session" = "Vai a questa sessione";
-"Answer from the notch" = "Rispondi dal notch";
-"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code e Codex: consenti o nega una richiesta (o rispondi a una domanda MCP) dal notch. Nulla viene mai consentito da solo: senza risposta entro 2 minuti chiede il terminale, come sempre.";
 "asks you a question" = "ti fa una domanda";
 "needs your approval" = "chiede la tua approvazione";
 "That request was no longer waiting: answer it in the terminal." = "Quella richiesta non era più in attesa: rispondi nel terminale.";
 "That request had expired: the terminal asks for it now." = "Quella richiesta era scaduta: ora la chiede il terminale.";
 "Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine non sa dove gira questa sessione (un hook vecchio, o uno script): cercala nel terminale.";
-"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Aperto il progetto in %@ (il suo pannello terminale non si può selezionare dall'esterno).";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Aperto il progetto in %@ (il suo pannello terminale non si può selezionare dall’esterno).";
 "Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "%@ portato in primo piano. Per selezionare la scheda esatta, consenti a Cocaine di controllare %@ in Privacy e sicurezza → Automazione.";
-"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ portato in primo piano, ma non la scheda esatta (è stata chiusa, o %@ non si può pilotare dall'esterno).";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ portato in primo piano, ma non la scheda esatta (è stata chiusa, o %@ non si può pilotare dall’esterno).";
 "%@ isn't open any more: opened the session's folder in Finder." = "%@ non è più aperto: aperta nel Finder la cartella della sessione.";
-"The app this session ran in isn't open, and its folder is gone." = "L'app in cui girava questa sessione non è aperta e la sua cartella non c'è più.";
+"The app this session ran in isn't open, and its folder is gone." = "L’app in cui girava questa sessione non è aperta e la sua cartella non c’è più.";
 "From before Cocaine restarted: not heard from since" = "Di prima del riavvio di Cocaine: nessuna notizia da allora";
 "Deny" = "Nega";
 "Decline" = "Rifiuta";

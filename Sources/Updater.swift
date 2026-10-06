@@ -227,6 +227,7 @@ final class Updater: ObservableObject {
     private static func relative(_ d: Date) -> String {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
+        f.locale = appLocale()                       // the app's language, not the Mac's ("8 h fa" in an English panel)
         return f.localizedString(for: d, relativeTo: Date())
     }
 

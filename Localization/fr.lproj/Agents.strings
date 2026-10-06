@@ -1,19 +1,17 @@
 /* Cocaine — fr: AI sessions (going back to them, requests answered from the notch) */
 
 "Go to this session" = "Aller à cette session";
-"Answer from the notch" = "Répondre depuis l'encoche";
-"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the notch. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code et Codex : autorisez ou refusez une demande (ou répondez à une question MCP) depuis l'encoche. Rien n'est jamais autorisé tout seul : sans réponse en 2 minutes, le terminal demande comme d'habitude.";
 "asks you a question" = "vous pose une question";
 "needs your approval" = "demande votre accord";
-"That request was no longer waiting: answer it in the terminal." = "Cette demande n'attendait plus : répondez-y dans le terminal.";
+"That request was no longer waiting: answer it in the terminal." = "Cette demande n’attendait plus : répondez-y dans le terminal.";
 "That request had expired: the terminal asks for it now." = "Cette demande avait expiré : le terminal la pose maintenant.";
 "Cocaine doesn't know where this session runs (an older hook, or a script): look for it in your terminal." = "Cocaine ne sait pas où tourne cette session (un ancien hook, ou un script) : cherchez-la dans votre terminal.";
-"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Projet ouvert dans %@ (son panneau de terminal ne peut pas être sélectionné de l'extérieur).";
-"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "%@ mis au premier plan. Pour sélectionner l'onglet exact, autorisez Cocaine à contrôler %@ dans Confidentialité et sécurité → Automatisation.";
-"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ mis au premier plan, mais pas l'onglet exact (il a été fermé, ou %@ ne peut pas être piloté de l'extérieur).";
-"%@ isn't open any more: opened the session's folder in Finder." = "%@ n'est plus ouvert : dossier de la session ouvert dans le Finder.";
-"The app this session ran in isn't open, and its folder is gone." = "L'app où tournait cette session n'est pas ouverte, et son dossier n'existe plus.";
-"From before Cocaine restarted: not heard from since" = "D'avant le redémarrage de Cocaine : aucune nouvelle depuis";
+"Opened the project in %@ (its terminal panel can't be selected from outside)." = "Projet ouvert dans %@ (son panneau de terminal ne peut pas être sélectionné de l’extérieur).";
+"Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation." = "%@ mis au premier plan. Pour sélectionner l’onglet exact, autorisez Cocaine à contrôler %@ dans Confidentialité et sécurité → Automatisation.";
+"Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)." = "%@ mis au premier plan, mais pas l’onglet exact (il a été fermé, ou %@ ne peut pas être piloté de l’extérieur).";
+"%@ isn't open any more: opened the session's folder in Finder." = "%@ n’est plus ouvert : dossier de la session ouvert dans le Finder.";
+"The app this session ran in isn't open, and its folder is gone." = "L’app où tournait cette session n’est pas ouverte, et son dossier n’existe plus.";
+"From before Cocaine restarted: not heard from since" = "D’avant le redémarrage de Cocaine : aucune nouvelle depuis";
 "Deny" = "Refuser";
 "Decline" = "Décliner";
 "Yes" = "Oui";

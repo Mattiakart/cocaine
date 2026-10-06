@@ -1,5 +1,5 @@
 // Every AI session (not just the first few), the ones that need you first, in a list that scrolls; requests that can be
-// answered from here on top, with their buttons. Used by the island (dark) and by the panel.
+// answered from here on top, with their buttons. Used by the island (dark) and by the panel, in the same type scale.
 
 import SwiftUI
 
@@ -7,7 +7,7 @@ struct AgentListView: View {
     let entries: [AgentEntry]
     let approvals: [ApprovalRequest]
     let notice: String?
-    let island: Bool                       // white on black, the island's sizes
+    let island: Bool                       // fills the island's column; in the panel it hugs its rows up to maxHeight
     let accent: Color
     let warning: Color
     let maxHeight: CGFloat
@@ -15,9 +15,8 @@ struct AgentListView: View {
     let answer: (String, Int) -> Void
     let release: (String) -> Void
 
-    private var secondary: Color { island ? .white.opacity(0.55) : .secondary }
-    private var titleFont: Font { .system(size: island ? 13 : 12, weight: .medium) }
-    private var detailFont: Font { .system(size: 11) }
+    /// Every row's inner inset, the request cards' too, so icons and names sit on one column.
+    static let inset: CGFloat = 6
 
     /// The sessions shown as plain rows: not those whose request is on top already.
     var rows: [AgentEntry] {
@@ -26,46 +25,43 @@ struct AgentListView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(alignment: .leading, spacing: island ? 8 : 6) {
+        FadingScroll(cap: maxHeight.isFinite ? maxHeight : nil) {
+            LazyVStack(alignment: .leading, spacing: Space.s) {
                 if let notice {
-                    Label(notice, systemImage: "info.circle").font(detailFont).foregroundStyle(island ? Color.white.opacity(0.8) : Color.primary)
+                    Label(notice, systemImage: "info.circle").font(UI.detail).foregroundStyle(UI.primary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, Self.inset)
                 }
                 ForEach(approvals) { r in approvalRow(r) }
                 ForEach(rows) { e in sessionRow(e) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: maxHeight)
     }
 
     static func icon(_ s: String) -> String {
-        ["working": "gearshape.fill", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
+        ["working": "sparkles", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
     }
     static func name(_ s: String) -> String {
-        ["working": agentsL("Working"), "waiting": agentsL("Needs you"), "done": agentsL("Done"), "error": agentsL("Error")][s] ?? s
+        ["working": agentsL("Working"), "waiting": agentsL("Waiting for you"), "done": agentsL("Done"), "error": agentsL("Error")][s] ?? s
     }
-    static func age(_ since: Double, now: Date = Date()) -> String {
-        let s = max(0, Int(now.timeIntervalSince1970 - since))
-        return s < 60 ? agentsL("now") : s < 3600 ? "\(s / 60)m" : "\(s / 3600)h"
-    }
+    static func age(_ since: Double, now: Date = Date()) -> String { Dur.ago(seconds: Int(now.timeIntervalSince1970 - since)) }
     private func color(_ s: String) -> Color { s == "error" || s == "waiting" ? warning : s == "done" ? .green : accent }
 
     private func sessionRow(_ e: AgentEntry) -> some View {
         Button { focus(e.origin, e.from) } label: {
-            HStack(spacing: 9) {
-                Image(systemName: Self.icon(e.state)).font(.system(size: 12, weight: .medium)).foregroundStyle(color(e.state)).frame(width: 16)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(e.from).font(titleFont).lineLimit(1)
+            HStack(spacing: Space.m) {
+                Image(systemName: Self.icon(e.state)).font(UI.icon).foregroundStyle(color(e.state)).frame(width: UI.iconColumn)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(e.from).font(UI.itemTitle).lineLimit(1)
                     Text([Self.name(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
-                        .font(detailFont).foregroundStyle(secondary).lineLimit(1)
+                        .font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
                 }
-                Spacer(minLength: 4)
+                Spacer(minLength: Space.xs)
                 Text(e.restored == true ? "↺ " + Self.age(e.since) : Self.age(e.since))
-                    .font(detailFont.monospacedDigit()).foregroundStyle(secondary).fixedSize()
+                    .font(UI.detail.monospacedDigit()).foregroundStyle(UI.secondary).fixedSize()
                     .help(e.restored == true ? agentsL("From before Cocaine restarted: not heard from since") : "")
             }
+            .padding(.horizontal, Self.inset)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -78,16 +74,16 @@ struct AgentListView: View {
     }
 
     private func approvalRow(_ r: ApprovalRequest) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Button { focus(r.origin, r.from) } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 12, weight: .medium)).foregroundStyle(warning).frame(width: 16)
+                HStack(alignment: .top, spacing: Space.m) {
+                    Image(systemName: "hand.raised.fill").font(UI.icon).foregroundStyle(warning).frame(width: UI.iconColumn)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text([r.from, r.project].compactMap { $0 }.joined(separator: " · ")).font(titleFont).lineLimit(1)
+                        Text([r.from, r.project].compactMap { $0 }.joined(separator: " · ")).font(UI.itemTitle).lineLimit(1)
                         Text(r.event == "Elicitation" ? String(format: agentsL("%@ asks"), r.title) : String(format: agentsL("Wants to use %@"), r.title))
-                            .font(detailFont).foregroundStyle(secondary).lineLimit(1)
+                            .font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
                         if !r.summary.isEmpty {
-                            Text(r.summary).font(.system(size: 11, design: r.event == "Elicitation" ? .default : .monospaced))
+                            Text(r.summary).font(r.event == "Elicitation" ? UI.detail : UI.mono)
                                 .lineLimit(r.answerable ? nil : 3).fixedSize(horizontal: false, vertical: true)   // answerable: shown whole
                         }
                     }
@@ -96,19 +92,18 @@ struct AgentListView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help(agentsL("Go to this session"))
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
                 ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
                     Button(choiceLabel(c)) { answer(r.id, i) }
                         .controlSize(.small)
-                        .tint(c.decision == "allow" || c.decision == "accept" ? accent : nil)
                         .accessibilityLabel("\(choiceLabel(c)): \(r.title)")
                 }
                 Button(agentsL("In the terminal")) { release(r.id); focus(r.origin, r.from) }
                     .controlSize(.small).help(agentsL("Hands the request back to the terminal and goes there"))
             }
-            .padding(.leading, 25)
+            .padding(.leading, UI.iconColumn + Space.m)
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(island ? Color.white.opacity(0.08) : Color.primary.opacity(0.05)))
+        .padding(Self.inset)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
     }
 }

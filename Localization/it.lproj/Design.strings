@@ -1,0 +1,18 @@
+/* Cocaine — it: the design pass (panel strip, island wording, accessibility labels) */
+
+"Quit Cocaine" = "Esci da Cocaine";
+"Write…" = "Scrivi…";
+"Waiting for you" = "Ti aspetta";
+"Answer from the island" = "Rispondi dall’isola";
+"Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual." = "Claude Code e Codex: consenti o nega una richiesta (o rispondi a una domanda MCP) dall’isola. Nulla viene mai consentito da solo: senza risposta entro 2 minuti chiede il terminale, come sempre.";
+"Paired: %d" = "Abbinati: %d";
+"Revoke every paired iPhone?" = "Revocare tutti gli iPhone abbinati?";
+"Revoke…" = "Revoca…";
+"Send…" = "Invia…";
+"%d AI at work" = "%d AI al lavoro";
+"On" = "Acceso";
+"Shuffle" = "Casuale";
+"Previous track" = "Brano precedente";
+"Next track" = "Brano successivo";
+"Play" = "Riproduci";
+"Position" = "Posizione";

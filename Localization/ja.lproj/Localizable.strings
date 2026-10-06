@@ -138,11 +138,9 @@
 "Also start and steer AI agents" = "AI エージェントの起動と操作も許可";
 "Connected" = "接続済み";
 "Connecting…" = "接続中…";
-"paired" = "ペアリング済み";
 "Not set up: send it a Shortcut" = "未設定：ショートカットを送ってください";
 "Pair an iPhone" = "iPhone をペアリング";
 "The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices." = "このショートカットには、持っている人が選んだレベルでこの Mac を操作できる秘密が含まれます。自分のデバイスにだけ送ってください。";
-"Remove every paired iPhone?" = "ペアリング済みの iPhone をすべて削除しますか？";
 "They stop working until you send a new Shortcut." = "新しいショートカットを送るまで動作しなくなります。";
 "Last reply" = "最後の返信";
 "Command (for example: start claude my-project Fix the tests)" = "コマンド（例：start claude my-project Fix the tests）";
