@@ -1,6 +1,6 @@
 ### Screen off, Mac awake
 
-General → *Dim the screen when idle* → **Turn the screen off instead**: while Cocaine is on, after the chosen idle time the
+General → *When idle* → **Screen off**: while Cocaine is on, after the chosen idle time the
 displays (built-in and external) are turned off instead of dimmed (`pmset displaysleepnow`, no admin rights). The Mac keeps
 running: downloads, builds and AI agents go on. **Now** turns them off at once. Any key, click or trackpad touch lights them again.
 
@@ -13,9 +13,9 @@ running: downloads, builds and AI agents go on. **Now** turns them off at once. 
 - **Heat and battery:** with the lid closed, on battery, if macOS reports a *serious* or *critical* thermal state (a Mac in a
   bag), Cocaine turns itself off so the Mac can sleep, and tells you. The Battery Guard works as before and also stops every
   Smart Trigger from turning Cocaine back on until the battery recovers or the charger is connected.
-- **Stay active:** in this mode it no longer holds the display awake and never sends its invisible mouse event to a sleeping
+- **Stay available:** in this mode it no longer holds the display awake and never sends its invisible mouse event to a sleeping
   display (that would light it up), so chat apps may show you as away while the screens are off. Dimming and screen-off now
-  count from your last real input, ignoring Stay active's own events (before, with Stay active on, a 1-minute dim never fired).
+  count from your last real input, ignoring Stay available’s own events (before, with it on, a 1-minute dim never fired).
 - **Alerts** (AI alerts with *Flash* on) still wake the displays on purpose.
 - **Limits:** AirPlay, Sidecar and some DisplayLink displays may not honour display sleep. Some monitors show "no signal"
   before going to standby.
@@ -24,7 +24,7 @@ running: downloads, builds and AI agents go on. **Now** turns them off at once. 
 
 Automation → Smart Triggers, next to *An AI is at work* and *These programs are open*:
 
-- **Power:** *On the charger*, or *On battery* while the charge is above a level (10–50 %). A Mac without a battery counts
+- **Power:** *On the charger*, or *On battery* while the charge is above Battery Guard’s level (10 % with the guard off: one battery level for both). A Mac without a battery counts
   as on the charger.
 - **External display:** *Connected* or *Not connected* (asleep displays count; AirPlay/Sidecar count as external).
 - **Schedule:** days of the week and a start/end time on the local wall clock. An end at or before the start runs past
@@ -55,7 +55,7 @@ Shortcuts does not list the actions. So Cocaine offers two supported ways instea
 | `cocaine://x-callback-url/status?x-success=…` | answers `state` (on/off), `until` (ISO 8601), `remaining_minutes`, `screen_off_mode`, `trigger_active` |
 
 Any app or web page can open a link, so links that change something work only after you allow it: the first time Cocaine
-asks (*Allow* / *Don't Allow*; after *Don't Allow* links are ignored for 10 minutes), or turn on Automation → Shortcuts →
+asks (*Allow* / *Don't Allow*; after *Don't Allow* links are ignored for 10 minutes), or turn on General →
 **Shortcuts app and links**. Answers are sent only to `shortcuts://` callbacks. Bad values (`minutes=0`, `abc`, over 1440)
 are refused, not guessed. A link that starts Cocaine doesn't turn it on by itself first; `status` alone starts it, answers
 and quits.

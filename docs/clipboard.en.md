@@ -20,7 +20,7 @@ exclude in Settings; and, unless you turn it off, text that looks like a card nu
 These checks are heuristics: they catch common cases, not every secret.
 
 **Memory only by default.** The history lives in memory and is gone when Cocaine quits or the island is turned off.
-In Settings → Cocaine → Clipboard you can turn on **Save on this Mac**: the history is then stored in
+In Settings → Island → Clipboard (the Island tab shows while the island is on) you can turn on **Save on this Mac**: the history is then stored in
 `~/Library/Application Support/Cocaine/clipboard`, encrypted (AES-GCM) with a random key kept in your login Keychain
 (this Mac only, never synced), files readable only by you. If the Keychain can't be used, nothing is saved and the page
 says so. Turning it off asks whether to delete the saved copy (with its key) or keep it encrypted for later.

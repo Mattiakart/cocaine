@@ -151,9 +151,10 @@ opens, with these pages:
   Apple silicon only; not every monitor supports it, and it can't read values back.
 
 Plugging the charger in or out is announced too. The island replaces the menu-bar icon: the bag of Cocaine, always on its left, fills and empties as the icon did (white powder: Cocaine is on;
-pink powder: Cocaine is off but *Stay active* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
-lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; *Cocaine → Haptic feedback* turns it off). The gear opens the settings panel; *Cocaine → Island* turns it off. It hides during full-screen video and games. With *Cocaine →
-Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
+pink powder: Cocaine is off but *Stay available* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
+lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; General → *Haptic feedback* turns it off; with Reduce Motion on in
+macOS's Accessibility settings it appears and goes without the morph, and alerts tint the screen once instead of flashing). The gear opens the settings panel;
+General → *Show in the notch* turns it off. It hides during full-screen video and games. With Island → *Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
 returns as soon as you turn the option off or quit Cocaine; if Cocaine crashes or is killed, a small watchdog gives it back within a
 couple of seconds ([details](docs/recovery.en.md)). Silencing it needs no permission, but for Cocaine to handle the volume and
 brightness *keys* itself (fine steps with ⌥⇧) it needs the **Accessibility** permission, which it asks for when you turn the option
@@ -242,24 +243,31 @@ Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app need
 tools produce, and the app is built with the Command Line Tools. Instead: links (`cocaine://on?minutes=90`, `off`, `toggle`, `timer`,
 `status` with an x-callback answer; also `pause`, `resume`, `panel`) and the bundled command (`cocaine on 90m`, `off`,
 `status --json`, usable from *Run Shell Script*). Links that change something work only after you allow it (a one-time question, or
-Automation → Shortcuts → *Shortcuts app and links*), because any app or web page can open a link. See
+General → *Shortcuts app and links*), because any app or web page can open a link. See
 [Power and triggers](docs/power-and-triggers.en.md).
 
 ### Automation
 
-**Stay active** (Automation tab): Teams, Slack, Zoom and similar apps mark you "Away" from the Mac's idle time. While you are
+**Stay available** (Automation tab): Teams, Slack, Zoom and similar apps mark you "Away" from the Mac's idle time. While you are
 idle, with one of the chosen apps open (or always), Cocaine sends an invisible mouse event now and then, which restarts that
 clock, and keeps the display awake. It needs the Accessibility permission; check that your workplace allows it.
 
-The panel has three tabs: *General* (the **Timer** right under the switch: ∞, 30 minutes … 8 hours, or any length you set in steps of 15 minutes up to 24 hours, then it turns off; plus dimming and the agents at work), *AI alerts* and *Automation*: **Battery Guard** (on battery, at
-10–30 % turn Cocaine off or just warn), **Smart Triggers** (on while an AI works or waits for you, while chosen programs
-run, on the charger or on battery, with an external display connected or not, or in a weekly time window; any or all must hold;
-off again after a short grace period; turning it off by hand wins), and **Shortcuts** (⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts).
+The panel's tabs sit left and right of the notch: *General* (the **Timer**: ∞, 30 minutes … 8 hours, or any length you set in
+steps of 15 minutes up to 24 hours, then it turns off; picking a length while Cocaine is off turns it on for that long; **When idle**:
+nothing, dim or screen off; **Battery Guard**: on battery, at 10–30 % turn Cocaine off or just warn; the Cocaine card with login,
+updates, language, *Show in the notch*, haptics, global shortcuts ⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts, and *Shortcuts app
+and links*), *AI alerts* (the agents at work or the latest alerts, then the AIs, when and how), *Automation* (**Smart Triggers**: on
+while an AI works or waits for you, while chosen programs run, on the charger or on battery down to Battery Guard's level, with an
+external display connected or not, or in a weekly time window; any or all must hold; off again after a short grace period; turning
+it off by hand wins; the header says which one turned Cocaine on, and a green dot marks the ones true now; then *Stay available* and
+*Remote work*) and, while the island is on, *Island* (*Replace system HUD* and the clipboard's settings). Lists open as a card under
+their row inside the panel, never as a menu under the notch.
 
-**Screen off, Mac awake** (General → dimming → *Turn the screen off instead*): the displays go fully off after the idle time while
+**Screen off, Mac awake** (General → *When idle* → **Screen off**): the displays go fully off after the idle time while
+
 the Mac keeps running. Nothing is bypassed: the lock follows *System Settings → Lock Screen* (in this mode the display is no longer
 held awake, so macOS may also turn it off sooner). With the lid closed and on battery, if macOS reports a serious thermal state,
-Cocaine turns itself off. *Stay active* pauses while the screens are off, AirPlay/Sidecar/DisplayLink screens may ignore display
+Cocaine turns itself off. *Stay available* pauses while the screens are off, AirPlay/Sidecar/DisplayLink screens may ignore display
 sleep, and external-monitor and clamshell behaviour is documented but was not tested on real hardware. See
 [Power and triggers](docs/power-and-triggers.en.md).
 

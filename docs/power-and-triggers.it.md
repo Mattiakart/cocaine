@@ -1,6 +1,6 @@
 ### Schermo spento, Mac sveglio
 
-Generale → *Abbassa la luminosità se inattivo* → **Spegni lo schermo invece**: con Cocaine attivo, dopo il tempo di inattività
+Generale → *Quando sei inattivo* → **Spegni**: con Cocaine attivo, dopo il tempo di inattività
 scelto gli schermi (integrato ed esterni) si spengono invece di abbassarsi (`pmset displaysleepnow`, senza password di
 amministratore). Il Mac continua a lavorare: download, compilazioni e agenti AI vanno avanti. **Ora** li spegne subito. Un
 tasto, un clic o un tocco sul trackpad li riaccende.
@@ -15,9 +15,9 @@ tasto, un clic o un tocco sul trackpad li riaccende.
 - **Calore e batteria:** a coperchio chiuso, a batteria, se macOS segnala uno stato termico *serio* o *critico* (Mac in
   borsa), Cocaine si disattiva per lasciare dormire il Mac e te lo dice. La Protezione batteria funziona come prima e impedisce
   anche all'Attivazione automatica di riattivare Cocaine finché la batteria non si riprende o non colleghi il caricatore.
-- **Resta attivo:** in questa modalità non tiene più acceso lo schermo e non manda mai il suo evento di mouse invisibile a uno
+- **Resta disponibile:** in questa modalità non tiene più acceso lo schermo e non manda mai il suo evento di mouse invisibile a uno
   schermo spento (lo riaccenderebbe), quindi le app di chat possono mostrarti assente a schermi spenti. Abbassamento e
-  spegnimento contano dall'ultimo input reale, ignorando gli eventi di Resta attivo (prima, con Resta attivo acceso, un
+  spegnimento contano dall'ultimo input reale, ignorando gli eventi di Resta disponibile (prima, con Resta disponibile acceso, un
   abbassamento dopo 1 minuto non scattava mai).
 - **Avvisi** (Avvisi AI con *Lampeggio*) riaccendono comunque gli schermi, di proposito.
 - **Limiti:** schermi AirPlay, Sidecar e alcuni DisplayLink possono non rispettare lo spegnimento. Alcuni monitor mostrano
@@ -27,7 +27,7 @@ tasto, un clic o un tocco sul trackpad li riaccende.
 
 Automazioni → Attivazione automatica, accanto a *Un'AI è al lavoro* e *Questi programmi sono aperti*:
 
-- **Alimentazione:** *In carica*, oppure *A batteria* finché la carica è sopra un livello (10–50 %). Un Mac senza batteria
+- **Alimentazione:** *In carica*, oppure *A batteria* finché la carica è sopra il livello della Protezione batteria (10 % se è spenta: un solo livello per entrambe). Un Mac senza batteria
   conta come in carica.
 - **Monitor esterno:** *Connesso* o *Non collegato* (contano anche i monitor in stop; AirPlay/Sidecar contano come esterni).
 - **Orari:** giorni della settimana e ora di inizio/fine sull'orologio locale. Una fine uguale o precedente all'inizio passa la
@@ -59,7 +59,7 @@ Tools e senza di esso Comandi Rapidi non mostra le azioni. Cocaine offre quindi 
 
 Qualsiasi app o pagina web può aprire un link, quindi i link che cambiano qualcosa funzionano solo dopo il tuo consenso: la
 prima volta Cocaine chiede (*Consenti* / *Non consentire*; dopo *Non consentire* i link vengono ignorati per 10 minuti), oppure
-attiva Automazioni → Scorciatoie → **App Comandi Rapidi e link**. Le risposte vanno solo a callback `shortcuts://`. Valori
+attiva Generale → **App Comandi Rapidi e link**. Le risposte vanno solo a callback `shortcuts://`. Valori
 errati (`minutes=0`, `abc`, oltre 1440) sono rifiutati, non indovinati. Un link che avvia Cocaine non lo attiva da sé prima;
 `status` da solo lo avvia, risponde ed esce.
 

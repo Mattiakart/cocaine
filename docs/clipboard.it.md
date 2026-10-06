@@ -23,7 +23,7 @@ lunghe e casuali). Puoi aggiungere espressioni regolari tue. Sono controlli euri
 segreto.
 
 **Solo in memoria, di base.** La cronologia sta in memoria e sparisce quando esci da Cocaine o spegni l'isola.
-In Impostazioni → Cocaine → Appunti puoi attivare **Salva su questo Mac**: la cronologia viene allora tenuta in
+In Impostazioni → Isola → Appunti (la scheda Isola c’è quando l’isola è attiva) puoi attivare **Salva su questo Mac**: la cronologia viene allora tenuta in
 `~/Library/Application Support/Cocaine/clipboard`, cifrata (AES-GCM) con una chiave casuale nel tuo Portachiavi di login
 (solo questo Mac, mai sincronizzata), file leggibili solo da te. Se il Portachiavi non si può usare, non viene salvato
 nulla e la pagina lo dice. Disattivandolo ti chiede se eliminare la copia salvata (con la sua chiave) o tenerla cifrata

@@ -152,10 +152,11 @@ o ci clicchi e si apre, con queste pagine:
   silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
 
 Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu: la busta di Cocaine, sempre a sinistra, si riempie e si svuota come faceva l'icona (polvere
-bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta attivo* è acceso, con o senza app di chat aperte). Se disattivi l'isola, l'icona torna. Si apre e si chiude
-seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; *Cocaine → Feedback aptico* lo disattiva). L'ingranaggio apre il pannello delle impostazioni; *Cocaine → Isola* la disattiva. Si nasconde durante video a schermo intero e
-giochi. Con *Cocaine →
-Sostituisci l'HUD di sistema* attivo, volume e luminosità compaiono solo nell'isola: l'HUD di macOS viene zittito (il suo processo di supporto resta
+bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta disponibile* è acceso, con o senza app di chat aperte). Se disattivi l'isola, l'icona torna. Si apre e si chiude
+seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; Generale → *Feedback aptico* lo disattiva; con Riduci
+movimento attivo nelle impostazioni Accessibilità di macOS compare e scompare senza animazione, e gli avvisi tingono lo schermo una volta invece di
+lampeggiare). L'ingranaggio apre il pannello delle impostazioni; Generale → *Mostra nel notch* la disattiva. Si nasconde durante video a schermo intero e
+giochi. Con Isola → *Sostituisci l'HUD di sistema* attivo, volume e luminosità compaiono solo nell'isola: l'HUD di macOS viene zittito (il suo processo di supporto resta
 congelato) e torna appena disattivi l'opzione o chiudi Cocaine; se Cocaine va in crash o viene terminato, un piccolo watchdog lo
 restituisce in un paio di secondi ([dettagli](docs/recovery.it.md)). Zittirlo non richiede permessi, ma perché Cocaine gestisca da
 sé i *tasti* di volume e luminosità (passi fini con ⌥⇧) serve il permesso **Accessibilità**, che chiede quando attivi l'opzione.
@@ -248,25 +249,32 @@ a un'app Wake-on-LAN, da usare sulla rete di casa.)
 produce solo la toolchain di Xcode, mentre l'app è compilata con i Command Line Tools. Al loro posto: i link (`cocaine://on?minutes=90`,
 `off`, `toggle`, `timer`, `status` con risposta x-callback; anche `pause`, `resume`, `panel`) e il comando incluso (`cocaine on 90m`,
 `off`, `status --json`, usabile da *Esegui script shell*). I link che cambiano qualcosa funzionano solo dopo il tuo consenso (una
-domanda la prima volta, oppure Automazioni → Scorciatoie → *App Comandi Rapidi e link*), perché qualsiasi app o pagina web può
+domanda la prima volta, oppure Generale → *App Comandi Rapidi e link*), perché qualsiasi app o pagina web può
 aprire un link. Vedi [Alimentazione e trigger](docs/power-and-triggers.it.md).
 
 ### Automazioni
 
-**Resta attivo** (scheda Automazioni): Teams, Slack, Zoom e app simili ti segnano "Assente" in base all'inattività del Mac. Mentre
+**Resta disponibile** (scheda Automazioni): Teams, Slack, Zoom e app simili ti segnano "Assente" in base all'inattività del Mac. Mentre
 sei inattivo, con una delle app scelte aperta (o sempre), Cocaine invia ogni tanto un evento di mouse invisibile, che riavvia
 quell'orologio, e tiene lo schermo acceso. Serve il permesso Accessibilità; verifica che nel tuo lavoro sia consentito.
 
-Il pannello ha tre schede: *Generale* (il **Timer** subito sotto l'interruttore: ∞, da 30 minuti a 8 ore, o qualsiasi durata a passi di 15 minuti fino a 24 ore, poi si spegne; più luminosità e agent al lavoro), *Avvisi AI* e *Automazioni*: **Protezione batteria** (a batteria,
-al 10–30 % spegne Cocaine o ti avvisa soltanto), **Attivazione automatica** (attivo mentre un'AI lavora o aspetta te, mentre girano i
-programmi scelti, con il caricatore o a batteria, con un monitor esterno collegato o no, o in una fascia oraria settimanale; vale
-"uno qualsiasi" o "tutti"; si spegne dopo un breve periodo di tolleranza; se lo spegni tu a mano, vale la tua scelta) e
-**Scorciatoie** (⌃⌥⌘C attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi).
+Le schede del pannello stanno a sinistra e a destra del notch: *Generale* (il **Timer**: ∞, da 30 minuti a 8 ore, o qualsiasi
+durata a passi di 15 minuti fino a 24 ore, poi si spegne; se scegli una durata a Cocaine spento, si accende per quel tempo;
+**Quando sei inattivo**: niente, abbassa o spegni lo schermo; **Protezione batteria**: a batteria, al 10–30 % spegne Cocaine o ti
+avvisa soltanto; la scheda Cocaine con login, aggiornamenti, lingua, *Mostra nel notch*, feedback aptico, scorciatoie globali ⌃⌥⌘C
+attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi, e *App Comandi Rapidi e link*), *Avvisi AI* (gli agent al lavoro o gli ultimi
+avvisi, poi le AI, quando e come), *Automazioni* (**Attivazione automatica**: attivo mentre un'AI lavora o aspetta te, mentre girano
+i programmi scelti, con il caricatore o a batteria fino al livello della Protezione batteria, con un monitor esterno collegato o no,
+o in una fascia oraria settimanale; vale "uno qualsiasi" o "tutti"; si spegne dopo un breve periodo di tolleranza; se lo spegni tu a
+mano, vale la tua scelta; l'intestazione dice chi ha acceso Cocaine e un punto verde segna le condizioni vere adesso; poi *Resta
+disponibile* e *Lavoro da remoto*) e, con l'isola attiva, *Isola* (*Sostituisci l'HUD di sistema* e le impostazioni degli appunti).
+Gli elenchi si aprono come una scheda sotto la loro riga, dentro il pannello, mai come un menu sotto il notch.
 
-**Schermo spento, Mac sveglio** (Generale → luminosità → *Spegni lo schermo invece*): dopo il tempo di inattività gli schermi si
+**Schermo spento, Mac sveglio** (Generale → *Quando sei inattivo* → **Spegni**): dopo il tempo di inattività gli schermi si
+
 spengono del tutto mentre il Mac continua a lavorare. Niente viene aggirato: il blocco segue *Impostazioni di Sistema → Schermata
 di blocco* (in questa modalità lo schermo non è più tenuto acceso, quindi macOS può spegnerlo anche prima). Con il coperchio
-chiuso e a batteria, se macOS segnala uno stato termico serio, Cocaine si spegne da solo. *Resta attivo* si ferma mentre gli
+chiuso e a batteria, se macOS segnala uno stato termico serio, Cocaine si spegne da solo. *Resta disponibile* si ferma mentre gli
 schermi sono spenti, gli schermi AirPlay/Sidecar/DisplayLink possono ignorare lo spegnimento, e il comportamento con monitor
 esterno e coperchio chiuso è documentato ma non è stato provato su hardware reale. Vedi
 [Alimentazione e trigger](docs/power-and-triggers.it.md).
