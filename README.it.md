@@ -67,7 +67,7 @@ nella barra si ricarica e basta.
 Apri **Avvisi AI** nel pannello. I suoi quattro gruppi mostrano un riassunto in una riga e si aprono uno alla volta:
 **AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando
 sei al Mac, oppure una volta sola per sessione, quando non resta niente in corso, invece che per ogni agent o task che finisce; e
-**Rispondi dal notch**, spento di default), **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
+**Rispondi dall’isola**, spento di default), **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
 mentre sei via, e una prova) e **Pausa** (30 minuti, un'ora o fino a domani). Sotto, separati dalle impostazioni,
 gli **Ultimi avvisi**, con il progetto da cui arrivano.
 
@@ -79,7 +79,7 @@ finestra di VS Code, Cursor o Windsurf con la sua cartella; se non riesce ad arr
 e dice sempre cosa ha fatto. Il terminale integrato di un IDE, JetBrains, Ghostty, kitty e Warp si possono solo portare in primo
 piano come app, e le sessioni avviate prima di questa versione non dicono dove girano.
 
-**Consenti o nega dal notch** (spento di default; Claude Code 2.0.45+ e Codex): le richieste di permesso, e le domande MCP di
+**Consenti o nega dall’isola** (spento di default; Claude Code 2.0.45+ e Codex): le richieste di permesso, e le domande MCP di
 Claude Code con risposte semplici, compaiono con **Consenti** / **Nega** / **Nel terminale**. Usa solo gli hook documentati degli
 strumenti (`PermissionRequest`, `Elicitation`) su un socket privato, con risposte firmate e legate a una sola richiesta. Niente
 viene mai approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in esecuzione o qualsiasi errore, e lo strumento chiede
@@ -123,13 +123,13 @@ chiuso.
 
 ## Feedback e assistenza
 
-La ✉︎ accanto alla versione, nel pannello, apre una mail all'autore con le versioni di Cocaine e di macOS già scritte.
+**Feedback o assistenza → Scrivi…**, nella scheda Cocaine del pannello (Generale), apre una mail all'autore con le versioni di Cocaine e di macOS già scritte.
 Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattiakart/cocaine/issues).
 
 ## Isola
 
 Cocaine vive anche nel notch (o, su uno schermo senza, in una sottile pillola in alto). Chiusa, mostra accanto al notch ciò che
-è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, il microfono in uso, il
+è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, le AI al lavoro (✦ e quante), il microfono in uso, il
 brano in riproduzione e brevi messaggi ("Scaricato", "Screenshot", "Copiato", le barre di volume e luminosità). Ci passi sopra
 o ci clicchi e si apre, con queste pagine:
 
@@ -257,8 +257,8 @@ aprire un link. Vedi [Alimentazione e trigger](docs/power-and-triggers.it.md).
 sei inattivo, con una delle app scelte aperta (o sempre), Cocaine invia ogni tanto un evento di mouse invisibile, che riavvia
 quell'orologio, e tiene lo schermo acceso. Serve il permesso Accessibilità; verifica che nel tuo lavoro sia consentito.
 
-Il pannello ha tre schede: *Generale* (il **Timer** subito sotto l'interruttore: ∞, da 30 minuti a 8 ore, o qualsiasi durata a passi di 15 minuti fino a 24 ore, poi si spegne; più luminosità e agent al lavoro), *Avvisi AI* e *Automazioni*: **Battery Guard** (a batteria,
-al 10–30 % spegne Cocaine o ti avvisa soltanto), **Smart Triggers** (attivo mentre un'AI lavora o aspetta te, mentre girano i
+Il pannello ha tre schede: *Generale* (il **Timer** subito sotto l'interruttore: ∞, da 30 minuti a 8 ore, o qualsiasi durata a passi di 15 minuti fino a 24 ore, poi si spegne; più luminosità e agent al lavoro), *Avvisi AI* e *Automazioni*: **Protezione batteria** (a batteria,
+al 10–30 % spegne Cocaine o ti avvisa soltanto), **Attivazione automatica** (attivo mentre un'AI lavora o aspetta te, mentre girano i
 programmi scelti, con il caricatore o a batteria, con un monitor esterno collegato o no, o in una fascia oraria settimanale; vale
 "uno qualsiasi" o "tutti"; si spegne dopo un breve periodo di tolleranza; se lo spegni tu a mano, vale la tua scelta) e
 **Scorciatoie** (⌃⌥⌘C attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi).

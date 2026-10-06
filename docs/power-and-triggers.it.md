@@ -13,8 +13,8 @@ tasto, un clic o un tocco sul trackpad li riaccende.
 - **Coperchio:** a coperchio chiuso senza monitor esterno lo schermo integrato è già spento; il Mac resta sveglio come sempre
   con Cocaine attivo. Coperchio chiuso con monitor esterno: il monitor esterno si spegne come gli altri.
 - **Calore e batteria:** a coperchio chiuso, a batteria, se macOS segnala uno stato termico *serio* o *critico* (Mac in
-  borsa), Cocaine si disattiva per lasciare dormire il Mac e te lo dice. Il Battery Guard funziona come prima e impedisce
-  anche agli Smart Trigger di riattivare Cocaine finché la batteria non si riprende o non colleghi il caricatore.
+  borsa), Cocaine si disattiva per lasciare dormire il Mac e te lo dice. La Protezione batteria funziona come prima e impedisce
+  anche all'Attivazione automatica di riattivare Cocaine finché la batteria non si riprende o non colleghi il caricatore.
 - **Resta attivo:** in questa modalità non tiene più acceso lo schermo e non manda mai il suo evento di mouse invisibile a uno
   schermo spento (lo riaccenderebbe), quindi le app di chat possono mostrarti assente a schermi spenti. Abbassamento e
   spegnimento contano dall'ultimo input reale, ignorando gli eventi di Resta attivo (prima, con Resta attivo acceso, un
@@ -23,9 +23,9 @@ tasto, un clic o un tocco sul trackpad li riaccende.
 - **Limiti:** schermi AirPlay, Sidecar e alcuni DisplayLink possono non rispettare lo spegnimento. Alcuni monitor mostrano
   "nessun segnale" prima di andare in standby.
 
-### Smart Trigger: alimentazione, monitor esterno, orari
+### Attivazione automatica: alimentazione, monitor esterno, orari
 
-Automazioni → Smart Triggers, accanto a *Un'AI è al lavoro* e *Questi programmi sono aperti*:
+Automazioni → Attivazione automatica, accanto a *Un'AI è al lavoro* e *Questi programmi sono aperti*:
 
 - **Alimentazione:** *In carica*, oppure *A batteria* finché la carica è sopra un livello (10–50 %). Un Mac senza batteria
   conta come in carica.
@@ -37,7 +37,7 @@ Automazioni → Smart Triggers, accanto a *Un'AI è al lavoro* e *Questi program
 
 Cocaine si attiva quando i trigger lo chiedono e si disattiva dopo un margine: 3 minuti per AI e programmi, 30 secondi per
 alimentazione e monitor (un cavo che balla non lo fa scattare), nessuno per gli orari. Precedenza: se lo disattivi tu
-(interruttore, scorciatoia, `cocaine://off`, `cocaine off`, `cocaine remote off`, il timer o il Battery Guard) la scelta vale
+(interruttore, scorciatoia, `cocaine://off`, `cocaine off`, `cocaine remote off`, il timer o la Protezione batteria) la scelta vale
 finché i trigger non cessano; se lo attivi tu, nessun trigger lo spegne. I trigger sono controllati ogni 5 secondi e subito
 dopo un risveglio, un cambio di ora o di fuso, o un cambio di monitor.
 

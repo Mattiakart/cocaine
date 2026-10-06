@@ -2364,7 +2364,7 @@ private struct PanelDialogOverlay: View {
         let on = dialogs.isShowing(on: .panel)
         ZStack(alignment: .top) {
             if on {
-                Color.black.opacity(0.55).contentShape(Rectangle()).onTapGesture { dialogs.cancel() }
+                Color.black.opacity(0.72).contentShape(Rectangle()).onTapGesture { dialogs.cancel() }   // as dim as the old 0.4 × 0.45 page
                 InAppDialogCard(center: dialogs, style: UI.dialog)
                     .background(GeometryReader { r in Color.clear.preference(key: DialogCardHeight.self, value: r.size.height) })
                     .padding(.horizontal, Space.frame)

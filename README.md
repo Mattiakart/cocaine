@@ -67,7 +67,7 @@ the baggie in the menu bar just refills.
 Open **AI alerts** in the panel. Its four groups each show a one-line summary and open one at a time:
 **Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at
 the Mac, or just once per session, when nothing is left running, instead of for every agent or task that finishes; and
-**Answer from the notch**, off by default), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
+**Answer from the island**, off by default), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
 you're away, and a test) and **Pause** (30 minutes, an hour, or until tomorrow). Below them, apart from the settings,
 **Recent alerts** lists the latest ones, with the project each came from.
 
@@ -79,7 +79,7 @@ or Windsurf window of its folder; when it can't get that far it brings the app f
 you what it did. An IDE's built-in terminal, JetBrains, Ghostty, kitty and Warp can only be brought forward as an app, and
 sessions started before this version don't say where they run.
 
-**Allow or deny from the notch** (off by default; Claude Code 2.0.45+ and Codex): permission requests, and Claude Code's MCP
+**Allow or deny from the island** (off by default; Claude Code 2.0.45+ and Codex): permission requests, and Claude Code's MCP
 questions with simple answers, appear with **Allow** / **Deny** / **In the terminal**. It uses only the tools' documented hooks
 (`PermissionRequest`, `Elicitation`) over a private socket, with answers signed and tied to one request. Nothing is approved on
 its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Claude Code's
@@ -122,13 +122,13 @@ running.
 
 ## Feedback and help
 
-The ✉︎ next to the version in the panel opens an email to the author, with your Cocaine and macOS versions already filled
+**Feedback or help → Write…** in the panel's Cocaine card (General) opens an email to the author, with your Cocaine and macOS versions already filled
 in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattiakart/cocaine/issues).
 
 ## Island
 
 Cocaine also lives in the notch (or, on a screen without one, in a slim pill at the top). Closed, it shows what is live beside
-the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, the microphone in use, the song playing, and
+the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, AIs at work (✦ and how many), the microphone in use, the song playing, and
 short messages ("Downloaded", "Screenshot", "Copied", and the volume and brightness bars). Point at it, or click it, and it
 opens, with these pages:
 
