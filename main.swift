@@ -4853,6 +4853,9 @@ private final class IslandPanel: NSPanel {
     var keyable = false
     override var canBecomeKey: Bool { keyable }
     override var canBecomeMain: Bool { false }
+    /// Clicking a tab or a button never takes the keyboard (that made the next tab change put the window out and in again, a
+    /// visible blink); only a click in the search field does, and a dialog asks for it explicitly with makeKey().
+    override var becomesKeyOnlyIfNeeded: Bool { get { true } set {} }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
 }
 
