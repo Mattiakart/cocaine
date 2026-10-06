@@ -4598,10 +4598,25 @@ private enum Presence {
 // MARK: - The macOS volume and brightness keys, shown in the island instead of macOS's own HUD
 
 /// Intercepts the volume, mute and brightness keys (needs Accessibility), applies them itself and shows the island's bar.
+/// Which media keys the tap swallowed on the way down: only their release may be swallowed too. A key left to macOS (the screen is
+/// dimmed, no built-in display, no volume control) must reach macOS whole, release included; otherwise macOS sees a key that is
+/// pressed forever and repeats it (brightness running up on its own).
+struct MediaKeyTracker {
+    private var swallowed = Set<Int>()
+    /// A press (or auto-repeat): true when it is swallowed.
+    mutating func down(_ key: Int, handled: Bool) -> Bool {
+        if handled { swallowed.insert(key) } else { swallowed.remove(key) }
+        return handled
+    }
+    /// The release: swallowed only if that key's press was.
+    mutating func up(_ key: Int) -> Bool { swallowed.remove(key) != nil }
+}
+
 private final class MediaKeys {
     var onStep: ((Int, Bool) -> Bool)?             // key code, fine step (⌥⇧): return true when it was handled
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
+    private var tracker = MediaKeyTracker()
 
     /// NX_KEYTYPE_*: 0 volume up, 1 volume down, 2 brightness up, 3 brightness down, 7 mute.
     static func decode(data1: Int) -> (key: Int, down: Bool)? {
@@ -4622,9 +4637,9 @@ private final class MediaKeys {
             let me = Unmanaged<MediaKeys>.fromOpaque(refcon).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }; return Unmanaged.passUnretained(event) }
             guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8, let k = MediaKeys.decode(data1: ns.data1) else { return Unmanaged.passUnretained(event) }
-            if !k.down { return me.onStep == nil ? Unmanaged.passUnretained(event) : nil }   // swallow the release of a key we handled
+            if !k.down { return me.tracker.up(k.key) ? nil : Unmanaged.passUnretained(event) }   // swallow the release only of a key we swallowed
             let fine = ns.modifierFlags.contains([.option, .shift])
-            return (me.onStep?(k.key, fine) ?? false) ? nil : Unmanaged.passUnretained(event)
+            return me.tracker.down(k.key, handled: me.onStep?(k.key, fine) ?? false) ? nil : Unmanaged.passUnretained(event)
         }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
         tap = t
         source = CFMachPortCreateRunLoopSource(nil, t, 0)
@@ -7505,6 +7520,17 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" {
     check("hud: volume-up key down is decoded", MediaKeys.decode(data1: (0 << 16) | (0xA << 8))?.down == true)
     check("hud: brightness-down key up is decoded", { let k = MediaKeys.decode(data1: (3 << 16) | (0xB << 8)); return k?.key == 3 && k?.down == false }())
     check("hud: other keys are ignored", MediaKeys.decode(data1: (16 << 16) | (0xA << 8)) == nil)
+    do {   // a key left to macOS must keep its release, or macOS repeats it forever (brightness running up by itself)
+        var t = MediaKeyTracker()
+        check("hud: a key we handled has its release swallowed too", t.down(2, handled: true) && t.up(2))
+        check("hud: …but only once", !t.up(2))
+        check("hud: a key left to macOS keeps its release (not swallowed)", !t.down(2, handled: false) && !t.up(2))
+        check("hud: a release with no press seen is never swallowed", !t.up(3))
+        _ = t.down(2, handled: true)
+        check("hud: auto-repeat then a pass-through: the release goes to macOS", !t.down(2, handled: false) && !t.up(2))
+        _ = t.down(0, handled: true)
+        check("hud: keys are tracked separately", !t.up(2) && t.up(0))
+    }
     check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
     check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
           Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
