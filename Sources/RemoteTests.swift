@@ -449,6 +449,39 @@ enum RemoteTests {
         check("shortcut: an answer to another request is never shown for this one", stolen.shown == ["did: status"])
         let silent = session(labels.status, mac: nil, tamper: { _ in "" })
         check("shortcut: no answer → says so", silent.shown == [labels.noAnswer])
+        // Every menu item, in every language the app ships (the iPhone shows the Mac's language, e.g. Italian "Attiva",
+        // "Spegni"): the checks pass, the item reaches the Mac as its command and its answer is shown.
+        var langsOK: [String] = [], langsBad: [String] = []
+        for lang in Set(Bundle.main.localizations).subtracting(["Base"]).sorted() {
+            guard let l = localizedLabels(lang), let d = RemoteShortcut.build(p, labels: l),
+                  let pl = try? PropertyListSerialization.propertyList(from: d, format: nil) as? [String: Any],
+                  let acts = pl["WFWorkflowActions"] as? [[String: Any]] else { langsBad.append("\(lang): no build"); continue }
+            var bad = RemoteShortcut.problems(d).map { "\(lang): \($0)" }
+            for (title, command) in [(l.status, "status"), (l.turnOn, "on"), (l.turnOff, "off"), (l.projects, "projects")] {
+                let s = session(title, actions: acts)
+                if !(s.error == nil && s.ran == [command] && s.shown == ["did: \(command)"]) { bad.append("\(lang) \(title): ran \(s.ran) shown \(s.shown) \(s.error ?? "")") }
+            }
+            let c = session(l.command, ask: "start claude x Più test", actions: acts)
+            if c.ran != ["start claude x Più test"] { bad.append("\(lang) \(l.command): ran \(c.ran)") }
+            if bad.isEmpty { langsOK.append(lang) } else { langsBad += bad }
+        }
+        check("shortcut: every menu item works in every language (\(langsOK.joined(separator: ",")))\(langsBad.isEmpty ? "" : ": " + langsBad.prefix(3).joined(separator: "; "))",
+              langsBad.isEmpty && langsOK.count >= 8)
+        do {   // a menu item without its branch (or a repeated title) is caught
+            var l = labels
+            l.turnOff = l.turnOn
+            check("shortcut: repeated menu titles are refused by the checks",
+                  RemoteShortcut.problems(RemoteShortcut.build(p, labels: l) ?? Data()).contains { $0.contains("menu items") })
+            let renamed = actions.map { a -> [String: Any] in
+                guard var q = a["WFWorkflowActionParameters"] as? [String: Any], q["WFMenuItemTitle"] as? String == labels.turnOn else { return a }
+                q["WFMenuItemTitle"] = labels.turnOn + " "
+                var b = a; b["WFWorkflowActionParameters"] = q
+                return b
+            }
+            let rd = try? PropertyListSerialization.data(fromPropertyList: ["WFWorkflowActions": renamed], format: .binary, options: 0)
+            check("shortcut: a menu item whose branch title differs is refused by the checks",
+                  RemoteShortcut.problems(rd ?? Data()).contains { $0.contains("don't match their branches") })
+        }
         // Last reply: whatever came last, verified.
         let sim = ShortcutSim()
         let relay = FakeRelay()
@@ -458,6 +491,21 @@ enum RemoteTests {
         sim.menuChoice = labels.lastReply
         sim.run(actions)
         check("shortcut: Last reply shows the newest genuine answer, sends nothing", sim.shown == ["newest"] && relay.topics[p.cmd] == nil && sim.error == nil)
+    }
+
+    /// The Shortcut's labels as the app makes them in `lang` (its Localizable and Remote tables), nil if not shipped.
+    static func localizedLabels(_ lang: String) -> RemoteShortcutLabels? {
+        var table: [String: String] = [:]
+        for name in ["Localizable", "Remote"] {
+            guard let path = Bundle.main.path(forResource: name, ofType: "strings", inDirectory: nil, forLocalization: lang),
+                  let d = NSDictionary(contentsOfFile: path) as? [String: String] else { continue }
+            table.merge(d) { a, _ in a }
+        }
+        guard !table.isEmpty else { return nil }
+        func t(_ k: String) -> String { table[k] ?? k }
+        return RemoteShortcutLabels(status: t("Status"), turnOn: t("Turn on"), turnOff: t("Turn off"), projects: t("Projects"), command: t("Command"),
+                                    lastReply: t("Last reply"), prompt: t("Command (for example: start claude my-project Fix the tests)"),
+                                    noAnswer: t("No valid answer yet. If the Mac is asleep, try “Last reply” in a few minutes."))
     }
 
     /// The listener against a relay that drops the connection after every delivery.
@@ -543,6 +591,26 @@ enum RemoteTests {
             check("log: a stale message says how old it was", text.contains("stale age 900 s") || text.contains("stale age 899 s") || text.contains("stale age 901 s"))
             check("log: an answer the relay refuses is logged with its HTTP statuses", c.contains("reply-failed") && text.contains("HTTP 503, HTTP 503, HTTP 503"))
             lock.withLock { publishStatus = 200 }
+        }
+
+        // A command that arrived while the connection was silently down, now too old to run: seen and logged as stale on
+        // reconnection (before, the reconnection asked only for what could still run, so it vanished without a trace).
+        do {
+            let r = Pairing.make(tier: "basic", relay: "https://relay.test")!
+            let t = Int(Date().timeIntervalSince1970)
+            storeURL = dir.appendingPathComponent("listener-catchup.json")
+            RemoteReplayStore(url: storeURL).advance(r.id, to: t - 900, now: Double(t))
+            let missed = RemoteProtocol.sealCommand("on", pairingID: r.id, keys: r.keys!, nonce: nonce(),
+                                                    ts: RemoteProtocol.timestamp(Date(timeIntervalSince1970: Double(t - 600))))
+            MockRelayProtocol.add(r.cmd, id: "m1", time: t - 600, text: missed)
+            lock.withLock { notes = []; ran = [] }
+            let m = listener()
+            m.sync([r])
+            wait(1.2)
+            m.stop()
+            let text = lock.withLock { notes.joined(separator: "\n") }
+            check("listener: a command missed while disconnected is logged as stale on reconnection, never run",
+                  (text.contains("stale age 600 s") || text.contains("stale age 601 s")) && lock.withLock { ran.isEmpty })
         }
 
         // remote-phone.log itself

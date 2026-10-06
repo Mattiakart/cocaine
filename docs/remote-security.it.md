@@ -37,7 +37,7 @@ esecuzione chiede una volta di consentire la connessione a ntfy.sh (o al tuo rel
 **Se l'iPhone mostra "Nessuna risposta valida per ora".** Il Mac scrive una riga per ogni messaggio del telefono in
 `~/Library/Application Support/Cocaine/remote-phone.log`: `accepted`, `reply-sent` (o `reply-failed` con lo stato HTTP del relay),
 oppure il motivo del rifiuto — `malformed` (con la forma del messaggio: numero e lunghezza dei campi), `bad-tag` (un'altra chiave:
-un Comando Rapido vecchio o modificato), `stale`/`future` (con l'età: controlla gli orologi di iPhone e Mac), `replay`, `expired`,
+un Comando Rapido vecchio o modificato), `stale`/`future` (con l'età: controlla gli orologi; anche un comando arrivato mentre la connessione del Mac era caduta, registrato alla riconnessione), `replay`, `expired`,
 `revoked`, `unknown-pairing`, `decrypt-failed`, `legacy-refused` — più `relay-up`/`relay-down` per la connessione del Mac. Non contiene
 mai una chiave, un canale, un comando o una risposta. I Comandi Rapidi creati dalle prime versioni v2, prima di questa correzione, non
 hanno mai funzionato (le azioni Genera hash non ricevevano l'input, quindi i comandi arrivavano senza tag): eliminali e inviane uno nuovo.

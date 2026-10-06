@@ -36,7 +36,7 @@ not yet on an iPhone. The first run asks once to allow the connection to ntfy.sh
 **If the iPhone gets "No valid answer yet".** The Mac writes one line per phone message to
 `~/Library/Application Support/Cocaine/remote-phone.log`: `accepted`, `reply-sent` (or `reply-failed` with the relay's HTTP status),
 or why a message was refused — `malformed` (with the message's shape: field count and lengths), `bad-tag` (another key: an old or
-edited Shortcut), `stale`/`future` (with its age: check the iPhone's and the Mac's clocks), `replay`, `expired`, `revoked`,
+edited Shortcut), `stale`/`future` (with its age: check the clocks; also a command that arrived while the Mac's connection was down, logged when it reconnects), `replay`, `expired`, `revoked`,
 `unknown-pairing`, `decrypt-failed`, `legacy-refused` — plus `relay-up`/`relay-down` for the Mac's connection. It never contains a
 key, a topic, a command or an answer. Shortcuts made by the first v2 builds, before this fix, never worked (their Generate Hash actions
 received no input, so commands arrived without a tag): delete them and send a new one.

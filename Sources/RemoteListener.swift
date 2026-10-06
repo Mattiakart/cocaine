@@ -13,7 +13,9 @@ final class RemoteListener {
         var publish: (_ body: String, _ topic: String, _ relay: String, _ session: URLSession) async -> Int
         var configuration: () -> URLSessionConfiguration = {
             let c = URLSessionConfiguration.ephemeral
-            c.timeoutIntervalForRequest = 150            // the relay sends a keepalive every 45 s
+            // The relay sends a keepalive every 45 s: 75 s of silence means the connection is dead (a Wi-Fi change can
+            // leave it half-open), so reconnect then rather than miss the phone's commands for minutes.
+            c.timeoutIntervalForRequest = 75
             c.waitsForConnectivity = true
             return c
         }
@@ -36,6 +38,9 @@ final class RemoteListener {
     var onChange: ((Bool) -> Void)?                    // is at least one phone's connection up?
 
     init(hooks: Hooks) { self.hooks = hooks }
+
+    /// How far back a reconnection looks for messages it missed (for the log; anything that old is refused anyway).
+    static let catchUp = 3600
 
     /// How old a command may be and still run, in seconds: longer when the Mac wakes on a schedule to pick them up.
     var maxAge: () -> Double {
@@ -100,10 +105,12 @@ final class RemoteListener {
         var delay = hooks.firstDelay
         var lastProblem = "", announced = false          // logged once per change, not on every retry
         while !Task.isCancelled {
-            // Resume after the last message handled, but never earlier than what could still run.
+            // Resume after the last message handled (up to an hour back), so what arrived while the connection was down
+            // is seen: what is still fresh runs, what is too old is refused and logged as stale — never skipped unseen.
+            // Without a cursor (first start), only what could still run.
             let now = Int(hooks.now().timeIntervalSince1970)
             let floor = now - Int(maxAge()) - 5
-            let since = max(hooks.store.cursor(p.id, now: Double(now)) ?? floor, floor)
+            let since = hooks.store.cursor(p.id, now: Double(now)).map { max($0, now - Self.catchUp) } ?? floor
             var problem = "bad relay address"
             if let url = URL(string: "\(p.relay)/\(p.cmd)/json?since=\(since)") {
                 do {
