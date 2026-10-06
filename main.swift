@@ -825,16 +825,20 @@ private enum PhoneLink {
         return text.isEmpty ? "OK" : text
     }
 
-    static func publish(_ text: String, to topic: String, relay: String, session: URLSession) async -> Bool {
-        guard let url = URL(string: "\(relay)/\(topic)") else { return false }
+    /// The HTTP status of the relay's answer (0: none).
+    static func publish(_ text: String, to topic: String, relay: String, session: URLSession) async -> Int {
+        guard let url = URL(string: "\(relay)/\(topic)") else { return 0 }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.httpBody = Data(text.utf8)
         req.setValue("Cocaine", forHTTPHeaderField: "Title")
         req.setValue("no", forHTTPHeaderField: "X-Firebase")       // keep it off Google's push service
-        guard let (_, response) = try? await session.data(for: req) else { return false }
-        return ((response as? HTTPURLResponse)?.statusCode ?? 0) / 100 == 2
+        guard let (_, response) = try? await session.data(for: req) else { return 0 }
+        return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
+
+    /// remote-phone.log: why each phone message was (not) run and whether the answer went out (Sources/RemotePhoneLog.swift).
+    static let phoneLog = RemotePhoneLog(url: AgentBoard.directory.appendingPathComponent("remote-phone.log"))
 
     static func listener() -> RemoteListener {
         var h = RemoteListener.Hooks(store: store, execute: { execute($0, tier: $1) },
@@ -843,7 +847,7 @@ private enum PhoneLink {
         h.expiredText = L("This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
         h.noticeText = L("Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
         h.willRun = { DispatchQueue.main.async { WakeHold.extend(60) } }      // stay awake while it runs and the answer goes out
-        h.note = { log.notice("\($0, privacy: .public)") }
+        h.note = { log.notice("\($0, privacy: .public)"); phoneLog.write($0) }
         return RemoteListener(hooks: h)
     }
 }

@@ -3,8 +3,9 @@ import Foundation
 // MARK: - Regression tests for remote control (run by --selftest and --remote-test)
 
 /// Runs a built Shortcut the way the Shortcuts app would, for the actions RemoteShortcut uses (with ICU regular
-/// expressions, as Shortcuts' Replace Text). It checks the wiring and the logic end to end; it can't prove Apple's own
-/// action semantics, which only a real iPhone can.
+/// expressions, as Shortcuts' Replace Text). It follows what real Shortcuts runs showed (macOS 27, Italian locale; see
+/// RemoteShortcut.inputShapes): an input given in a form the action doesn't take comes out empty, as it does there.
+/// It can't prove every Apple semantic: RemoteShortcut.problems and a real run (docs/remote-security) cover the rest.
 final class ShortcutSim {
     var outputs: [String: String] = [:]
     var vars: [String: String] = [:]
@@ -12,8 +13,9 @@ final class ShortcutSim {
     var menuChoice = ""
     var askAnswer = ""
     var groupedNumbers = false          // "123,456,789", as some locales might render numbers in text
+    var groupingSeparator = ","         // "." for an Italian-style grouping
     var fractionalDates = false         // "…T12:00:00.123+02:00"
-    var http: (String) -> String = { _ in "" }
+    var http: (_ method: String, _ url: String, _ body: String) -> String = { _, _, _ in "" }
     var onDelay: () -> Void = {}
     var error: String?
 
@@ -50,6 +52,12 @@ final class ShortcutSim {
         return ns as String
     }
 
+    /// A parameter's value, or "" when it is given in a form the action doesn't take (what Shortcuts does).
+    func input(_ id: String, _ p: [String: Any], _ key: String) -> String {
+        if let shape = RemoteShortcut.inputShapes[id]?[key], !RemoteShortcut.Shape.of(p[key]).fits(shape) { return "" }
+        return value(p[key])
+    }
+
     func run(_ actions: [[String: Any]]) {
         var pc = 0
         while pc < actions.count, error == nil {
@@ -58,39 +66,44 @@ final class ShortcutSim {
             let p = a["WFWorkflowActionParameters"] as? [String: Any] ?? [:]
             var out: String?
             switch id {
-            case "gettext": out = value(p["WFTextActionText"])
-            case "setvariable": vars[p["WFVariableName"] as? String ?? ""] = value(p["WFInput"])
+            case "gettext": out = input(id, p, "WFTextActionText")
+            case "setvariable": vars[p["WFVariableName"] as? String ?? ""] = input(id, p, "WFInput")
             case "hash":
-                let s = value(p["WFInput"])
-                out = p["WFHashType"] as? String == "SHA512" ? RemoteCrypto.sha512(s) : RemoteCrypto.sha256(s)
+                let s = input(id, p, "WFInput")
+                out = s.isEmpty ? "" : (p["WFHashType"] as? String == "SHA512" ? RemoteCrypto.sha512(s) : RemoteCrypto.sha256(s))
             case "base64encode":
-                var s = Data(value(p["WFInput"]).utf8).base64EncodedString(options: p["WFBase64LineBreakMode"] as? String == "None" ? [] : .lineLength76Characters)
+                var s = Data(input(id, p, "WFInput").utf8).base64EncodedString(options: p["WFBase64LineBreakMode"] as? String == "None" ? [] : .lineLength76Characters)
                 if p["WFBase64LineBreakMode"] == nil { s += "\r\n" }
                 out = s
             case "text.replace":
-                let input = value(p["WFInput"]), find = value(p["WFReplaceTextFind"]), with = value(p["WFReplaceTextReplace"])
+                let text = input(id, p, "WFInput"), find = input(id, p, "WFReplaceTextFind"), with = value(p["WFReplaceTextReplace"])
                 let cs = p["WFReplaceTextCaseSensitive"] as? Bool ?? true
                 if p["WFReplaceTextRegularExpression"] as? Bool == true {
                     guard let r = try? NSRegularExpression(pattern: find, options: cs ? [] : .caseInsensitive) else { error = "bad pattern \(find)"; break }
-                    out = r.stringByReplacingMatches(in: input, range: NSRange(location: 0, length: (input as NSString).length), withTemplate: with)
+                    out = r.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: with)
                 } else {
-                    out = input.replacingOccurrences(of: find, with: with, options: cs ? [] : .caseInsensitive)
+                    out = text.replacingOccurrences(of: find, with: with, options: cs ? [] : .caseInsensitive)
                 }
-            case "urlencode": out = value(p["WFInput"]).removingPercentEncoding ?? ""
+            case "urlencode": out = input(id, p, "WFInput").removingPercentEncoding ?? ""
             case "date": out = "now"
             case "format.date":
+                guard input(id, p, "WFDate") == "now" else { out = ""; break }
                 let f = ISO8601DateFormatter()
                 f.timeZone = TimeZone.current
                 f.formatOptions = fractionalDates ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
                 out = f.string(from: Date())
             case "number.random":
                 let n = Int.random(in: (p["WFRandomNumberMinimum"] as? Int ?? 0)...(p["WFRandomNumberMaximum"] as? Int ?? 0))
-                if groupedNumbers { let f = NumberFormatter(); f.numberStyle = .decimal; f.groupingSeparator = ","; out = f.string(from: NSNumber(value: n)) }
+                if groupedNumbers { let f = NumberFormatter(); f.numberStyle = .decimal; f.groupingSeparator = groupingSeparator; out = f.string(from: NSNumber(value: n)) }
                 else { out = String(n) }
-            case "downloadurl": out = http(value(p["WFURL"]))
+            case "downloadurl":
+                // A URL with variable content is not sent as written (Shortcuts' link detection cuts some short).
+                guard RemoteShortcut.Shape.of(p["WFURL"]) == .constant else { error = "variable content in a URL"; break }
+                let method = p["WFHTTPMethod"] as? String ?? "GET"
+                out = http(method, value(p["WFURL"]), method == "POST" ? input(id, p, "WFRequestVariable") : "")
             case "delay": onDelay()
             case "ask": out = askAnswer
-            case "showresult": shown.append(value(p["Text"]))
+            case "showresult": shown.append(input(id, p, "Text"))
             case "exit": return
             case "choosefrommenu":
                 let mode = p["WFControlFlowMode"] as? Int ?? -1, group = p["GroupingIdentifier"] as? String
@@ -115,20 +128,20 @@ final class ShortcutSim {
     }
 }
 
-/// A relay in memory: GET publish / raw poll, as the Shortcut uses them.
+/// A relay in memory: POST a message to a topic, GET the raw poll, as the Shortcut uses them.
 final class FakeRelay {
     var topics: [String: [String]] = [:]
     var tamper: ((String) -> String)?            // applied to what the phone reads
-    func get(_ url: String) -> String {
+    func request(_ method: String, _ url: String, _ body: String) -> String {
         guard let c = URLComponents(string: url) else { return "" }
         let parts = c.path.split(separator: "/").map(String.init)
-        guard parts.count == 2 else { return "" }
-        if parts[1] == "publish" {
-            topics[parts[0], default: []].append(c.queryItems?.first { $0.name == "message" }?.value ?? "")
+        if method == "POST", parts.count == 1 {
+            topics[parts[0], default: []].append(body.trimmingCharacters(in: .whitespacesAndNewlines))   // as ntfy does
             return "{}"
         }
-        let body = (topics[parts[0]] ?? []).joined(separator: "\n")
-        return tamper?(body) ?? body
+        guard method == "GET", parts.count == 2, parts[1] == "raw" else { return "" }
+        let all = (topics[parts[0]] ?? []).joined(separator: "\n")
+        return tamper?(all) ?? all
     }
 }
 
@@ -224,7 +237,7 @@ enum RemoteTests {
         check("remote: plain text to a v2 pairing is refused (never run)", eval("status", store: store()) == .drop(.unauthenticated))
         check("remote: oversized lines are refused", eval("c2." + String(repeating: "a", count: 3000), store: store()) == .drop(.malformed))
         let long = RemoteProtocol.sealCommand(String(repeating: "y", count: 520), pairingID: p.id, keys: k, nonce: nonce(), ts: ts)
-        if case .answer(let t, _) = eval(long, store: store()) { check("remote: a command too long to fit is refused, and the phone told", t.contains("too long")) }
+        if case .answer(let t, _, let why) = eval(long, store: store()) { check("remote: a command too long to fit is refused, and the phone told", t.contains("too long") && why == .tooLong) }
         else { check("remote: a command too long to fit is refused, and the phone told", false) }
         let withNewline = RemoteProtocol.sealCommand("status\nrm -rf ~", pairingID: p.id, keys: k, nonce: nonce(), ts: ts)
         check("remote: control characters inside a command are refused", (try? RemoteProtocol.openCommand(withNewline, pairingID: p.id, keys: k).get()) == nil)
@@ -254,7 +267,7 @@ enum RemoteTests {
         var expired = p
         expired.expires = now.timeIntervalSince1970 - 1
         let ec = RemoteProtocol.sealCommand("on", pairingID: p.id, keys: k, nonce: nonce(), ts: ts)
-        if case .answer(let t, _) = eval(ec, expired, store: store()) { check("remote: an expired pairing runs nothing (and says why)", t == "EXPIRED") }
+        if case .answer(let t, _, let why) = eval(ec, expired, store: store()) { check("remote: an expired pairing runs nothing (and says why)", t == "EXPIRED" && why == .expired) }
         else { check("remote: an expired pairing runs nothing (and says why)", false) }
         check("remote: a revoked pairing runs nothing", eval(RemoteProtocol.sealCommand("on", pairingID: p.id, keys: k, nonce: nonce(), ts: ts), store: store(), active: false) == .drop(.revoked))
 
@@ -339,15 +352,17 @@ enum RemoteTests {
         check("shortcut: carries derived keys, never the master key", !flat.contains(p.key!) && flat.contains(p.keys!.macIn))
         check("shortcut: an old (legacy) pairing gets no v2 Shortcut", RemoteShortcut.build(Pairing(id: "a", cmd: "b", reply: "c", tier: "basic", relay: "d"), labels: labels) == nil)
 
-        func session(_ choice: String, ask: String = "", grouped: Bool = false, fractional: Bool = false, mac: ((String) -> String)? = nil,
-                     tamper: ((String) -> String)? = nil) -> (shown: [String], ran: [String], error: String?, relay: FakeRelay) {
+        func session(_ choice: String, ask: String = "", grouped: String? = nil, fractional: Bool = false, mac: ((String) -> String)? = nil,
+                     tamper: ((String) -> String)? = nil, actions: [[String: Any]] = actions)
+            -> (shown: [String], ran: [String], error: String?, relay: FakeRelay, refused: [RemoteReject]) {
             let relay = FakeRelay()
             let store = RemoteReplayStore(url: tempDir().appendingPathComponent("s.json"))
             defer { try? FileManager.default.removeItem(at: store.url.deletingLastPathComponent()) }
-            var ran: [String] = []
+            var ran: [String] = [], refused: [RemoteReject] = []
             let sim = ShortcutSim()
-            sim.menuChoice = choice; sim.askAnswer = ask; sim.groupedNumbers = grouped; sim.fractionalDates = fractional
-            sim.http = { relay.get($0) }
+            sim.menuChoice = choice; sim.askAnswer = ask; sim.fractionalDates = fractional
+            if let grouped { sim.groupedNumbers = true; sim.groupingSeparator = grouped }
+            sim.http = { relay.request($0, $1, $2) }
             relay.tamper = tamper
             sim.onDelay = {   // the Mac's side, while the phone waits
                 for m in relay.topics[p.cmd] ?? [] {
@@ -356,18 +371,63 @@ enum RemoteTests {
                     if case .run(let c, _, let n?) = d {
                         ran.append(c)
                         relay.topics[p.reply, default: []].append(RemoteProtocol.sealReply(mac?(c) ?? "did: \(c)", pairingID: p.id, keys: p.keys!, nonce: n, now: Date()))
-                    }
+                    } else if case .drop(let why) = d { refused.append(why) }
                 }
             }
             sim.run(actions)
-            return (sim.shown, ran, sim.error, relay)
+            return (sim.shown, ran, sim.error, relay, refused)
         }
         let t0 = Date()
         let st = session(labels.status)
         check("shortcut: Status goes through the Mac and its answer is shown (\(String(format: "%.1f", Date().timeIntervalSince(t0))) s on this Mac)",
               st.error == nil && st.ran == ["status"] && st.shown == ["did: status"])
-        let on = session(labels.turnOn, grouped: true, fractional: true)
+        check("shortcut: the command travels in a POST body to a fixed URL", st.relay.topics[p.cmd]?.count == 1
+              && st.relay.topics[p.cmd]?[0].hasPrefix("c2.\(p.id).") == true)
+        let on = session(labels.turnOn, grouped: ",", fractional: true)
         check("shortcut: works when numbers are grouped and times have fractions", on.ran == ["on"] && on.shown == ["did: on"])
+        let it = session(labels.turnOff, grouped: ".")
+        check("shortcut: works with Italian-style grouping (123.456.789)", it.ran == ["off"] && it.shown == ["did: off"])
+
+        // The defect seen on a real iPhone (v2.0): Generate Hash and Base64 Encode given a text with the variable inside
+        // output nothing in Shortcuts, so every command reached the Mac without a tag ("malformed"). Rebuilt that way,
+        // the checks and the simulator must both catch it.
+        func reshaped(_ id: String) -> [[String: Any]] {
+            actions.map { a in
+                guard a["WFWorkflowActionIdentifier"] as? String == "is.workflow.actions.\(id)",
+                      var q = a["WFWorkflowActionParameters"] as? [String: Any], let v = q["WFInput"] as? [String: Any],
+                      v["WFSerializationType"] as? String == "WFTextTokenAttachment", let att = v["Value"] as? [String: Any] else { return a }
+                q["WFInput"] = ["Value": ["string": "\u{FFFC}", "attachmentsByRange": ["{0, 1}": att]], "WFSerializationType": "WFTextTokenString"]
+                var b = a; b["WFWorkflowActionParameters"] = q
+                return b
+            }
+        }
+        for id in ["hash", "base64encode"] {
+            let old = reshaped(id)
+            let data = try? PropertyListSerialization.data(fromPropertyList: ["WFWorkflowActions": old], format: .binary, options: 0)
+            let found = RemoteShortcut.problems(data ?? Data()).contains { $0.contains("\(id): WFInput must be given as attachment") }
+            let run = session(labels.status, actions: old)
+            check("shortcut: \(id) given a text with the variable inside is caught (checks and simulator: nothing runs)",
+                  found && run.ran.isEmpty && run.shown == [labels.noAnswer])
+        }
+        let viaURL = actions.map { a -> [String: Any] in    // the command in the URL instead of the body
+            guard var q = a["WFWorkflowActionParameters"] as? [String: Any], q["WFHTTPMethod"] as? String == "POST",
+                  let body = q["WFRequestVariable"] as? [String: Any], let att = body["Value"] as? [String: Any] else { return a }
+            q = ["WFHTTPMethod": "GET", "UUID": q["UUID"] ?? "",
+                 "WFURL": ["Value": ["string": "\(p.relay)/\(p.cmd)/publish?message=\u{FFFC}", "attachmentsByRange": ["{\(p.relay.count + p.cmd.count + 18), 1}": att]],
+                           "WFSerializationType": "WFTextTokenString"]]
+            var b = a; b["WFWorkflowActionParameters"] = q
+            return b
+        }
+        let urlData = try? PropertyListSerialization.data(fromPropertyList: ["WFWorkflowActions": viaURL], format: .binary, options: 0)
+        check("shortcut: variable content in a URL is refused by the checks", RemoteShortcut.problems(urlData ?? Data()).contains { $0.contains("WFURL must be given as constant") })
+        let misspelt = actions.map { a -> [String: Any] in
+            guard a["WFWorkflowActionIdentifier"] as? String == "is.workflow.actions.hash", var q = a["WFWorkflowActionParameters"] as? [String: Any] else { return a }
+            q["WFHashType"] = "SHA-512"
+            var b = a; b["WFWorkflowActionParameters"] = q
+            return b
+        }
+        let misData = try? PropertyListSerialization.data(fromPropertyList: ["WFWorkflowActions": misspelt], format: .binary, options: 0)
+        check("shortcut: an unknown parameter value is refused by the checks", RemoteShortcut.problems(misData ?? Data()).contains { $0.contains("is not a known value") })
         let nasty = #"send claude-x "a'b" $(id) `id` ; | && > ~/x é ✓ \ %41 + #"#
         let cmd = session(labels.command, ask: nasty)
         check("shortcut: typed text arrives exactly as typed (no quoting, no URL damage)", cmd.ran == [nasty] && cmd.shown == ["did: " + nasty])
@@ -394,7 +454,7 @@ enum RemoteTests {
         let relay = FakeRelay()
         relay.topics[p.reply] = [RemoteProtocol.sealReply("older", pairingID: p.id, keys: p.keys!, nonce: nonce(), now: Date()),
                                  RemoteProtocol.sealReply("newest", pairingID: p.id, keys: p.keys!, nonce: nonce(), now: Date())]
-        sim.http = { relay.get($0) }
+        sim.http = { relay.request($0, $1, $2) }
         sim.menuChoice = labels.lastReply
         sim.run(actions)
         check("shortcut: Last reply shows the newest genuine answer, sends nothing", sim.shown == ["newest"] && relay.topics[p.cmd] == nil && sim.error == nil)
@@ -403,17 +463,20 @@ enum RemoteTests {
     /// The listener against a relay that drops the connection after every delivery.
     static func listenerTests(_ p: Pairing, dir: URL, _ check: (String, Bool) -> Void) {
         let lock = NSLock()
-        var ran: [String] = [], published: [String] = []
-        let storeURL = dir.appendingPathComponent("listener.json")
+        var ran: [String] = [], published: [String] = [], notes: [String] = []
+        var publishStatus = 200
+        var storeURL = dir.appendingPathComponent("listener.json")
         func listener() -> RemoteListener {
             var h = RemoteListener.Hooks(store: RemoteReplayStore(url: storeURL),
                                          execute: { c, _ in lock.lock(); ran.append(c); lock.unlock(); return "done \(c)" },
-                                         publish: { body, _, _, _ in lock.withLock { published.append(body) }; return true })
+                                         publish: { body, _, _, _ in lock.withLock { published.append(body); return publishStatus } })
             h.configuration = { let c = URLSessionConfiguration.ephemeral; c.protocolClasses = [MockRelayProtocol.self]; return c }
             h.firstDelay = 0.05
             h.backoff = { _ in 0.05 }
+            h.note = { n in lock.withLock { notes.append(n) } }
             return RemoteListener(hooks: h)
         }
+        func codes() -> [String] { lock.withLock { notes.map { String($0.split(separator: " ")[2]) } } }
         func wait(_ s: Double) { Thread.sleep(forTimeInterval: s) }
         let k = p.keys!
         let t = Int(Date().timeIntervalSince1970)
@@ -430,6 +493,14 @@ enum RemoteTests {
         check("listener: a command delivered on every reconnection runs once; forged text never", ran1 == ["status"])
         check("listener: its answer is published once, bound to it", pub1.count == 1
               && RemoteProtocol.openReply(pub1[0], pairingID: p.id, keys: k, nonce: String(a.split(separator: ".")[2])) == "done status")
+        let c1 = codes()
+        check("log: one line per outcome: relay-up once, accepted, reply-sent, replay, unauthenticated (\(Set(c1).sorted().joined(separator: ",")))",
+              c1.filter { $0 == "relay-up" }.count == 1 && c1.filter { $0 == "accepted" }.count == 1 && c1.filter { $0 == "reply-sent" }.count == 1
+              && c1.contains("replay") && c1.contains("unauthenticated") && !c1.contains("relay-down"))
+        let all1 = lock.withLock { notes.joined(separator: "\n") }
+        check("log: no key, topic, command or answer in it", !all1.contains(k.enc.prefix(16)) && !all1.contains(k.macIn.prefix(16)) && !all1.contains(p.cmd)
+              && !all1.contains(p.reply) && !all1.contains("done status") && !all1.contains(String(a.split(separator: ".")[4].prefix(20))))
+        check("log: lines name the pairing and the reason", lock.withLock { notes.allSatisfy { $0.hasPrefix("phone \(p.id.prefix(8)) ") } })
         l!.stop(); l = nil
         wait(0.2)
         l = listener()                                                            // a restart: fresh memory, same disk
@@ -446,6 +517,50 @@ enum RemoteTests {
         lock.lock(); let ran3 = ran; lock.unlock()
         check("listener: after revoking, nothing runs", ran3 == ["status", "on"])
         l = nil
+
+        // What the log says for each kind of refusal, and for an answer the relay doesn't take.
+        do {
+            let q = Pairing.make(tier: "basic", relay: "https://relay.test")!, qk = q.keys!
+            let now = Date(), t = Int(now.timeIntervalSince1970)
+            let good = RemoteProtocol.sealCommand("status", pairingID: q.id, keys: qk, nonce: nonce(), ts: RemoteProtocol.timestamp(now))
+            let f = good.split(separator: ".").map(String.init)
+            let untagged = f[0...4].joined(separator: ".") + "."                                      // what the broken Shortcut sent
+            let badTag = f[0...4].joined(separator: ".") + "." + String(repeating: "0", count: 64)
+            let stale = RemoteProtocol.sealCommand("status", pairingID: q.id, keys: qk, nonce: nonce(), ts: RemoteProtocol.timestamp(now.addingTimeInterval(-900)))
+            let future = RemoteProtocol.sealCommand("status", pairingID: q.id, keys: qk, nonce: nonce(), ts: RemoteProtocol.timestamp(now.addingTimeInterval(900)))
+            let foreign = RemoteProtocol.sealCommand("status", pairingID: p.id, keys: k, nonce: nonce(), ts: RemoteProtocol.timestamp(now))
+            for (i, m) in [untagged, badTag, stale, future, foreign, good].enumerated() { MockRelayProtocol.add(q.cmd, id: "q\(i)", time: t, text: m) }
+            lock.withLock { notes = []; publishStatus = 503 }
+            storeURL = dir.appendingPathComponent("listener-log.json")   // the revoke above set a floor in the other one
+            let m = listener()
+            m.sync([q])
+            wait(5.5)                                                      // three publish attempts, 1.5 s + 3 s apart
+            m.stop()
+            let c = codes(), text = lock.withLock { notes.joined(separator: "\n") }
+            check("log: refusals carry their reason (\(Set(c).sorted().joined(separator: ",")))",
+                  ["malformed", "bad-tag", "stale", "future", "unknown-pairing", "accepted"].allSatisfy(c.contains))
+            check("log: a message without its tag is described by its form", text.contains("6 fields, lengths 2/16/") && text.contains("(bad tag)"))
+            check("log: a stale message says how old it was", text.contains("stale age 900 s") || text.contains("stale age 899 s") || text.contains("stale age 901 s"))
+            check("log: an answer the relay refuses is logged with its HTTP statuses", c.contains("reply-failed") && text.contains("HTTP 503, HTTP 503, HTTP 503"))
+            lock.withLock { publishStatus = 200 }
+        }
+
+        // remote-phone.log itself
+        do {
+            let url = dir.appendingPathComponent("logs/remote-phone.log")
+            let log = RemotePhoneLog(url: url, maxBytes: 4000)
+            log.write("phone 0123abcd accepted basic\nforged line\u{1B}[2J")
+            let first = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            var st = stat()
+            stat(url.path, &st)
+            check("log file: private (0600), one line per event, control characters neutralized",
+                  st.st_mode & 0o777 == 0o600 && first.split(separator: "\n").count == 1 && first.contains("accepted basic?forged line?[2J"))
+            for i in 0..<200 { log.write("phone 0123abcd reply-sent \(i)") }
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+            let kept = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            check("log file: bounded, keeps the newest lines whole", size <= 4100 && kept.hasSuffix("reply-sent 199\n")
+                  && kept.split(separator: "\n").allSatisfy { $0.hasPrefix("20") })
+        }
     }
 
     /// remote.zsh's gate, with a throwaway HOME/support folder and a stub engine: shell syntax never runs anything.
