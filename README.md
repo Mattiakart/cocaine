@@ -280,8 +280,9 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
 ## Uninstall
 
 With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app, its sudo rule and the AI alerts
-hooks, without asking. (`--zap` also deletes the settings, the clipboard history and other saved state.) The cask changes that
-make uninstall and upgrades fully respect the recovery rules ship with the next release: [notes](docs/maintainers/cask-changes.md).
+hooks, without asking. (`--zap` also deletes the settings, the clipboard history and other saved state.) The cask's uninstall step respects the
+recovery rules ([notes](docs/maintainers/cask-changes.md)); Homebrew runs the uninstall step of the version that is installed, so
+the first upgrade *to* 2.3.0 still uses the previous one, and the hand-over during upgrades works from the next update on.
 
 Without Homebrew: untick your AIs under AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 

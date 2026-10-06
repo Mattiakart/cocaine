@@ -288,9 +288,10 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
 ## Disinstallazione
 
 Con Homebrew: `brew uninstall --cask cocaine`. Spegne Cocaine e toglie l'app, la regola sudo e gli hook degli Avvisi AI,
-senza chiedere nulla. (`--zap` cancella anche le impostazioni, la cronologia degli appunti e gli altri dati salvati.) Le modifiche al
-cask che fanno rispettare del tutto le regole di ripristino in disinstallazione e aggiornamento arrivano con la prossima versione:
-[note](docs/maintainers/cask-changes.md).
+senza chiedere nulla. (`--zap` cancella anche le impostazioni, la cronologia degli appunti e gli altri dati salvati.) Il passaggio di
+disinstallazione del cask rispetta le regole di ripristino ([note](docs/maintainers/cask-changes.md)); Homebrew esegue quello della
+versione installata, quindi il primo aggiornamento *alla* 2.3.0 usa ancora il precedente e il passaggio di consegne durante gli
+aggiornamenti funziona dall'aggiornamento successivo.
 
 Senza Homebrew: togli le spunte in Avvisi AI, esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
 
