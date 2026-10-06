@@ -272,6 +272,9 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
   turned it on, or you changed it meanwhile, that is respected. Limits: after a power cut or forced restart sleep stays disabled
   until Cocaine opens again (or run `cocaine off`), and if Cocaine and its watchdog are killed together nothing can act until
   the next launch. [Details](docs/recovery.en.md).
+- Questions, messages and the share list appear inside Cocaine's own panel or island, in the same design. What macOS owns stays
+  macOS's: the admin-password prompt, the privacy permission questions, System Settings, and the windows AirDrop, Messages and
+  Mail open after you pick them (Apple doesn't allow embedding those).
 - Only one Cocaine runs at a time: a second copy opened while one is running steps aside.
 
 ## Uninstall

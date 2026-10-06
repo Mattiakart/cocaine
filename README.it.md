@@ -280,6 +280,9 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
   Cocaine lo attivasse, o lo hai cambiato nel frattempo, viene rispettato. Limiti: dopo un'interruzione di corrente o un riavvio
   forzato lo stop resta disattivato finché Cocaine non si riapre (o esegui `cocaine off`), e se Cocaine e il suo watchdog vengono
   terminati insieme nessuno può intervenire fino al prossimo avvio. [Dettagli](docs/recovery.it.md).
+- Domande, messaggi ed elenco di condivisione compaiono dentro il pannello o l'isola di Cocaine, con lo stesso design. Ciò che
+  appartiene a macOS resta di macOS: la richiesta della password di amministratore, le domande sui permessi di privacy, le
+  Impostazioni di Sistema e le finestre che AirDrop, Messaggi e Mail aprono dopo la scelta (Apple non permette di incorporarle).
 - Gira una sola copia di Cocaine alla volta: una seconda copia aperta mentre un'altra è in esecuzione si fa da parte.
 
 ## Disinstallazione
