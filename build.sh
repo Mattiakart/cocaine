@@ -52,6 +52,7 @@ zsh tools/sign.sh resolve "$TIER" >/dev/null || die "the \"$TIER\" signing ident
 
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+: > "$BUILD/.metadata_never_index"            # Spotlight and Launch Services don't list build output as extra copies of Cocaine
 SOURCES=(Sources/*.swift(N))
 for arch in arm64 x86_64; do                  # each slice is linked as "Cocaine" so logs show the real name
   mkdir -p "$BUILD/$arch"
@@ -101,9 +102,17 @@ case "$MODE" in
     [ "$RELEASE" = 1 ] && echo "next: tools/release-sign.sh $DMG $TIER   (makes the signed manifest; publishes nothing)"
     true ;;
   install)
+    # One Cocaine on the Mac: the Homebrew copy in /Applications when there is one (brew upgrade keeps it current), else
+    # ~/Applications. Any other copy is removed and forgotten by Launch Services, so "Open with" and Spotlight show one app.
+    if [ -d /Applications/Cocaine.app ]; then DEST=/Applications/Cocaine.app; else DEST="$HOME/Applications/Cocaine.app"; fi
     pkill -x Cocaine 2>/dev/null && sleep 1 || true   # quit the running copy (it restores brightness)
+    mkdir -p "${DEST:h}"
     rm -rf "$DEST"
     cp -R "$APP" "$DEST"
+    for other in /Applications/Cocaine.app "$HOME/Applications/Cocaine.app"; do
+      [ "$other" = "$DEST" ] || { [ -d "$other" ] && rm -rf "$other"; "$LSR" -u "$other" 2>/dev/null; }
+    done
+    "$LSR" -u "$PWD/$APP" 2>/dev/null
     "$LSR" -f "$DEST"
-    echo "installed $DEST" ;;
+    echo "installed $DEST (the only copy)" ;;
 esac

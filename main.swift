@@ -6888,8 +6888,36 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.global().async { run("/bin/zsh", [scriptPath, "mode", mode]) }
     }
 
+    /// Lid shut while Cocaine is on: every screen goes to its minimum at once (no idle wait), and comes back when the lid opens.
+    private var lastLidClosed = System.lidClosed
+    private var lidDimmed = false
+
+    private func lidChanged(closed: Bool, on: Bool) {
+        if closed {
+            guard on, previewPlan == nil, !screenOffMode else { return }
+            var plan = dimPlan ?? makePlan(level: Self.lidLevel, includeBuiltin: true)
+            if dimPlan != nil {                                    // already dimmed by idle: go down to the minimum
+                plan.backlit = plan.backlit.map { .init(id: $0.id, from: $0.from, to: Self.lidLevel) }
+                plan.gamma = plan.gamma.map { ($0.id, 0.12) }
+            }
+            guard !plan.displays.isEmpty else { return }
+            dimPlan = plan
+            lidDimmed = true
+            RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
+            log.notice("lid closed: \(plan.displays.count, privacy: .public) screens to the minimum")
+            dimQuiet = Date().addingTimeInterval(3)
+            fade(plan, to: 1, over: 0.12)
+        } else if lidDimmed {
+            lidDimmed = false
+            restore()
+        }
+    }
+    private static let lidLevel: Float = 0.01                      // the lowest the backlight goes (Screens never sets less)
+
     private func updateDimming(on: Bool) {
         guard previewPlan == nil else { return }
+        let lid = System.lidClosed
+        if lid != lastLidClosed { lastLidClosed = lid; lidChanged(closed: lid, on: on) }
         let idle = idleNow                                         // Stay active's own nudges don't count as you
         defer { lastIdle = idle }
         if screenOffMode {
@@ -6903,7 +6931,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let plan = dimPlan {
             let unplugged = !plan.displays.isSubset(of: Set(screens.online))
-            if idle < lastIdle || !on || !settings.dimEnabled || unplugged { restore(); return }   // input since last tick
+            if lidDimmed && !lid && on { lidDimmed = false }       // the lid opened between ticks: normal rules again
+            if (idle < lastIdle && !lidDimmed) || !on || (!settings.dimEnabled && !lidDimmed) || unplugged { lidDimmed = false; restore(); return }   // input since last tick
             // automatic brightness can creep back up while the screen is lowered
             if ticks % 10 == 0, fadeTimer == nil {
                 for b in plan.backlit where (screens.brightness(b.id) ?? 0) > b.to + 0.02 { screens.setBrightness(b.id, b.to) }
@@ -6914,11 +6943,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Every screen that's on: the built-in panel is skipped only with the lid shut (it's off anyway).
-    private func makePlan(level: Float) -> DimPlan {
+    private func makePlan(level: Float, includeBuiltin: Bool = false) -> DimPlan {
         var plan = DimPlan()
         let lidClosed = System.lidClosed
         for d in screens.online {
-            if CGDisplayIsBuiltin(d) != 0 && lidClosed { continue }
+            if CGDisplayIsBuiltin(d) != 0 && lidClosed && !includeBuiltin { continue }
             if screens.hasBacklight(d) {
                 if let cur = screens.brightness(d), cur > level { plan.backlit.append(.init(id: d, from: cur, to: level)) }
             } else {
