@@ -155,7 +155,25 @@ enum RemoteCrypto {
 
 /// Why a message was not accepted (for the log and for tests; never sent back to an unauthenticated sender).
 enum RemoteReject: String, Error, Equatable {
-    case malformed, wrongPairing, badTag, badContent, tooLong, stale, future, replay, state, revoked, unauthenticated
+    case malformed, wrongPairing, badTag, badContent, tooLong, stale, future, replay, state, revoked, unauthenticated, expired
+
+    /// The reason code written to remote-phone.log.
+    var code: String {
+        switch self {
+        case .malformed: return "malformed"
+        case .wrongPairing: return "unknown-pairing"
+        case .badTag: return "bad-tag"
+        case .badContent: return "decrypt-failed"
+        case .tooLong: return "too-long"
+        case .stale: return "stale"
+        case .future: return "future"
+        case .replay: return "replay"
+        case .state: return "state-not-saved"
+        case .revoked: return "revoked"
+        case .unauthenticated: return "unauthenticated"
+        case .expired: return "expired"
+        }
+    }
 }
 
 struct OpenedCommand: Equatable {
@@ -228,6 +246,23 @@ enum RemoteProtocol {
     }
 
     static func isV2Command(_ line: String) -> Bool { line.hasPrefix("c2.") }
+
+    /// What a message looks like, for the log: its form only (field count and lengths, which check failed), never its
+    /// content. Everything here is also visible to the relay.
+    static func shape(_ line: String) -> String {
+        guard isV2Command(line) else { return "plain text, \(line.utf8.count) bytes" }
+        let p = line.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        var s = "\(p.count) fields, lengths " + p.map { String($0.utf8.count) }.joined(separator: "/")
+        guard p.count == 6 else { return s + " (expected 6 fields: c2.id.nonce.time.ciphertext.tag)" }
+        var bad: [String] = []
+        if !matches(p[1], "^[0-9a-f]{16}$") { bad.append("id") }
+        if !matches(p[2], "^[0-9]{18,40}$") { bad.append("nonce") }
+        if date(p[3]) == nil { bad.append("time") }
+        if !matches(p[4], "^[A-Za-z0-9_-]{682}$") { bad.append("ciphertext") }
+        if !matches(p[5], "^[0-9a-fA-F]{64}$") { bad.append("tag") }
+        if !bad.isEmpty { s += " (bad " + bad.joined(separator: ", ") + ")" }
+        return s
+    }
 
     /// Checks a command's form and tag, then decrypts it. No policy here (age, replay): see RemoteGatekeeper.
     static func openCommand(_ line: String, pairingID: String, keys: RemoteKeys) -> Result<OpenedCommand, RemoteReject> {
@@ -425,7 +460,7 @@ final class RemoteReplayStore {
 
 enum RemoteDecision: Equatable {
     case run(command: String, tier: String, nonce: String?)   // nonce nil: an old Shortcut, answer in plain text
-    case answer(String, nonce: String)                       // an authenticated answer without running anything
+    case answer(String, nonce: String, why: RemoteReject)    // an authenticated answer without running anything
     case notice(String)                                      // plain text to an old Shortcut: it must be replaced
     case drop(RemoteReject)
 }
@@ -451,7 +486,7 @@ enum RemoteGatekeeper {
                    t - sent <= maxAge, sent - t <= RemoteProtocol.skew {
                     guard store.claim(pairing: pairing.id, nonce: n, sentAt: sent, now: t) == .fresh else { return .drop(.replay) }
                     return .answer(e == .tooLong ? "cocaine: command too long (\(RemoteProtocol.maxCommandBytes) bytes at most)"
-                                                 : "cocaine: unreadable command", nonce: n)
+                                                 : "cocaine: unreadable command", nonce: n, why: e)
                 }
                 return .drop(e)
             }
@@ -463,7 +498,7 @@ enum RemoteGatekeeper {
             case .failed: return .drop(.state)
             case .fresh: break
             }
-            if pairing.expired(at: now) { return .answer(expiredText, nonce: opened.nonce) }
+            if pairing.expired(at: now) { return .answer(expiredText, nonce: opened.nonce, why: .expired) }
             return .run(command: opened.text, tier: pairing.tier == "agents" ? "agents" : "basic", nonce: opened.nonce)
         }
         guard pairing.isLegacy else { return .drop(.malformed) }   // v2 with a damaged key: never falls back to plain text
@@ -488,7 +523,8 @@ enum RemoteGatekeeper {
         guard p.count == 6, p[2].range(of: "^[0-9]{18,40}$", options: .regularExpression) != nil else { return nil }
         return String(p[2])
     }
-    private static func sentAt(_ line: String) -> Double? {
+    /// When a v2 message says it was sent (its form only; nil if unreadable). For the log and the age checks.
+    static func sentAt(_ line: String) -> Double? {
         let p = fields(line)
         return p.count == 6 ? RemoteProtocol.date(String(p[3]))?.timeIntervalSince1970 : nil
     }

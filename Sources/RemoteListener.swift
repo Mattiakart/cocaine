@@ -9,8 +9,8 @@ final class RemoteListener {
         var store: RemoteReplayStore
         /// Runs an accepted command through the gate (`cocaine remote gate --tier=…`) and returns its output.
         var execute: (_ command: String, _ tier: String) -> String
-        /// Posts `body` to `topic` on `relay`; true when the relay took it.
-        var publish: (_ body: String, _ topic: String, _ relay: String, _ session: URLSession) async -> Bool
+        /// Posts `body` to `topic` on `relay`; the HTTP status (2xx: the relay took it; 0: no answer at all).
+        var publish: (_ body: String, _ topic: String, _ relay: String, _ session: URLSession) async -> Int
         var configuration: () -> URLSessionConfiguration = {
             let c = URLSessionConfiguration.ephemeral
             c.timeoutIntervalForRequest = 150            // the relay sends a keepalive every 45 s
@@ -22,7 +22,8 @@ final class RemoteListener {
         var expiredText = "This pairing has expired: send a new Shortcut from the Mac."
         var noticeText = "Cocaine was updated: this Shortcut is no longer accepted. Send a new one from the Mac."
         var willRun: () -> Void = {}                     // e.g. stay awake while it runs and the answer goes out
-        var note: (String) -> Void = { _ in }            // a log line (never the command itself)
+        /// One line per event for remote-phone.log: "phone <id> <code> <detail>". Never a key, topic, command or answer.
+        var note: (String) -> Void = { _ in }
         var backoff: (Double) -> Double = { min($0 * 2, 60) }
         var firstDelay = 2.0
     }
@@ -86,31 +87,52 @@ final class RemoteListener {
         DispatchQueue.main.async { self.onChange?(any) }
     }
 
+    /// "phone <first 8 of the pairing id> <code> <detail>"
+    static func logLine(_ p: Pairing, _ code: String, _ detail: String = "") -> String {
+        "phone \(p.id.prefix(8)) \(code)" + (detail.isEmpty ? "" : " " + detail)
+    }
+    private func note(_ p: Pairing, _ code: String, _ detail: String = "") { hooks.note(Self.logLine(p, code, detail)) }
+
     private func run(_ p: Pairing) async {
         let session = URLSession(configuration: hooks.configuration())
         defer { session.invalidateAndCancel() }
         var recent: [Date] = []
         var delay = hooks.firstDelay
+        var lastProblem = "", announced = false          // logged once per change, not on every retry
         while !Task.isCancelled {
             // Resume after the last message handled, but never earlier than what could still run.
             let now = Int(hooks.now().timeIntervalSince1970)
             let floor = now - Int(maxAge()) - 5
             let since = max(hooks.store.cursor(p.id, now: Double(now)) ?? floor, floor)
+            var problem = "bad relay address"
             if let url = URL(string: "\(p.relay)/\(p.cmd)/json?since=\(since)") {
                 do {
                     let (bytes, response) = try await session.bytes(from: url)
-                    if (response as? HTTPURLResponse)?.statusCode == 200 {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    problem = "HTTP \(status)"
+                    if status == 200 {
                         delay = hooks.firstDelay
                         set(p.id, true)
+                        if !announced { note(p, "relay-up", "listening") }
+                        announced = true
+                        lastProblem = ""
                         for try await line in bytes.lines {
                             if Task.isCancelled { break }
                             guard line.utf8.count <= 16_384, let m = Self.message(line) else { continue }
                             await handle(m, p, session: session, recent: &recent)
                         }
+                        problem = "connection closed"
                     }
-                } catch {}
+                } catch {
+                    problem = "connection failed (\((error as NSError).domain) \((error as NSError).code))"
+                }
             }
             if Task.isCancelled { break }
+            if problem != "connection closed" {          // a plain reconnection is routine; a failure is logged once
+                if problem != lastProblem { note(p, "relay-down", problem) }
+                lastProblem = problem
+                announced = false
+            }
             set(p.id, false)
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             delay = hooks.backoff(delay)
@@ -122,28 +144,41 @@ final class RemoteListener {
         defer { hooks.store.advance(p.id, to: m.time, now: now.timeIntervalSince1970) }
         // No more than 20 messages a minute are even looked at (cheap, but bounded).
         recent = recent.filter { $0.timeIntervalSince(now) > -60 }
-        guard recent.count < 20 else { hooks.note("phone message dropped: rate limit"); return }
+        guard recent.count < 20 else { note(p, "rate-limit", "more than 20 commands in a minute"); return }
         let decision = RemoteGatekeeper.evaluate(text: m.text, eventID: m.id, eventTime: m.time, pairing: p, active: isActive(p),
                                                  now: now, maxAge: maxAge(), legacyUntil: hooks.legacyUntil(), store: hooks.store,
                                                  expiredText: hooks.expiredText, noticeText: hooks.noticeText)
+        // How old the message says it is (v2), or the relay's time (old Shortcuts): explains stale/future at a glance.
+        let ageSeconds = Int((now.timeIntervalSince1970 - (RemoteGatekeeper.sentAt(m.text) ?? Double(m.time))).rounded())
+        let age = "age \(ageSeconds) s (limit \(Int(maxAge())) s, \(Int(RemoteProtocol.skew)) s ahead tolerated)"
         var body: String
         switch decision {
         case .drop(let why):
-            hooks.note("phone message refused: \(why.rawValue)")
+            switch why {
+            case .malformed where !p.isLegacy && p.keys == nil: note(p, "bad-pairing", "its key can't be read: send a new Shortcut")
+            case .malformed: note(p, why.code, RemoteProtocol.shape(m.text))
+            case .stale, .future: note(p, why.code, age)
+            case .unauthenticated where !p.isLegacy: note(p, why.code, "not a v2 message (\(RemoteProtocol.shape(m.text)))")
+            case .unauthenticated where RemoteProtocol.isV2Command(m.text): note(p, why.code, "v2 message for an old pairing")
+            case .unauthenticated: note(p, "legacy-refused", "old Shortcut, already told to update")
+            case .badTag: note(p, why.code, "made with another key, or changed on the way")
+            default: note(p, why.code)
+            }
             return
         case .notice(let text):
-            hooks.note("old Shortcut refused (told to update)")
+            note(p, "legacy-refused", "old Shortcut, told to update")
             body = text
-        case .answer(let text, let nonce):
+        case .answer(let text, let nonce, let why):
+            note(p, why.code, "answered without running")
             guard let keys = p.keys else { return }
             body = RemoteProtocol.sealReply(text, pairingID: p.id, keys: keys, nonce: nonce, now: hooks.now())
         case .run(let command, let tier, let nonce):
             recent.append(now)
-            hooks.note(nonce == nil ? "old Shortcut command accepted (basic, unauthenticated)" : "phone command accepted")
+            note(p, nonce == nil ? "legacy-accepted" : "accepted", nonce == nil ? "old Shortcut, basic level, unauthenticated" : "\(tier) level, \(age)")
             hooks.willRun()
             let execute = hooks.execute
             let output = await Task.detached { execute(command, tier) }.value
-            guard isActive(p) else { return }                 // revoked while it ran: say nothing more
+            guard isActive(p) else { note(p, "revoked", "while it ran: no answer"); return }
             if let nonce, let keys = p.keys {
                 body = RemoteProtocol.sealReply(output, pairingID: p.id, keys: keys, nonce: nonce, now: hooks.now())
             } else {
@@ -151,12 +186,15 @@ final class RemoteListener {
             }
         }
         // The same body every time: a retry the relay did receive only means a duplicate the phone ignores.
+        var statuses: [String] = []
         for attempt in 0..<3 {
-            if !isActive(p) { return }
-            if await hooks.publish(body, p.reply, p.relay, session) { return }
-            try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 1_500_000_000)
+            if !isActive(p) { note(p, "revoked", "before the answer went out"); return }
+            let status = await hooks.publish(body, p.reply, p.relay, session)
+            if status / 100 == 2 { note(p, "reply-sent", "\(body.utf8.count) bytes, HTTP \(status)"); return }
+            statuses.append(status == 0 ? "no connection" : "HTTP \(status)")
+            if attempt < 2 { try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 1_500_000_000) }
         }
-        hooks.note("answer to the phone could not be sent")
+        note(p, "reply-failed", "\(body.utf8.count) bytes, " + statuses.joined(separator: ", "))
     }
 
     /// A relay event line → the message, or nil for keepalives and anything else.

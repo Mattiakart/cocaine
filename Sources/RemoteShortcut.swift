@@ -58,10 +58,18 @@ enum RemoteShortcut {
         func replace(_ input: Part, _ find: String, _ with: String, regex: Bool = true, caseSensitive: Bool = true) -> Part {
             replace(input, [.t(find)], with, regex: regex, caseSensitive: caseSensitive)
         }
+        /// Generate Hash and Base64 Encode take their input as a variable (WFTextTokenAttachment): given a text with the
+        /// variable inside (WFTextTokenString) they silently output nothing (seen in Shortcuts on macOS 27 and iOS).
         func hash(_ input: Part, _ type: String) -> Part {
-            add("hash", ["WFInput": Self.token([input]), "WFHashType": type], output: "Hash")
+            add("hash", ["WFInput": Self.whole(input), "WFHashType": type], output: "Hash")
         }
         func get(_ url: [Part]) -> Part { add("downloadurl", ["WFURL": Self.token(url), "WFHTTPMethod": "GET"], output: "Contents of URL") }
+        /// POST `body` (a variable, sent as is) to a fixed URL. Variable content never goes into a URL: Get Contents of URL
+        /// finds the link in its text with a data detector, which cuts some long query strings short (seen on macOS 27).
+        func post(_ url: String, body: Part) -> Part {
+            add("downloadurl", ["WFURL": Self.token([.t(url)]), "WFHTTPMethod": "POST", "WFHTTPBodyType": "File",
+                                "WFRequestVariable": Self.whole(body)], output: "Contents of URL")
+        }
         func setVariable(_ name: String, _ input: Part) { add("setvariable", ["WFVariableName": name, "WFInput": Self.whole(input)]) }
         func show(_ input: Part) { add("showresult", ["Text": Self.token([input])]) }
     }
@@ -161,8 +169,9 @@ enum RemoteShortcut {
         let ts = b.replace(b.replace(b.replace(iso, #"[.,][0-9]+"#, ""), "[^0-9TZ:+-]", ""), "+", "p", regex: false)
 
         // The command → Base64 → bits, padded/cut to the fixed size, XOR keystream → Base64url.
-        let b64 = b.add("base64encode", ["WFEncodeMode": "Encode", "WFBase64LineBreakMode": "None",
-                                         "WFInput": Builder.token([.v("cocaineCommand"), .t("\n")])], output: "Base64 Encoded")
+        let plain = b.text([.v("cocaineCommand"), .t("\n")])
+        let b64 = b.add("base64encode", ["WFEncodeMode": "Encode", "WFBase64LineBreakMode": "None", "WFInput": Builder.whole(plain)],
+                        output: "Base64 Encoded")
         let bits = base64Bits(b, b64, alphabet: RemoteCrypto.std)
         let size = RemoteProtocol.commandBits
         let fixedSize = b.replace(b.text([bits, .t(String(repeating: "0", count: size))]), "^([01]{\(size)}).*$", "$1")
@@ -170,7 +179,8 @@ enum RemoteShortcut {
         var ct = b.replace(xor(b, fixedSize, key, count: [.t(String(size))]), "([01]{6})", "$1,")
         for (i, c) in RemoteCrypto.url.enumerated() { ct = b.replace(ct, sixBits(i) + ",", String(c), regex: false) }
         let tag = mac(b, keys: keys, [.t("c2|\(pairing.id)|"), nonce, .t("|"), ts, .t("|"), ct])
-        _ = b.get([.t("\(relay)/\(pairing.cmd)/publish?firebase=no&message=c2.\(pairing.id)."), nonce, .t("."), ts, .t("."), ct, .t("."), tag])
+        let message = b.text([.t("c2.\(pairing.id)."), nonce, .t("."), ts, .t("."), ct, .t("."), tag])
+        _ = b.post("\(relay)/\(pairing.cmd)?firebase=no", body: message)
         b.add("delay", ["WFDelayTime": 5])
 
         // Only the answer to this very request (its nonce), checked and decrypted.
@@ -192,13 +202,66 @@ enum RemoteShortcut {
         return try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
     }
 
-    /// Structural checks of a built Shortcut: known actions only, every output used is produced earlier, every variable
-    /// is set before use, menus are balanced, every constant pattern compiles. Returns the problems found.
+    // MARK: what real Shortcuts accept (ground truth)
+
+    /// How a parameter is given: a variable alone (WFTextTokenAttachment), a text with variables in it
+    /// (WFTextTokenString with attachments), or a text without variables.
+    enum Shape: Equatable {
+        case attachment, text, constant, other
+        static func of(_ any: Any?) -> Shape {
+            guard let d = any as? [String: Any] else { return any is String ? .constant : .other }
+            switch d["WFSerializationType"] as? String {
+            case "WFTextTokenAttachment": return .attachment
+            case "WFTextTokenString":
+                let atts = ((d["Value"] as? [String: Any])?["attachmentsByRange"] as? [String: Any]) ?? [:]
+                return atts.isEmpty ? .constant : .text
+            default: return .other
+            }
+        }
+        /// A constant is a text too; nothing else stands in for another form.
+        func fits(_ required: Shape) -> Bool { self == required || (self == .constant && required == .text) }
+    }
+
+    /// The form each input must have, as seen running the generated Shortcut in Shortcuts (macOS 27, it_IT): in any
+    /// other form the action silently outputs nothing. Generate Hash and Base64 Encode with a text containing the
+    /// variable gave "" (the cause of every v2 command arriving without a tag); Format Date and URL Decode, on the
+    /// contrary, gave "" with a bare variable. A URL with variable content is cut short by Get Contents of URL's link
+    /// detection, so variable content travels only in a POST body.
+    static let inputShapes: [String: [String: Shape]] = [
+        "hash": ["WFInput": .attachment], "base64encode": ["WFInput": .attachment], "setvariable": ["WFInput": .attachment],
+        "format.date": ["WFDate": .text], "urlencode": ["WFInput": .text], "gettext": ["WFTextActionText": .text],
+        "text.replace": ["WFInput": .text, "WFReplaceTextFind": .text], "showresult": ["Text": .text],
+        "downloadurl": ["WFURL": .constant, "WFRequestVariable": .attachment],
+    ]
+
+    /// Every action and parameter key the builder may use, with the values Shortcuts knows (from the action definitions
+    /// in WorkflowKit/ActionKit; nil: any value). A misspelt key is silently ignored by Shortcuts, so it's an error here.
+    static let knownParameters: [String: [String: Set<String>?]] = [
+        "gettext": ["WFTextActionText": nil],
+        "setvariable": ["WFVariableName": nil, "WFInput": nil],
+        "hash": ["WFInput": nil, "WFHashType": ["MD5", "SHA1", "SHA256", "SHA512"]],
+        "base64encode": ["WFInput": nil, "WFEncodeMode": ["Encode", "Decode"], "WFBase64LineBreakMode": ["None", "Every 64 Characters", "Every 76 Characters"]],
+        "text.replace": ["WFInput": nil, "WFReplaceTextFind": nil, "WFReplaceTextReplace": nil, "WFReplaceTextRegularExpression": nil,
+                         "WFReplaceTextCaseSensitive": nil],
+        "urlencode": ["WFInput": nil, "WFEncodeMode": ["Encode", "Decode"]],
+        "date": ["WFDateActionMode": ["Current Date", "Specified Date"]],
+        "format.date": ["WFDate": nil, "WFDateFormatStyle": ["ISO 8601"], "WFISO8601IncludeTime": nil],
+        "number.random": ["WFRandomNumberMinimum": nil, "WFRandomNumberMaximum": nil],
+        "downloadurl": ["WFURL": nil, "WFHTTPMethod": ["GET", "POST"], "WFHTTPBodyType": ["File"], "WFRequestVariable": nil],
+        "delay": ["WFDelayTime": nil],
+        "ask": ["WFAskActionPrompt": nil, "WFInputType": ["Text"], "WFAllowsMultilineText": nil],
+        "choosefrommenu": ["GroupingIdentifier": nil, "WFControlFlowMode": nil, "WFMenuPrompt": nil, "WFMenuItems": nil, "WFMenuItemTitle": nil],
+        "showresult": ["Text": nil],
+        "exit": [:],
+    ]
+
+    /// Structural checks of a built Shortcut: known actions, keys and values only, inputs in the form each action takes,
+    /// every output used is produced earlier, every variable is set before use, menus are balanced, every constant
+    /// pattern compiles. Returns the problems found.
     static func problems(_ data: Data) -> [String] {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let actions = plist["WFWorkflowActions"] as? [[String: Any]] else { return ["not a property list"] }
-        let known: Set<String> = ["gettext", "setvariable", "hash", "base64encode", "text.replace", "urlencode", "date", "format.date",
-                                  "number.random", "downloadurl", "delay", "ask", "choosefrommenu", "showresult", "exit"]
+        let known = Set(knownParameters.keys)
         var problems: [String] = []
         var outputs = Set<String>(), variables = Set<String>()
         var menuDepth = 0
@@ -216,6 +279,15 @@ enum RemoteShortcut {
                   let p = a["WFWorkflowActionParameters"] as? [String: Any] else { problems.append("#\(i): malformed"); continue }
             let id = String(full.dropFirst("is.workflow.actions.".count))
             if !known.contains(id) { problems.append("#\(i): unknown action \(id)") }
+            for (key, value) in p where key != "UUID" {
+                guard let allowed = knownParameters[id]?[key] else { problems.append("#\(i) \(id): unknown parameter \(key)"); continue }
+                if let allowed, !allowed.contains(value as? String ?? "") { problems.append("#\(i) \(id): \(key) = \(value) is not a known value") }
+            }
+            for (key, shape) in inputShapes[id] ?? [:] where p[key] != nil && !Shape.of(p[key]).fits(shape) {
+                problems.append("#\(i) \(id): \(key) must be given as \(shape), not \(Shape.of(p[key]))")
+            }
+            if id == "downloadurl", p["WFHTTPMethod"] as? String == "POST",
+               p["WFHTTPBodyType"] as? String != "File" || p["WFRequestVariable"] == nil { problems.append("#\(i): POST without a body") }
             refs(p, "#\(i) \(id)")
             if id == "choosefrommenu", let mode = p["WFControlFlowMode"] as? Int {
                 if mode == 0 { menuDepth += 1 } else if mode == 2 { menuDepth -= 1 }
