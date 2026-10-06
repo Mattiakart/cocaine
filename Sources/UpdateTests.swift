@@ -27,7 +27,10 @@ private func sha(_ d: Data) -> String { SHA256.hash(data: d).map { String(format
 
 /// One connection at a time, `Connection: close`, enough HTTP/1.1 for the downloader. `behave` decides each answer.
 final class TestHTTPServer {
-    enum Answer { case serve(Data), cut(Data, after: Int), ignoreRange(Data), noLength(Data), status(Int), redirect(String), badRange(Data) }
+    /// `cut`: the body stops after `after` bytes and the connection ends, but only once `delivered()` says the client has those
+    /// bytes (the test watches the partial file grow), or after 10 s. URLSession may drop data it had received but not yet
+    /// handed to its delegate when a connection fails, so cutting at once made the partial size depend on timing and load.
+    enum Answer { case serve(Data), cut(Data, after: Int, delivered: () -> Bool), ignoreRange(Data), noLength(Data), status(Int), redirect(String), badRange(Data) }
     private(set) var port: UInt16 = 0
     private var fd: Int32 = -1
     private let lock = NSLock()
@@ -79,10 +82,27 @@ final class TestHTTPServer {
             let range = lines.first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
             lock.lock(); _log.append((path, range)); lock.unlock()
             counts[path, default: 0] += 1
-            answer(c, behave(path, counts[path]!), range: range)
-            close(c)
+            let a = behave(path, counts[path]!)
+            answer(c, a, range: range)
+            switch a {
+            case .cut, .noLength: finishGracefully(c)            // the body ends with the connection: every byte sent must arrive
+            default: close(c)
+            }
         }
         done.signal()
+    }
+
+    /// Ends a connection whose end *is* the message (a cut transfer, a body without a length) so that every byte written
+    /// reaches the client before it sees the end: half-close (FIN after the data), then wait for the client to close its side
+    /// (at most 5 s). A plain close() could reset the connection under load and drop data the client hadn't read yet, which
+    /// made the "partial file" tests depend on timing.
+    private func finishGracefully(_ c: Int32) {
+        shutdown(c, SHUT_WR)
+        var tv = timeval(tv_sec: 5, tv_usec: 0)
+        setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var buf = [UInt8](repeating: 0, count: 1024)
+        while read(c, &buf, buf.count) > 0 {}
+        close(c)
     }
 
     private func send(_ c: Int32, _ d: Data) {
@@ -108,11 +128,13 @@ final class TestHTTPServer {
             } else {
                 head(c, "200 OK", ["Content-Length: \(d.count)"]); send(c, d)
             }
-        case .cut(let d, let after):
+        case .cut(let d, let after, let delivered):
             let s = start ?? 0
             head(c, s > 0 ? "206 Partial Content" : "200 OK",
                  ["Content-Length: \(d.count - s)"] + (s > 0 ? ["Content-Range: bytes \(s)-\(d.count - 1)/\(d.count)"] : []))
-            send(c, d.subdata(in: s..<min(d.count, s + after)))      // then the connection drops
+            send(c, d.subdata(in: s..<min(d.count, s + after)))      // then the connection drops…
+            let until = Date().addingTimeInterval(10)                // …once the client has written what was sent
+            while !delivered() && Date() < until { usleep(5_000) }
         case .ignoreRange(let d):
             head(c, "200 OK", ["Content-Length: \(d.count)"]); send(c, d)
         case .noLength(let d):                                  // no Content-Length: the body ends when the connection closes
@@ -331,11 +353,17 @@ enum UpdateTests {
         for i in 0..<payload.count { payload[i] = UInt8(truncatingIfNeeded: i &* 31 &+ i >> 7) }
         let digest = sha(payload)
         var corrupt = payload; corrupt[1234] ^= 0xff
+        // The partial file of the download in progress, for the cut transfers: the server ends the connection once it is that big.
+        let partialBox = NSMutableArray()          // [URL]: set before each fetch (a class, so the server's thread reads the current one)
+        func partialSize() -> Int {
+            guard let u = partialBox.lastObject as? URL else { return -1 }
+            return ((try? FileManager.default.attributesOfItem(atPath: u.path))?[.size] as? NSNumber)?.intValue ?? -1
+        }
         let server = TestHTTPServer { path, n in
             switch path {
             case "/ok", "/resume": return .serve(payload)
-            case "/cut": return n == 1 ? .cut(payload, after: 200_000) : .serve(payload)
-            case "/cutalways": return .cut(payload, after: 150_000)
+            case "/cut": return n == 1 ? .cut(payload, after: 200_000, delivered: { partialSize() >= 200_000 }) : .serve(payload)
+            case "/cutalways": return .cut(payload, after: 150_000, delivered: { partialSize() >= 150_000 })
             case "/norange": return .ignoreRange(payload)
             case "/big": return .serve(payload + Data(count: 1000))
             case "/biglen": return .noLength(payload + Data(count: 1000))
@@ -368,18 +396,36 @@ enum UpdateTests {
         (r, _) = fetch(cfg("/ok", dir: dir))
         check("download: an already verified file isn't downloaded again", ok(r) && req("/ok").count == 1)
 
-        dir = tempDir("dl")
-        (r, d) = fetch(cfg("/cut", dir: dir))
-        check("download: interrupted transfer resumes with Range from where it stopped", ok(r) && req("/cut") == [nil, "bytes=200000-"], "\(req("/cut"))")
+        // The server cuts these transfers after a known number of bytes, and only once the client has written them (see Answer.cut),
+        // so the sizes are exact whatever the load. The invariants are checked too: a prefix of the file was kept, and the resume
+        // asks for exactly what is missing.
+
+        func partBytes(_ u: URL) -> Data? { try? Data(contentsOf: u) }
+        func rangeStart(_ r: String?) -> Int? { r.flatMap { $0.hasPrefix("bytes=") ? Int($0.dropFirst(6).dropLast()) : nil } }
 
         dir = tempDir("dl")
+        partialBox.add(dir.appendingPathComponent("\(digest).dmg.partial"))
+        (r, d) = fetch(cfg("/cut", dir: dir))
+        let cutLog = req("/cut")
+        let cutAt = cutLog.count == 2 ? rangeStart(cutLog[1]) : nil
+        check("download: interrupted transfer resumes with Range from where it stopped",
+              ok(r) && cutLog.first == .some(nil) && cutAt.map { $0 > 0 && $0 <= 200_000 } == true, "\(cutLog)")
+        check("download: …all the bytes the server sent before the cut were kept (no dropped tail)", cutAt == 200_000, "\(cutLog)")
+
+        dir = tempDir("dl")
+        partialBox.add(dir.appendingPathComponent("\(digest).dmg.partial"))
         (r, d) = fetch(cfg("/cutalways", dir: dir, attempts: 1))
         let partial = d.partialURL
-        let partSize = ((try? fm.attributesOfItem(atPath: partial.path))?[.size] as? NSNumber)?.intValue ?? -1
-        if case .failure(.network)? = r { check("download: gives up after the retries, keeping the partial file", partSize == 150_000, "partial \(partSize)") }
-        else { check("download: gives up after the retries, keeping the partial file", false, "\(String(describing: r))") }
+        let kept = partBytes(partial) ?? Data()
+        if case .failure(.network)? = r {
+            check("download: gives up after the retries, keeping the partial file (a prefix of the file)",
+                  !kept.isEmpty && kept.count <= 150_000 && kept == payload.prefix(kept.count), "partial \(kept.count)")
+            check("download: …every byte the server sent before the cut is in it", kept.count == 150_000, "partial \(kept.count)")
+        } else { check("download: gives up after the retries, keeping the partial file (a prefix of the file)", false, "\(String(describing: r))") }
         (r, _) = fetch(cfg("/resume", dir: dir))
-        check("download: a new session (app restarted) resumes the partial file", ok(r) && req("/resume") == ["bytes=150000-"], "\(req("/resume"))")
+        check("download: a new session (app restarted) resumes the partial file", ok(r) && req("/resume") == ["bytes=\(kept.count)-"] && !kept.isEmpty,
+              "\(req("/resume")) after \(kept.count)")
+
 
         dir = tempDir("dl")
         try? UpdateFiles.makePrivate(dir)
@@ -454,7 +500,7 @@ enum UpdateTests {
         else { check("download: server unreachable → retried, then a network error", false, "\(String(describing: r))") }
 
         dir = tempDir("dl")
-        let slow = TestHTTPServer { _, _ in .cut(payload, after: 50_000) }
+        let slow = TestHTTPServer { _, _ in .cut(payload, after: 50_000, delivered: { true }) }
         if let slow {
             var s = cfg("/x", dir: dir); s.url = slow.url("/x"); s.maxAttempts = 50; s.backoff = { _ in 0.3 }
             (r, _) = fetch(s, cancelAfter: 0.5)
