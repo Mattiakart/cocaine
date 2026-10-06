@@ -1338,6 +1338,8 @@ private final class PanelModel: ObservableObject {
     var allowOldPhones: (Bool) -> Void = { _ in }
     var removeOldPhones: () -> Void = {}
     var quit: () -> Void = {}
+    /// Closes the settings panel and opens the island again (on the page it was on), for the strip's back button.
+    var backToIsland: () -> Void = {}
 
     init() {
         dimEnabled = settings.dimEnabled
@@ -2203,8 +2205,11 @@ private struct PanelView: View {
     /// The panel's top strip, like the island's: the tabs left of the notch, Feedback and Quit right of it.
     private func strip(_ g: NotchGeometry) -> some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) { ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } } }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 0) {
+                stripButton("chevron.backward", L("Back to the island")) { m.backToIsland() }      // from the island's gear: back to it
+                ForEach(tabs, id: \.self) { t in stripButton(tabIcon(t), tabTitle(t), selected: m.page == t) { m.page = t } }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: g.notchWidth)
             HStack(spacing: 0) {
                 stripButton("envelope", L("Feedback or help") + " — " + Feedback.address) { Feedback.compose() }
@@ -3569,8 +3574,7 @@ private struct ClipboardPage: View {
             Spacer(minLength: 0)
             footer
         }
-        .onAppear { keyable(true) }
-        .onDisappear { keyable(false); h.hovered = nil }
+        .onDisappear { keyable(false); h.hovered = nil }      // gives the keyboard back if the search field had it
     }
 
     /// A small square button of the toolbar, highlighted while its mode is on (like the selected tab).
@@ -4853,13 +4857,21 @@ private final class IslandModel: ObservableObject {
 }
 
 private final class IslandPanel: NSPanel {
-    /// Only while the clipboard page is shown, for its search field (the panel never activates the app).
+    /// A dialog in the island asks for the keyboard explicitly (Return, Esc, its text field); the panel never activates the app.
     var keyable = false
-    override var canBecomeKey: Bool { keyable }
+    /// Set by a mouse-down on a text field (the clipboard's search): only that click may take the keyboard. Clicking a tab or a
+    /// button must not, or the next tab change had to put the window out and in again to give the keyboard back, which showed
+    /// as the island fading out and popping back (seen live: every tab left after the Clipboard one).
+    private var textKeyable = false
+    override var canBecomeKey: Bool { keyable || textKeyable }
     override var canBecomeMain: Bool { false }
-    /// Clicking a tab or a button never takes the keyboard (that made the next tab change put the window out and in again, a
-    /// visible blink); only a click in the search field does, and a dialog asks for it explicitly with makeKey().
-    override var becomesKeyOnlyIfNeeded: Bool { get { true } set {} }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, let content = contentView {
+            let hit = content.hitTest(content.convert(event.locationInWindow, from: nil))
+            textKeyable = hit is NSTextField || hit is NSTextView
+        }
+        super.sendEvent(event)
+    }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }     // exactly where we say, even above the screen
 }
 
@@ -4912,6 +4924,7 @@ private final class IslandController {
             p.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
             p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
             p.hidesOnDeactivate = false; p.isMovable = false
+            p.animationBehavior = .none                  // no system fade/scale when it is ordered out and in (the island morphs by itself)
             p.appearance = NSAppearance(named: .darkAqua)
             let h = NSHostingView(rootView: IslandView(model: model, m: pm, focus: model.focus, batteries: model.batteries, mic: model.mic, usage: model.usage))
             h.sizingOptions = []
@@ -4985,6 +4998,13 @@ private final class IslandController {
     /// The island's own volume/brightness bars only run while *Replace system HUD* is on.
     func syncHUD(_ on: Bool) { if enabled && on { model.hud.start() } else { model.hud.stop() } }
 
+    /// Back from the settings panel: the island opens again where it was, as if the pointer had just touched it.
+    func reopen() {
+        guard enabled else { return }
+        hovering = true
+        setOpen(true)
+    }
+
     func setSuspended(_ s: Bool) {
         suspended = s
         if s {
@@ -5040,7 +5060,7 @@ private final class IslandController {
         } else {
             dialogMonitors.forEach(NSEvent.removeMonitor)
             dialogMonitors.removeAll()
-            model.setKeyable(model.open && model.tab == "clipboard")      // the clipboard's search field keeps it, nothing else
+            model.setKeyable(false)                                      // the search field takes it again on its own click
             if !hovering { setOpen(false) }                              // the pointer left while the question was up
         }
     }
@@ -5728,6 +5748,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         model.testPhone = { Phone.send(L("This is a test")) }
         syncPhones()
         model.quit = { NSApp.terminate(nil) }
+        model.backToIsland = { [weak self] in self?.hidePanel(); self?.island.reopen() }
         model.focusAgent = { [weak self] origin, name in self?.goToSession(origin, name) }
         model.answerApproval = { [weak self] id, choice in self?.answerApproval(id, choice) }
         model.releaseApproval = { [weak self] id in self?.releaseApproval(id) }
