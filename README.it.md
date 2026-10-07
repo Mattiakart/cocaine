@@ -175,6 +175,7 @@ pagine:
   frecce), sceglie quella su cui si apre l'isola e mette moduli di pagine diverse nella stessa schermata (due colonne, ogni modulo
   S, M o L) con anteprima dal vivo e *Ripristina predefinite*. Vedi [docs/screens.it.md](docs/screens.it.md).
 - **Scaffale**: trascina file, immagini, link o testo sull'isola (si apre da sola) in raccolte con nome; selezionane più d'uno, Quick Look, trascinali fuori insieme, rinomina in gruppo, ZIP, ridimensiona/converti immagini, riconosci il testo, esegui azioni tue, e lascia che le cartelle osservate (Istantanee, Download…) lo riempiano. Anche dal menu Servizi, con `open -a Cocaine` e `cocaine shelf add`. [Dettagli e limiti](docs/shelf.it.md).
+- **Link cloud**: carica i file dello scaffale nel tuo bucket S3/R2/B2/Wasabi/Spaces/MinIO, su Nextcloud, in una cartella WebDAV, sul tuo server via SFTP (solo chiavi) o con un tuo comando, e ottieni un link (con scadenza, revocabile, escluso dalle cronologie degli appunti); segreti nel Portachiavi, nulla caricato senza un clic. Le azioni dello scaffale possono anche essere webhook, avere i tasti ⌥1–⌥9, eseguirsi una dopo l'altra ed essere importate/esportate. [Dettagli e limiti](docs/cloud-sharing.it.md).
   Tiene dei riferimenti, non copie, e resta dopo un riavvio (i file spariti nel frattempo vengono tolti).
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo col nome del file avvisa
   quando ne arriva uno. Le due cartelle vengono osservate, non rilette ogni pochi secondi.

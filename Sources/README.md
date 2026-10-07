@@ -23,7 +23,11 @@ Where things are:
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
   IslandStatus (batteries; usage in Usage.swift), IslandCalendar (logic in CalendarGrid.swift, --calendar-test in CalendarTests.swift), IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
-  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The pages are drawn as modules: ScreenLayout.swift (the
+  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). Cloud links from the shelf: ShareProviders.swift (the
+  provider protocol, rules, HTTP, Keychain, history, engine), ShareProviders{S3,WebDAV,SFTP}.swift, SigV4.swift, ShareUploader.swift
+  (the user's command, webhooks), CloudShare.swift (the hook, confirmations, toast), CloudShareSettings.swift (Settings → Sharing),
+  ShelfActionsIO.swift (action keys, chains, import/export), CloudShareTests.swift + CloudShareFakes.swift (--cloud-test).
+  Strings: Localization/<lang>.lproj/Cloud.strings. The pages are drawn as modules: ScreenLayout.swift (the
   user's screens, pure rules), ScreenModules.swift (module views, the screen grid), ScreensEditor.swift (the Settings card),
   ScreensTests.swift (--screens-test, render fixtures).
 - AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices, sounds per event, quiet hours, AgentPrefs), Agent*.swift (sessions,

@@ -167,6 +167,7 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   island opens on, and puts modules of different pages on one screen (two columns, each module S, M or L) with a live preview and
   *Restore defaults*. See [docs/screens.en.md](docs/screens.en.md).
 - **Shelf**: drop files, images, links or text on the island (it opens by itself) into named collections; select several, Quick Look, drag them out together, rename in batch, ZIP, resize/convert images, recognize text, run your own actions, and let watched folders (Screenshots, Downloads…) fill it. Also from the Services menu, `open -a Cocaine` and `cocaine shelf add`. [Details and limits](docs/shelf.en.md).
+- **Cloud links**: upload shelf files to your own S3/R2/B2/Wasabi/Spaces/MinIO bucket, Nextcloud, a WebDAV folder, your server over SFTP (keys only) or a command of yours, and get a link (expiring, revocable, kept out of clipboard histories); secrets in the Keychain, nothing uploaded without a click. Shelf actions can also be webhooks, have ⌥1–⌥9 keys, run one after another, and be imported/exported. [Details and limits](docs/cloud-sharing.en.md).
   It holds references, not copies, and is kept across restarts (files gone meanwhile are left out).
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash with the file's name says when a
   new one arrives. The two folders are watched, not re-read every few seconds.
