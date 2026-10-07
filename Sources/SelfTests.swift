@@ -1,4 +1,4 @@
-// Self-test groups run by --selftest and --dialogs-test (dialogs, design passes, power).
+// Test flags: --selftest, --agents-test, --layout-test, --remote-test, --dialogs-test, and the self-test groups (dialogs, design passes, power).
 
 import AppKit
 import AVFoundation

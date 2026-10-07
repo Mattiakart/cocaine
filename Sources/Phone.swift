@@ -1,4 +1,4 @@
-// The phone: remote control through the relay, scheduled wake-ups, the iPhone Shortcut and phone alerts.
+// The phone: remote control through the relay, scheduled wake-ups, the iPhone Shortcut, phone alerts; --share-test, --make-shortcut, --relay-test.
 
 import AppKit
 import AVFoundation

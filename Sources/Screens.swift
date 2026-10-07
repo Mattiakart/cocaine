@@ -1,4 +1,4 @@
-// Screen dimming on every display (Screens) and what one dim changes (DimPlan).
+// Screen dimming on every display (Screens) and what one dim changes (DimPlan); --gamma-test.
 
 import AppKit
 import AVFoundation

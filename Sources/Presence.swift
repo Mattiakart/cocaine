@@ -1,4 +1,4 @@
-// Stay active: chat apps keep showing you as available.
+// Stay active: chat apps keep showing you as available; --presence-test.
 
 import AppKit
 import AVFoundation

@@ -1,4 +1,4 @@
-// The one-time authorization: the narrow sudo rule for pmset.
+// The one-time authorization: the narrow sudo rule for pmset (and --auth-selftest, --auth-preview, --remove-rule).
 
 import AppKit
 import AVFoundation

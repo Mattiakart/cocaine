@@ -303,8 +303,9 @@ sudo rm /etc/sudoers.d/cocaine
 - `pmset -a disablesleep 1` is the only setting that keeps a Mac awake with the lid closed. `caffeinate` doesn't
   survive a lid close, and changing this setting needs root, hence the narrow sudo rule.
 - While Cocaine is on, a small helper holds `caffeinate -d` so the display doesn't idle-sleep (`-i` in screen-off mode).
-- The app itself is a Swift/SwiftUI menu bar app ([`main.swift`](main.swift) and [`Sources/`](Sources)). The engine is a zsh script
-  ([`cocaine.zsh`](cocaine.zsh)). Screen dimming uses macOS's DisplayServices.
+- The app itself is a Swift/SwiftUI menu bar app: [`main.swift`](main.swift) is only the entry point (the command-line flags and
+  starting the app); the code is in [`Sources/`](Sources), one file per area (see [`Sources/README.md`](Sources/README.md)).
+  The engine is a zsh script ([`cocaine.zsh`](cocaine.zsh)). Screen dimming uses macOS's DisplayServices.
 
 Build it yourself with `./build.sh --dmg` (`--sign local|developer-id|adhoc` picks the signing tier and never falls back to another;
 `--release` refuses ad hoc). `./verify.sh` builds and runs every automatic check; the same runs on GitHub Actions.

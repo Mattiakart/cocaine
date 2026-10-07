@@ -6,7 +6,7 @@ import Security
 
 // The island's clipboard history: text, images and file references, searchable, with favorites. Memory only by default; saving
 // it on this Mac is optional and encrypted (key in the Keychain). Nothing here ever leaves the Mac.
-// The views are in main.swift (they use its private styles); everything they show and do is here.
+// The views are in IslandClipboard.swift (the island's page) and PanelView.swift (its settings card); everything they show and do is here.
 
 // MARK: - Items and settings
 

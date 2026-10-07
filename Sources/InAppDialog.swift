@@ -251,7 +251,7 @@ final class DialogCenter: ObservableObject {
 
 // MARK: - The card
 
-/// The panel's type scale and colors, handed in by main.swift (they are private there).
+/// The panel's type scale and colors, handed in by the app (UI.dialog in Styles.swift).
 struct DialogStyle {
     var title: Font
     var body: Font

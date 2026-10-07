@@ -1,5 +1,5 @@
 // AI sessions on the board: where each one runs (to go back to it), its state, the order they are shown in, and the copy on
-// disk that survives a restart. Pure logic plus small process lookups; the app wires it up in main.swift.
+// disk that survives a restart. Pure logic plus small process lookups; the app wires it up in AppDelegate.swift.
 
 import AppKit
 import Darwin

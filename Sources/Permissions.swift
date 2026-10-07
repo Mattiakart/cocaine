@@ -1,4 +1,4 @@
-// The privacy permissions Cocaine needs, checked and asked for.
+// The privacy permissions Cocaine needs, checked and asked for; --permissions, --camera-test.
 
 import AppKit
 import AVFoundation

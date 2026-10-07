@@ -1,4 +1,4 @@
-// AI alerts: the hooks Cocaine adds to Claude Code, Codex and the other AI tools (AIHooks, JSONValue).
+// AI alerts: the hooks Cocaine adds to Claude Code, Codex and the other AI tools (AIHooks, JSONValue); --agent-request, --ai-alerts.
 
 import AppKit
 import AVFoundation

@@ -314,7 +314,9 @@ sudo rm /etc/sudoers.d/cocaine
 - Mentre è attivo, `caffeinate -d` tiene acceso lo schermo (`-i` nella modalità schermo spento).
 - La luminosità è gestita con le API DisplayServices di macOS.
 
-Codice: `main.swift` e [`Sources/`](Sources) (app per la barra dei menu, Swift/SwiftUI) e `cocaine.zsh` (lo script "motore").
+Codice: l'app per la barra dei menu (Swift/SwiftUI) è in [`Sources/`](Sources), un file per area (vedi
+[`Sources/README.md`](Sources/README.md)); `main.swift` è solo il punto d'ingresso (le opzioni da riga di comando e l'avvio).
+`cocaine.zsh` è lo script "motore".
 Per compilare: `./build.sh --dmg` (`--sign local|developer-id|adhoc` sceglie il livello di firma e non ripiega mai su un altro;
 `--release` rifiuta ad hoc). `./verify.sh` compila ed esegue tutti i controlli automatici; lo stesso gira su GitHub Actions.
 

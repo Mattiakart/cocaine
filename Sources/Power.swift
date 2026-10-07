@@ -3,7 +3,7 @@ import CoreGraphics
 import IOKit.ps
 
 // Power: Smart Triggers on power, external displays and time windows; the "screen off" mode; control from Shortcuts
-// and cocaine:// links. Pure logic here (tested by --power-test); main.swift wires it to the app and the panel.
+// and cocaine:// links. Pure logic here (tested by --power-test); AppDelegate.swift and PanelView.swift wire it to the app and the panel.
 
 // MARK: - Time windows
 

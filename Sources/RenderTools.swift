@@ -1,4 +1,4 @@
-// Render tools: saved settings around renders, the island pixel checks, the sample dialogs.
+// Render tools: --render-panel, --render-island, --island-selfcheck; saved settings around renders, the island pixel checks, sample dialogs.
 
 import AppKit
 import AVFoundation

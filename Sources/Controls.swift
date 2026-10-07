@@ -27,7 +27,7 @@ enum CTL {
     static var disabled: Double { UI.disabledOpacity }
 }
 
-/// The haptic tap of main.swift (its Haptic is private there and honours the "Haptic feedback" setting).
+/// The app's haptic tap, handed in by the app (Haptic in Core.swift, which honours the "Haptic feedback" setting).
 enum ControlHaptics { static var tap: () -> Void = {} }
 
 // MARK: - Dimming once
@@ -614,7 +614,7 @@ struct IslandValueButton: View {
     }
 }
 
-/// The few words the controls say themselves, looked up by the app (main.swift sets them in the app's language).
+/// The few words the controls say themselves, looked up by the app (it sets them in the app's language).
 enum L10nControls {
     static var opensList = "Opens a list"
     static var all = "All"
