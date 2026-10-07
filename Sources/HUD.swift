@@ -134,9 +134,9 @@ final class HUDWatch {
 /// helper is kept started but frozen, so it never draws anything; at any other moment (option off, island hidden in full screen or
 /// behind the settings panel, another user's session, Cocaine quitting) it is simply ended and macOS starts a fresh one the next
 /// time it needs it. If Cocaine dies, its watchdog ends the frozen helper (Sources/Recovery.swift).
-/// From macOS 26 the HUD is drawn by Control Center (OSDUIHelper no longer runs for it: checked on 27.0.1, it stays not running
-/// while the volume changes), and Control Center can't be frozen (it owns the menu bar's controls): nothing is frozen or started
-/// there. The keys Cocaine handles never reach macOS, so macOS has nothing to show for them.
+/// From macOS 26 the HUD is drawn by Control Center (its binary carries the OSD service; on 27.0.1, without Cocaine, OSDUIHelper was
+/// not running and logged nothing), and Control Center can't be frozen (it owns the menu bar's controls): nothing is
+/// frozen or started there. The keys Cocaine handles never reach macOS, so macOS has nothing to show for them.
 final class SystemHUD {
     private var timer: Timer?
     private var lastKick = Date.distantPast
