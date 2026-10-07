@@ -321,60 +321,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !didFinishLaunching { launchedForAlert = !pendingNeedsApp }
             // Anything can open a cocaine:// URL: AlertParams keeps values short, free of control characters, well-formed.
             let p = AlertParams.parse(url)
-            let trusted = p.token == settings.testToken                         // only the app's own tools know it
-            let from = p.from, project = p.project, event = p.event
-            let session = p.sessionKey                                          // tools that don't say: one per AI and folder
-            if trusted && p.test == "phone" { Phone.send(p.message ?? L("This is a test")); continue }
-            let isTest = trusted && p.test != nil
-            // A tool that fires the same hook twice (or a URL opened twice) makes one alert, not two.
-            if !isTest, ["done", "input", "error"].contains(event), alertDedup.isDuplicate("\(session)|\(event)") {
-                log.notice("duplicate \(event, privacy: .public) for \(session, privacy: .public): ignored")
-                continue
-            }
-            let origin: AgentOrigin? = p.origin.isEmpty ? nil : AgentProcess.complete(p.origin)
-            if let running = p.running {                                        // the tool's own list of work still in flight
-                var s = sessions[session] ?? SessionState()
-                s.inFlight = running
-                sessions[session] = s
-            }
-            if event == "error" {                                    // an agent stopped with an error
-                if !isTest { boardSet(session, from, project, "error", origin) }
-                if settings.alertError { alert(Notice(from: from, message: p.message ?? L("stopped with an error"), project: project, session: session, origin: origin),
-                                                away: trusted && p.test == "away" ? true : nil) }
-                continue
-            }
-            if event == "open" || event == "end" {                 // a session started or ended (SessionStart / SessionEnd hooks)
-                if !isTest { boardSet(session, from, project, event == "open" ? "idle" : "ended", origin) }
-                continue
-            }
-            if event != "done" && event != "input" {                 // silent signs of life: prompts, agents and tasks
-                if !isTest, ["start", "agentstart", "taskstart"].contains(event) { boardSet(session, from, project, "working", origin) }
-                activity(session, event)
-                continue
-            }
-            let input = event == "input"
-            if p.message == nil && !(input ? settings.alertInput : settings.alertDone) {   // alerts of this kind are off
-                if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
-                continue
-            }
-            // Claude Code's own "needs you" after a request the notch already announced (handed back, or expired): one alert.
-            if input && p.message == nil && !isTest, let t = approvalAlerted[session], Date().timeIntervalSince(t) < 300 {
-                boardSet(session, from, project, "waiting", origin)
-                continue
-            }
-            let message = p.message ?? (input ? L("needs your input") : L("has finished"))
-            let notice = Notice(from: from, message: message, project: project, session: session, origin: origin)
-            if p.message == nil && !input && settings.alertPerSession && !isTest {
-                boardSet(session, from, project, "working", origin)  // still counts as at work until it stays quiet
-                holdUntilQuiet(session, notice)                    // one alert when the whole session is done
-                continue
-            }
-            if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
-            if input, var s = sessions[session] {                 // it needs you now; "done" will come again later
-                s.timer?.cancel(); s.notice = nil; sessions[session] = s
-            }
-            alert(notice, away: trusted && p.test == "away" ? true : nil)
+            handleAlert(p, trusted: p.token == settings.testToken)          // only the app's own tools know the token
         }
+    }
+
+    /// A hook's news (a cocaine://alert link, or `--agent-event` over the private socket): the board, the alert.
+    private func handleAlert(_ p: AlertParams, trusted: Bool) {
+        let from = p.from, project = p.project, event = p.event
+        let session = p.sessionKey                                          // tools that don't say: one per AI and folder
+        if trusted && p.test == "phone" { Phone.send(p.message ?? L("This is a test")); return }
+        let isTest = trusted && p.test != nil
+        // A tool that fires the same hook twice (or a URL opened twice) makes one alert, not two.
+        if !isTest, ["done", "input", "error"].contains(event), alertDedup.isDuplicate("\(session)|\(event)") {
+            log.notice("duplicate \(event, privacy: .public) for \(session, privacy: .public): ignored")
+            return
+        }
+        let origin: AgentOrigin? = p.origin.isEmpty ? nil : AgentProcess.complete(p.origin)
+        if let running = p.running {                                        // the tool's own list of work still in flight
+            var s = sessions[session] ?? SessionState()
+            s.inFlight = running
+            sessions[session] = s
+        }
+        if event == "error" {                                    // an agent stopped with an error
+            if !isTest { boardSet(session, from, project, "error", origin) }
+            if settings.alertError { alert(Notice(from: from, message: p.message ?? L("stopped with an error"), project: project, session: session, origin: origin, kind: "error"),
+                                            away: trusted && p.test == "away" ? true : nil) }
+            return
+        }
+        if event == "open" || event == "end" {                 // a session started or ended (SessionStart / SessionEnd hooks)
+            if !isTest { boardSet(session, from, project, event == "open" ? "idle" : "ended", origin) }
+            if event == "open", !isTest { rememberGhostty(session, origin) }
+            return
+        }
+        if event != "done" && event != "input" {                 // silent signs of life: prompts, agents and tasks
+            if !isTest, ["start", "agentstart", "taskstart"].contains(event) { boardSet(session, from, project, "working", origin) }
+            activity(session, event)
+            return
+        }
+        let input = event == "input"
+        if p.message == nil && !(input ? settings.alertInput : settings.alertDone) {   // alerts of this kind are off
+            if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
+            return
+        }
+        // Claude Code's own "needs you" after a request the notch already announced (handed back, or expired): one alert.
+        if input && p.message == nil && !isTest, let t = approvalAlerted[session], Date().timeIntervalSince(t) < 300 {
+            boardSet(session, from, project, "waiting", origin)
+            return
+        }
+        let message = p.message ?? (input ? L("needs your input") : L("has finished"))
+        let notice = Notice(from: from, message: message, project: project, session: session, origin: origin, kind: input ? "input" : "done")
+        if p.message == nil && !input && settings.alertPerSession && !isTest {
+            boardSet(session, from, project, "working", origin)  // still counts as at work until it stays quiet
+            holdUntilQuiet(session, notice)                    // one alert when the whole session is done
+            return
+        }
+        if !isTest { boardSet(session, from, project, input ? "waiting" : "done", origin) }
+        if input, var s = sessions[session] {                 // it needs you now; "done" will come again later
+            s.timer?.cancel(); s.notice = nil; sessions[session] = s
+        }
+        alert(notice, away: trusted && p.test == "away" ? true : nil)
     }
 
     /// A pending link that needs the app to keep running (anything but "status").
@@ -476,6 +481,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if state == "working" && was != "working" { A11y.announce(String(format: L("%@ is at work"), from)) }   // VoiceOver: an AI started
     }
 
+    /// A session that starts in Ghostty: the id of the terminal in front, for going back to it later (AgentFocus).
+    private func rememberGhostty(_ session: String, _ origin: AgentOrigin?) {
+        guard let o = origin, AgentFocus.appID(o) == AgentFocus.ghostty || o.term == "ghostty", o.cmuxSurface == nil,
+              NSWorkspace.shared.frontmostApplication?.bundleIdentifier == AgentFocus.ghostty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let id = AgentFocus.ghosttyFocusedTerminal() else { return }
+            DispatchQueue.main.async {
+                if self.board.setGhosttyTerminal(session, id) { self.writeBoard() }
+            }
+        }
+    }
+
     // MARK: Requests answered from the notch (Sources/AgentApprovals.swift)
 
     private func startApprovals() {
@@ -489,9 +506,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.approvals.gone(id, now: Date())
             self.publishApprovals()
         }
+        server.onEvent = { [weak self] tool, event, origin in self?.agentEvent(tool, event, origin) }
+        let review = ApprovalReviewModel.shared
+        review.reply = { [weak self] id, reply in self?.replyApproval(id, reply) }
+        review.release = { [weak self] id in self?.releaseApproval(id) }
+        review.focus = { [weak self] origin, name in self?.goToSession(origin, name) }
         do { try server.start(); approvalServer = server }
         catch { log.error("approvals: socket not started: \(String(describing: error), privacy: .public)") }   // hooks fall back to the terminal
     }
+
+    /// A hook's news with text (Sources/AgentEvents.swift): the session card's details (in memory), then the usual alert path.
+    private func agentEvent(_ tool: String, _ e: [String: Any], _ origin: AgentOrigin) {
+        guard let kind = e["kind"] as? String, ["done", "error", "input", "plan"].contains(kind) else { return }
+        let from = tool == "claude" ? "Claude Code" : tool == "codex" ? "Codex" : String(tool.prefix(40))
+        var p = AlertParams()
+        p.from = from
+        p.session = e["session"] as? String
+        p.origin = origin.isEmpty ? AgentOrigin() : origin
+        p.project = origin.cwd.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty || $0 == "/" || $0 == NSUserName() ? nil : $0 }
+        p.running = (e["running"] as? Int).map { min(max($0, 0), 10_000) }
+        AgentExtras.shared.take(session: p.sessionKey, event: e)
+        switch kind {
+        case "error":
+            p.event = "error"
+            p.message = AgentExtra.errorText(e["error"] as? String ?? "unknown")
+        case "input":
+            // Only the kinds that mean "it waits for you"; an idle reminder or a finished agent is news for the card only.
+            guard ["permission_prompt", "elicitation_dialog", "agent_needs_input", nil].contains(e["notification"] as? String) else { return }
+            p.event = "input"
+        case "plan":
+            p.event = "start"                                   // it is at work on its plan
+        default:
+            p.event = "done"
+        }
+        handleAlert(p, trusted: false)
+    }
+
+    /// Tool uses whose question or plan the user handed back to the terminal (PreToolUse): the same one asked again through
+    /// PermissionRequest goes straight to the terminal, never held twice.
+    private var handedBack: [String: Date] = [:]
 
     private func approvalArrived(_ id: String, _ nonce: String, _ tool: String, _ input: [String: Any], _ origin: AgentOrigin) {
         guard let server = approvalServer else { return }
@@ -499,6 +552,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             server.reply(id, decision: "none", content: nil)
             return
         }
+        handedBack = handedBack.filter { Date().timeIntervalSince($0.value) < 900 }
+        if r.event == "PermissionRequest", let t = r.toolUseID, handedBack[t] != nil { r.answerable = false }
         let session = r.session ?? "\(r.from)|\(r.project ?? "")"
         r.session = session
         boardSet(session, r.from, r.project, "waiting", r.origin)
@@ -519,24 +574,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         approvalAlerted = approvalAlerted.filter { Date().timeIntervalSince($0.value) < 600 }
         approvalAlerted[r.session ?? ""] = Date()
         guard settings.alertInput else { return }
-        alert(Notice(from: r.from, message: r.event == "Elicitation" ? L("asks you a question") : L("needs your approval"), project: r.project,
-                     session: r.session, origin: r.origin))
+        let message = r.kind == .plan ? L("has a plan for you to review") : r.kind == .question || r.kind == .elicitation ? L("asks you a question") : L("needs your approval")
+        alert(Notice(from: r.from, message: message, project: r.project, session: r.session, origin: r.origin, kind: "input"))
     }
 
     private func expireApprovals() {
-        for id in approvals.expire(now: Date()) { approvalServer?.reply(id, decision: "none", content: nil) }   // the terminal asks now
+        for id in approvals.expire(now: Date()) {                                       // the terminal asks now
+            approvalServer?.reply(id, decision: "none", content: nil)
+            if let t = approvals.requests[id]?.toolUseID { handedBack[t] = Date() }
+        }
         publishApprovals()
     }
 
     private func publishApprovals() {
         let now = Date()
         model.approvals = approvals.pending.filter { $0.deadline > now }
+        ApprovalReviewModel.shared.prune(keeping: Set(model.approvals.map(\.id)))
     }
 
     /// A click on one of a request's buttons. The first click wins; a late or repeated one changes nothing.
     private func answerApproval(_ id: String, _ choice: Int) {
+        guard let r = approvals.requests[id], r.choices.indices.contains(choice) else { replyApproval(id, ApprovalReply(decision: "")); return }
+        replyApproval(id, ApprovalReply(decision: r.choices[choice].decision, content: r.choices[choice].content))
+    }
+
+    /// Any answer from the review (Sources/PlanReviewView.swift): the store checks it fits the request, then it is signed and sent.
+    private func replyApproval(_ id: String, _ reply: ApprovalReply) {
         let r = approvals.requests[id]
-        switch approvals.answer(id, choice: choice, now: Date()) {
+        switch approvals.answer(id, reply: reply, now: Date()) {
         case .send(let decision, let content):
             approvalServer?.reply(id, decision: decision, content: content) { [weak self] sent in
                 guard let self else { return }
@@ -554,7 +619,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func releaseApproval(_ id: String) {
-        if approvals.release(id, now: Date()) { approvalServer?.reply(id, decision: "none", content: nil) }
+        if approvals.release(id, now: Date()) {
+            approvalServer?.reply(id, decision: "none", content: nil)
+            if let t = approvals.requests[id]?.toolUseID { handedBack[t] = Date() }
+        }
         publishApprovals()
     }
 
@@ -599,6 +667,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .window: return String(format: L("Opened the project in %@ (its terminal panel can't be selected from outside)."), app)
         case .app:
             if r.note == .noDeepLink { return String(format: L("Brought %@ forward: it can't be told from outside which conversation to show."), app) }
+            if r.note == .kittyRemoteOff { return L("Brought kitty forward. To go to the exact window, turn on its remote control: allow_remote_control yes and listen_on unix:/tmp/kitty in kitty.conf.") }
             return r.note == .automationDenied
                 ? String(format: L("Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation."), app, app)
                 : String(format: L("Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)."), app, app)
@@ -624,6 +693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func writeBoard() {
         board.prune()
         if model.board != board.entries { model.board = board.entries }
+        AgentExtras.shared.forget(keeping: Set(board.entries.map(\.id)))
         let state = (entries: board.entries, on: System.cocaineOn, until: settings.onUntil)
         if let w = boardWritten, w.entries == state.entries, w.on == state.on, w.until == state.until { return }
         if board.write(cocaineOn: state.on, until: state.until) { boardWritten = state }
@@ -699,6 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     struct Notice {
         let from: String, message: String, project: String?
         var session: String? = nil, origin: AgentOrigin? = nil          // where it came from: a click on it goes back there
+        var kind = "done"                                               // done | input | error: its sound (AgentPrefs)
     }
 
     /// Away from the Mac (idle 20 s, or screens dimmed), or always if the user wants: wake the screens, restore the
@@ -728,8 +799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateDimming(on: System.cocaineOn)          // the idle dim lets go at once (a built-in behind a closed lid stays dark)
             alerter.show(title: a.from, message: a.message, detail: a.project, seconds: settings.alertDuration)
         }
-        if !settings.alertSound.isEmpty { NSSound(named: settings.alertSound)?.play() }
-        if settings.alertSpeak { speak([a.from, a.message, a.project].compactMap { $0 }.joined(separator: ", ")) }
+        if let sound = AgentPrefs.shared.soundNow(a.kind) { AlertSounds.play(sound) }       // its own sound; none in quiet hours
+        if settings.alertSpeak && !AgentPrefs.shared.quietNow { speak([a.from, a.message, a.project].compactMap { $0 }.joined(separator: ", ")) }
         if away && settings.alertRepeatMinutes > 0 && !repeated && !test { repeatUntilBack(a) }
     }
 

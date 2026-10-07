@@ -590,7 +590,7 @@ final class IslandController {
             guard let self, let panel = self.openSpot?.panel, e.window === panel, !DialogCenter.shared.isShowing(on: .island) else { return e }
             if ShelfKeys.handle(e.keyCode, flags: e.modifierFlags, chars: e.charactersIgnoringModifiers, editing: panel.firstResponder is NSTextView,
                                 shown: self.model.open && self.model.shows("shelf"), center: self.model.shelfUI) { return nil }   // Sources/ShelfInteraction.swift
-            return IslandKeys.handle(e.keyCode, flags: e.modifierFlags, editing: panel.firstResponder is NSTextView, model: self.model,
+            return IslandKeys.handle(e.keyCode, chars: e.charactersIgnoringModifiers, flags: e.modifierFlags, editing: panel.firstResponder is NSTextView, model: self.model,
                                      close: { self.setOpen(false) }) ? nil : e
         }
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] n in
@@ -705,7 +705,10 @@ enum IslandRouting {
 
 /// The island's keys (pure enough to test: the model and a close function are handed in). True when the key was used.
 enum IslandKeys {
-    static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel, close: () -> Void) -> Bool {
+    static func handle(_ code: UInt16, chars: String? = nil, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel, close: () -> Void) -> Bool {
+        // A request under review: ⌘Y / ⌘N / ⌘1–9 / ⌘↩ / ⌘L (PlanReviewModel.swift), only here, while the island has the keyboard.
+        if model.open, ApprovalKeys.handle(code, chars: chars, flags: flags,
+                                           request: ApprovalReviewModel.shared.current(in: model.pm?.approvals ?? []), model: .shared) { return true }
         let plain = flags.intersection([.command, .option, .control]).isEmpty
         guard plain else { return false }
         if model.tab == "clipboard", model.open {

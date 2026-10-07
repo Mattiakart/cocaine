@@ -20,6 +20,9 @@ import AppKit
 // Test and render flags get memory-only settings before anything reads one: they never write the app's real domain.
 AppDefaults.isolateIfTestFlag(CommandLine.arguments)
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--agent-request" { cliAgentRequest() }
+if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--agent-event" { cliAgentEvent() }       // Sources/AgentEvents.swift
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--statusline" { cliStatusLine() }        // Sources/Quotas.swift
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--quota-hook" { cliQuotaHook() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--agents-test" { cliAgentsTest() }
 if let code = RecoveryCLI.run(CommandLine.arguments) { exit(code) }   // --recover-after, --prepare-update, … (Sources/Recovery.swift)
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--recovery-test" { exit(RecoveryTest.run()) }

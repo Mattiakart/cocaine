@@ -81,17 +81,27 @@ minuti, un'ora o fino a domani) e **Come** (lampeggio, suono, voce e quale, quan
 **Ogni sessione, nel notch.** La pagina Home dell'isola e il pannello elencano tutte le tue sessioni AI (con scorrimento quando
 sono tante; fino a 100), prima quelle che hanno bisogno di te. L'elenco viene salvato e ricompare dopo un riavvio (con ↺ e l'età);
 una sessione il cui processo è terminato viene tolta. **Clicca una sessione o un avviso** per tornare dove gira: la scheda esatta
-di Terminale o iTerm2 (serve il permesso *Automazione* per quell'app, chiesto la prima volta), il pannello tmux o WezTerm, o la
-finestra di VS Code, Cursor o Windsurf con la sua cartella; se non riesce ad arrivare fin lì porta avanti l'app o apre la cartella,
-e dice sempre cosa ha fatto. Il terminale integrato di un IDE, JetBrains, Ghostty, kitty e Warp si possono solo portare in primo
-piano come app, e le sessioni avviate prima di questa versione non dicono dove girano.
+di Terminale o iTerm2 (serve il permesso *Automazione* per quell'app, chiesto la prima volta), il pannello tmux, Zellij o
+WezTerm, il terminale di Ghostty (1.3+), la finestra di kitty (con il suo controllo remoto attivo), la superficie di cmux, o la
+finestra di VS Code, Cursor o Windsurf con la sua cartella; le tue **regole di salto** (un piccolo file JSON) coprono altre app.
+Se non riesce ad arrivare fin lì porta avanti l'app o apre la cartella, e dice sempre cosa ha fatto. Il terminale integrato di un
+IDE, JetBrains e Warp si possono solo portare in primo piano come app, e le sessioni avviate prima di questa versione non dicono
+dove girano.
 
-**Consenti o nega dall’isola** (spento di default; Claude Code 2.0.45+ e Codex): le richieste di permesso, e le domande MCP di
-Claude Code con risposte semplici (Claude Code 2.1.78+), compaiono con **Consenti** / **Nega** / **Nel terminale**. Usa solo gli hook documentati degli
-strumenti (`PermissionRequest`, `Elicitation`) su un socket privato, con risposte firmate e legate a una sola richiesta. Niente
-viene mai approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in esecuzione o qualsiasi errore, e lo strumento chiede
-nel terminale come sempre. L'`AskUserQuestion` di Claude Code non ha un hook per le risposte, quindi viene solo annunciata. Gli
-altri strumenti della tabella avvisano soltanto. Dettagli: [Sessioni AI](docs/ai-sessions.it.md).
+**Rivedi e rispondi dall’isola** (spento di default; Claude Code 2.0.45+ e Codex): i **piani** di Claude Code (modalità piano) in
+Markdown con **Approva** o **Feedback** che Claude legge per rivederli; le sue **domande** (AskUserQuestion) con le opzioni, ⌘1–9 e
+una risposta tua; le richieste di permesso con l'input **intero** (una modifica come diff colorato), **Consenti**, **Consenti
+sempre** (la regola che Claude Code stesso propone), **Nega** con un motivo facoltativo e **Nel terminale**. ⌘Y / ⌘N funzionano
+quando l'isola ha la tastiera (⌃⌥⌘I), mai globalmente. Usa solo gli hook documentati degli strumenti (`PreToolUse`,
+`PermissionRequest`, `Elicitation`) su un socket privato, con risposte firmate e legate a una sola richiesta. Niente viene mai
+approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in esecuzione o qualsiasi errore, e lo strumento chiede nel
+terminale come sempre. Gli altri strumenti della tabella avvisano soltanto. Dettagli: [Revisione dei piani](docs/ai-plans.it.md),
+[Sessioni AI](docs/ai-sessions.it.md).
+
+**Limiti del piano.** La pagina Stato dell'isola mostra i limiti di 5 ore e settimanali di Claude (Pro/Max, dalla statusline di
+Claude Code stesso, quando attivi *Limiti del piano Claude*; la tua statusline continua a funzionare) e le finestre di Codex,
+chiamate con la loro durata reale, con il tempo a ogni azzeramento. Niente password, Portachiavi o rete:
+[Limiti del piano](docs/ai-quotas.it.md).
 
 **Oltre gli hook.** I file di sessione di Claude Code e le CLI avviate in un terminale mostrano le sessioni aperte (anche senza
 hook), le sessioni finiscono quando il loro processo termina o la loro app si chiude (niente più righe ferme su "al lavoro"), e la

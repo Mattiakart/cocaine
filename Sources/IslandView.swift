@@ -28,6 +28,8 @@ struct IslandView: View {
     @ObservedObject var usage: UsageWatch
     @ObservedObject var dialogs = DialogCenter.shared
     @ObservedObject var display = DisplayOptions.shared
+    /// A request from an AI waiting for an answer takes the open island's page (Sources/PlanReviewView.swift) until put aside.
+    @ObservedObject var review = ApprovalReviewModel.shared
     /// The screen this island is on (one island per screen, IslandController); nil = the model's own geometry (render tools).
     var place: IslandPlace? = nil
 
@@ -213,7 +215,13 @@ struct IslandView: View {
     /// while open: it is inserted once and unfolds (see PageReveal); changing screens slides them from the side of the tab picked (Motion.page).
     private var page: some View {
         ZStack(alignment: .top) {
-            if let f = Motion.frame, let from = model.renderPageFrom {      // the render aid: one moment of a page change
+            if let r = review.current(in: m.approvals) {                    // a request waits: its review takes the page
+                let open = m.approvals.filter { $0.answerable && !review.later.contains($0.id) }
+                let i = open.firstIndex { $0.id == r.id } ?? 0
+                ApprovalReviewView(request: r, index: i, count: open.count, island: true, accent: Island.accent, warning: warningColor,
+                                   step: { d in if open.indices.contains(i + d) { Motion.with(.page) { review.selected = open[i + d].id } } })
+                    .transition(Motion.appear(.top))
+            } else if let f = Motion.frame, let from = model.renderPageFrom {      // the render aid: one moment of a page change
                 screenPage(from).modifier(PageSlide(t: f, incoming: false, direction: model.pager, reduce: Motion.reduce))
                 screenPage(model.tab).modifier(PageSlide(t: 1 - f, incoming: true, direction: model.pager, reduce: Motion.reduce))
             } else {
@@ -221,6 +229,7 @@ struct IslandView: View {
             }
         }
         .animation(Motion.animation(.page), value: model.tab)
+        .animation(Motion.animation(.notice), value: review.current(in: m.approvals)?.id)
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
         .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
         .modifier(ShelfSheetLayer(center: model.shelfUI))                  // the shelf's menus and forms (Sources/ShelfSheets.swift)

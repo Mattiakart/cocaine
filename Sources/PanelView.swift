@@ -35,6 +35,7 @@ struct PanelView: View {
     @ObservedObject var display = DisplayOptions.shared
     @ObservedObject var envs = AIEnvironmentCenter.shared
     @ObservedObject var awakeModel = AwakeModel.shared        // the keep-awake rows (Sources/AwakePanel.swift)
+    @ObservedObject var agentPrefs = AgentPrefs.shared     // the review, limits, sounds and jump rules (Sources/Alerts.swift)
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -578,7 +579,7 @@ struct PanelView: View {
             LinkButton(title: L("Other apps and scripts")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
                 .help(others.isEmpty ? L("Other apps and scripts") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
         }
-        .onAppear { envs.refresh() }
+        .onAppear { envs.refresh(); agentPrefs.refresh() }
     }
 
     /// A row with what Cocaine can detect there under its name.
@@ -610,8 +611,21 @@ struct PanelView: View {
                     toggle(L("One alert per session"), $m.alertPerSession)
                 }
                 row(L("Answer from the island"),
-                    tip: L("Claude Code and Codex: allow or deny a request (or answer an MCP question) from the island. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.")) {
+                    tip: L("Claude Code and Codex: review plans, answer questions, allow or deny requests from the island, seeing all of it first. Nothing is ever allowed on its own: without an answer within 2 minutes the terminal asks as usual.")) {
                     toggle(L("Answer from the island"), $m.agentApprovals)
+                }
+                row(L("Last message on the cards"), tip: L("A finished session shows the start of its last reply. Kept in memory only, never saved.")) {
+                    toggle(L("Last message on the cards"), $agentPrefs.preview)
+                }
+                row(L("Claude plan limits"),
+                    detail: agentPrefs.limitsError ?? (agentPrefs.limits ? L("From Claude Code's statusline; yours keeps working") : nil),
+                    tip: L("Puts Cocaine in front of Claude Code's statusline (yours keeps running, with its arguments) to read its 5-hour and weekly limits. Off puts it back as it was.")) {
+                    toggle(L("Claude plan limits"), Binding(get: { agentPrefs.limits }, set: { agentPrefs.setLimits($0) })).disabled(agentPrefs.limitsBusy)
+                }
+                row(L("Jump rules"),
+                    detail: agentPrefs.jumpRules.errors.first ?? (agentPrefs.jumpRules.exists ? String(format: L("%d rule(s)"), agentPrefs.jumpRules.rules) : L("None")),
+                    tip: L("Your own links back to sessions in apps Cocaine can't steer (a JSON file; https links or links of that same app only)")) {
+                    Button(L("Edit")) { JumpRules.edit() }.buttonStyle(CocaineButtonStyle())
                 }
                 row(L("Pause"), tip: L("Silences every alert for a while")) {
                     ValueButton(id: "pause", title: L("Pause"),
@@ -630,6 +644,22 @@ struct PanelView: View {
                                                        + Settings.sounds.map { PickerItem(id: $0, title: $0, symbol: "speaker.wave.2") },
                                                    mode: .single(m.alertSound)) },
                                 onPick: { m.alertSound = $0 })
+                }
+                ForEach([("done", L("Sound when it finishes")), ("input", L("Sound when it needs you")), ("error", L("Sound when it fails"))], id: \.0) { kind, title in
+                    row(title, tip: L("Its own sound, or the one above; a sound file of yours is played from where it is")) {
+                        ValueButton(id: "sound." + kind, title: title, value: AlertSounds.title(agentPrefs.sounds[kind] ?? ""),
+                                    spec: { agentPrefs.soundSpec(kind, title: title) }, onPick: { agentPrefs.pickSound(kind, $0) })
+                    }
+                }
+                row(L("Quiet hours"), tip: L("No sound and no voice in these hours; alerts still show")) { toggle(L("Quiet hours"), $agentPrefs.quietHours) }
+                if agentPrefs.quietHours {
+                    row(L("Hours"), detail: agentPrefs.quietEnd <= agentPrefs.quietStart ? L("Ends the next day") : nil) {
+                        HStack(spacing: Space.xs) {
+                            TimeStepper(id: "quietStart", title: L("From"), minutes: $agentPrefs.quietStart)
+                            Text("–").font(UI.value)
+                            TimeStepper(id: "quietEnd", title: L("To"), minutes: $agentPrefs.quietEnd)
+                        }
+                    }
                 }
                 row(L("Voice"), tip: L("Reads out who's calling and the project")) { toggle(L("Voice"), $m.alertSpeak) }
                 if m.alertSpeak {                               // which voice, only when there's one to choose

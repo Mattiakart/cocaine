@@ -137,8 +137,15 @@ enum AIHooks {
         var top: [JSONValue.Member] = []                  // top-level keys the file must have (Cursor's "version": 1)
         var contents: ((Tool) -> String)? = nil           // .ownFile: the whole file
         var skipIf: String? = nil                         // an env variable set by another tool that runs these hooks too
+        /// Its commands must not change (Codex asks the user to trust a hook again whenever its command changes): the
+        /// newer terminals' ids (kitty, cmux, Zellij) are not added to its alert links; its approvals carry them anyway.
+        var stableCommands = false
+        /// Kinds whose news carries text (the last message, the error, the kind of notification) through `--agent-event`.
+        var richKinds: Set<String> = []
         var activeEvents: [Event] {
-            events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true) && ($0.kind != "approve" || id == "codex" || AIHooks.binary != nil) }
+            events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true)
+                && ($0.kind != "approve" || id == "codex" || AIHooks.binary != nil)
+                && ($0.kind != "plan" || AIHooks.binary != nil) }     // only the app's own binary reads a plan
         }
         var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
     }
@@ -164,7 +171,7 @@ enum AIHooks {
     static var tools: [Tool] {
         [Tool(id: "claude", name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
               events: [.init(name: "Stop", kind: "done"),
-                       .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog"),
+                       .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog|agent_needs_input"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
                        .init(name: "UserPromptSubmit", kind: "start"),
                        // Session open and ended (not "compact": that is the same session carrying on, mid-work).
@@ -172,13 +179,19 @@ enum AIHooks {
                        .init(name: "StopFailure", kind: "error", minVersion: [2, 1, 78]),
                        // Answered from the notch when the user wants it (the app hands them straight back otherwise).
                        .init(name: "PermissionRequest", kind: "approve", minVersion: [2, 0, 45]),
-                       .init(name: "Elicitation", kind: "approve", minVersion: [2, 1, 78])],
-              skipIf: "CURSOR_VERSION"),               // Cursor runs Claude Code's hooks as well; it has its own below
+                       .init(name: "Elicitation", kind: "approve", minVersion: [2, 1, 78]),
+                       // A plan to review (ExitPlanMode) and a question to answer (AskUserQuestion), from the notch.
+                       .init(name: "PreToolUse", kind: "approve", matcher: "ExitPlanMode|AskUserQuestion", minVersion: [2, 1, 78])],
+              skipIf: "CURSOR_VERSION",                // Cursor runs Claude Code's hooks as well; it has its own below
+              richKinds: ["done", "error", "input"]),
          Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
               events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "approve"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
                        .init(name: "UserPromptSubmit", kind: "start"),
-                       .init(name: "SessionStart", kind: "open"), .init(name: "SessionEnd", kind: "end")]),
+                       .init(name: "SessionStart", kind: "open"), .init(name: "SessionEnd", kind: "end"),
+                       // Its checklist (update_plan), shown read-only on the session's card.
+                       .init(name: "PostToolUse", kind: "plan", matcher: "update_plan")],
+              stableCommands: true),
          Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
               events: [.init(name: "stop", kind: "done"),   // Cursor has no hook for "waiting for you"
                        .init(name: "subagentStart", kind: "agentstart"), .init(name: "subagentStop", kind: "agentstop"),
@@ -294,15 +307,28 @@ enum AIHooks {
         let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
         // A request that can be answered from the notch: this app's binary sends it over the socket and prints the answer
         // (or nothing). The comment carries the marker that tells Cocaine's hooks apart.
+        let quotedBin = binary.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         if kind == "approve" {
-            guard let bin = binary else { return command(tool, "input") }
-            return skip + "'" + bin.replacingOccurrences(of: "'", with: "'\\''") + "' --agent-request \(tool.id) 2>/dev/null; true # \(marker)"
+            guard let bin = quotedBin else { return command(tool, "input") }
+            return skip + bin + " --agent-request \(tool.id) 2>/dev/null; true # \(marker)"
+        }
+        if kind == "plan" {                                       // read-only news with text: only through the app's binary
+            guard let bin = quotedBin else { return "true # \(marker)" }
+            return skip + bin + " --agent-event \(tool.id) plan >/dev/null 2>&1; true # \(marker)"
         }
         // Where the session runs, for going back to it: the agent's pid (the hook's parent; the app finds its terminal and
-        // app from it), its folder, and what the terminal puts in the environment (app, tab/session ids, tmux, WezTerm).
-        let origin = #"$(/usr/bin/perl -e 'sub e { my $v = shift // ""; $v =~ s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge; $v } my $pp = shift // ""; $pp = "" unless $pp =~ /^[0-9]+$/; my %q = (pid => $pp, cwd => $ENV{PWD}, app => $ENV{__CFBundleIdentifier}, term => $ENV{TERM_PROGRAM}, tsid => $ENV{ITERM_SESSION_ID} // $ENV{TERM_SESSION_ID}, tmux => $ENV{TMUX_PANE}, tmuxs => (split /,/, $ENV{TMUX} // "")[0], wez => $ENV{WEZTERM_PANE}); print map { defined $q{$_} && length $q{$_} ? "&$_=" . e($q{$_}) : "" } sort keys %q' "$PPID" 2>/dev/null)"#
-        return skip + "pgrep -qx Cocaine && { j=\(info); open -g \"cocaine://alert?from=\(from)&event=\(kind)"
-            + "&session=${j% *}&running=${j#* }&project=\(project)\(origin)\"; }; true"
+        // app from it), its folder, and what the terminal puts in the environment (app, tab/session ids, tmux, WezTerm, and
+        // for tools whose commands may change: kitty, cmux, Zellij).
+        let more = tool.stableCommands ? "" : #", kitty => $ENV{KITTY_WINDOW_ID}, kittys => $ENV{KITTY_LISTEN_ON}, cmux => $ENV{CMUX_SURFACE_ID}, cmuxw => $ENV{CMUX_WORKSPACE_ID}, cmuxs => $ENV{CMUX_SOCKET_PATH}, zj => $ENV{ZELLIJ_SESSION_NAME}, zjp => $ENV{ZELLIJ_PANE_ID}, term => $ENV{TERM_PROGRAM} // ($ENV{GHOSTTY_RESOURCES_DIR} ? "ghostty" : undef)"#
+        let origin = #"$(/usr/bin/perl -e 'sub e { my $v = shift // ""; $v =~ s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge; $v } my $pp = shift // ""; $pp = "" unless $pp =~ /^[0-9]+$/; my %q = (pid => $pp, cwd => $ENV{PWD}, app => $ENV{__CFBundleIdentifier}, term => $ENV{TERM_PROGRAM}, tsid => $ENV{ITERM_SESSION_ID} // $ENV{TERM_SESSION_ID}, tmux => $ENV{TMUX_PANE}, tmuxs => (split /,/, $ENV{TMUX} // "")[0], wez => $ENV{WEZTERM_PANE}"# + more + #"); print map { defined $q{$_} && length $q{$_} ? "&$_=" . e($q{$_}) : "" } sort keys %q' "$PPID" 2>/dev/null)"#
+        let link = "pgrep -qx Cocaine && { j=\(info); open -g \"cocaine://alert?from=\(from)&event=\(kind)"
+            + "&session=${j% *}&running=${j#* }&project=\(project)\(origin)\"; }"
+        // News with text (Claude Code's last message, its error, the kind of notification): the app's binary sends it over
+        // the private socket; if it can't (the app isn't running, an older install), the plain link as before.
+        if tool.richKinds.contains(kind), let bin = quotedBin {
+            return skip + "{ " + bin + " --agent-event \(tool.id) \(kind) 2>/dev/null || { \(link); }; }; true"
+        }
+        return skip + link + "; true"
     }
 
     /// What goes in an event's list: a group holding our handler (with the event's matcher), or the handler itself.
@@ -378,7 +404,7 @@ enum AIHooks {
     }
 
     /// Writes through symlinks (dotfile setups) and keeps the file's permissions.
-    private static func write(_ text: String, to path: String) -> Bool {
+    static func writeConfig(_ text: String, to path: String) -> Bool {
         let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
         guard SafeFile.writePrivate(Data(text.utf8), to: url) else { return false }       // 0600 until its own permissions are back
@@ -405,14 +431,14 @@ enum AIHooks {
                     if let current, !current.contains(marker) { failed.append(tool.file); continue }   // not ours: hands off
                     try? FileManager.default.createDirectory(atPath: (tool.file as NSString).deletingLastPathComponent,
                                                              withIntermediateDirectories: true)
-                    if !write(want, to: tool.file) { failed.append(tool.file) }
+                    if !writeConfig(want, to: tool.file) { failed.append(tool.file) }
                 } else if let current, current.contains(marker) {
                     do { try FileManager.default.removeItem(atPath: tool.file) } catch { failed.append(tool.file) }
                 }
                 continue
             }
             guard let root = load(tool.file), let new = edited(root, for: tool, on: on) else { failed.append(tool.file); continue }
-            if new != root && !write(new.render() + "\n", to: tool.file) { failed.append(tool.file) }
+            if new != root && !writeConfig(new.render() + "\n", to: tool.file) { failed.append(tool.file) }
         }
         return failed
     }
@@ -421,6 +447,7 @@ enum AIHooks {
     static func update() {
         let tools = present.filter(isOn)
         if !tools.isEmpty { set(true, only: tools) }
+        if StatusLineHook.isOn() { StatusLineHook.set(true) }        // the statusline wrapper follows the app if it moved
     }
 
     /// Codex runs a new hook only after the user trusts it once (/hooks, or Settings → Hooks in the ChatGPT app);
