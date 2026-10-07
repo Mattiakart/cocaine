@@ -108,6 +108,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--clipboard-test" "$ISO" --clipboard-test
   run "--calendar-test" "$ISO" --calendar-test
   run "--shelf-test (temporary folders, generated files)" "$ISO" --shelf-test
+  run "--cloud-test (local fake S3/WebDAV servers on 127.0.0.1, fake sftp, temporary keychain; no real network)" "$ISO" --cloud-test
   run "--dialogs-test" "$ISO" --dialogs-test
   run "--remote-test" "$ISO" --remote-test
   run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test

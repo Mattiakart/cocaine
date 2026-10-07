@@ -40,8 +40,8 @@ struct S3Preset: Identifiable, Equatable {
 
 struct S3Provider: ShareProvider {
     let config: ShareProviderConfig
-    static let multipartThreshold: Int64 = 100 << 20
-    static let minPart: Int64 = 16 << 20
+    static var multipartThreshold: Int64 = 100 << 20         // vars: --cloud-test makes them small
+    static var minPart: Int64 = 16 << 20
     static let maxParts: Int64 = 9_000
     static let defaultExpiry = 86_400
 

@@ -128,9 +128,15 @@ enum ShareUploader {
     /// one (a script that changes asks again).
     static func fingerprint(_ c: ShareProviderConfig) -> String {
         var parts = [c["template"], c["extract"], c["pattern"]]
-        if case .success(let p) = check(c["template"]), !p.hasPrefix("/usr/bin/"), !p.hasPrefix("/bin/"),
-           let d = try? Data(contentsOf: URL(fileURLWithPath: p), options: .mappedIfSafe), d.count <= 32 << 20 {
-            parts.append(SigV4.sha256Hex(d))
+        // The program's bytes when it isn't a system one, and every script or file the command names (`/bin/sh up.sh {file}`).
+        var files: [String] = []
+        if case .success(let p) = check(c["template"]), !p.hasPrefix("/usr/bin/"), !p.hasPrefix("/bin/") { files.append(p) }
+        if let args = try? tokenize(c["template"]) { files += args.dropFirst().filter { $0.hasPrefix("/") && placeholders(in: $0).isEmpty } }
+        for f in files {
+            var dir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: f, isDirectory: &dir), !dir.boolValue,
+                  let d = try? Data(contentsOf: URL(fileURLWithPath: f), options: .mappedIfSafe), d.count <= 32 << 20 else { continue }
+            parts.append(f + ":" + SigV4.sha256Hex(d))
         }
         return SigV4.sha256Hex(parts.joined(separator: "\u{1}"))
     }

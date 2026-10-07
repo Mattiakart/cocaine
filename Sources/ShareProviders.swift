@@ -226,7 +226,7 @@ enum ShareRules {
         var lastDash = false
         for ch in decomposed.unicodeScalars {
             let ok = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch == "." || ch == "_" || ch == "-"
-            if ok { out.unicodeScalars.append(ch); lastDash = ch == "-" }
+            if ok && ch != "-" { out.unicodeScalars.append(ch); lastDash = false }
             else if !lastDash { out.append("-"); lastDash = true }
         }
         while let f = out.first, f == "." || f == "-" { out.removeFirst() }
