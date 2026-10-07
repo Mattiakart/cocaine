@@ -4,7 +4,7 @@ Con **Rispondi dall'isola** attivo (Avvisi AI → Quando, spento di default), ci
 (tutta la sua pagina) e nella scheda Agenti del pannello, e puoi rispondere lì. Tutto passa dagli hook documentati degli strumenti e
 dal socket privato di Cocaine (0600, risposte firmate con una chiave per installazione). **Niente viene mai approvato da solo**:
 nessuna risposta entro 2 minuti, Cocaine non aperto, un problema di socket o di firma, o qualsiasi cosa non adatta alla richiesta, e
-lo strumento chiede nel terminale come sempre. **Nel terminale** restituisce subito la richiesta; **Più tardi** la mette da parte
+lo strumento chiede nel terminale come sempre. **Nel terminale** restituisce subito la richiesta; **Dopo** la mette da parte
 (continua ad aspettare, l'isola torna a mostrare le sue pagine).
 
 ## A cosa si può rispondere
@@ -30,7 +30,7 @@ nascondeva **Consenti** oltre i 120 caratteri non c'è più: la revisione scorre
   "Consenti sempre" vengono dalla copia dell'hook di ciò che lo strumento ha inviato. Risposte che non corrispondono alle domande
   (il testo di un'altra domanda, una mancante) non decidono nulla.
 - **I tasti sono locali.** ⌘Y (consenti / approva / invia risposte), ⌘N (nega / feedback), ⌘1–9 (opzioni, Consenti sempre),
-  ⌘↩ (invia), ⌘L (più tardi) funzionano solo quando l'isola ha la tastiera (⌃⌥⌘I, o dopo un clic nel suo campo di testo) o nel
+  ⌘↩ (invia), ⌘L (dopo) funzionano solo quando l'isola ha la tastiera (⌃⌥⌘I, o dopo un clic nel suo campo di testo) o nel
   pannello. Non sono mai scorciatoie globali: le altre app tengono i loro ⌘Y e ⌘N.
 - **Vince la prima risposta.** Un secondo clic, un clic dopo i 2 minuti o dopo che la richiesta è tornata al terminale non invia nulla.
 
@@ -52,7 +52,7 @@ nascondeva **Consenti** oltre i 120 caratteri non c'è più: la revisione scorre
 ## Schede delle sessioni
 
 La scheda di una sessione finita mostra l'inizio della sua ultima risposta (`last_assistant_message` dell'hook `Stop` di Claude
-Code, al massimo 4 000 caratteri, **solo in memoria**, mai in `state.json`; disattiva **Ultimo messaggio nelle schede** per non
+Code, al massimo 4 000 caratteri, **solo in memoria**, mai in `state.json`; disattiva **Ultimo messaggio sulle schede** per non
 mostrarlo mai), le attività ancora in corso in background, perché si è fermata (`StopFailure`: limite d'uso, sovraccarico,
 fatturazione…) e per Codex l'avanzamento del suo piano. Questi dettagli passano dal socket privato (`Cocaine --agent-event`),
 non dai link `cocaine://`.
