@@ -14,6 +14,13 @@ import Foundation
 struct ClipRemotePerm: Codable, Equatable {
     var read = false                 // `clip get` / `clip list`: the newest item, or the iPhone-readable pinboard
     var write = false                // `clip put` / `clip part`: text into the history
+
+    init(read: Bool = false, write: Bool = false) { self.read = read; self.write = write }
+    init(from decoder: Decoder) throws {           // a missing switch is off
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        read = (try? c.decodeIfPresent(Bool.self, forKey: .read)) == true
+        write = (try? c.decodeIfPresent(Bool.self, forKey: .write)) == true
+    }
 }
 
 struct ClipSyncSettings: Codable, Equatable {

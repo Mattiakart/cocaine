@@ -67,6 +67,14 @@ enum SyncShortcuts {
         b.add("conditional", ["GroupingIdentifier": g, "WFControlFlowMode": 2])
     }
 
+    /// Repeat `times` times … End Repeat; the round (1…times) is the magic variable "Repeat Index".
+    static func repeatCount(_ b: B, _ times: Int, _ body: () -> Void) {
+        let g = UUID().uuidString
+        b.add("repeat.count", ["GroupingIdentifier": g, "WFControlFlowMode": 0, "WFRepeatCount": times])
+        body()
+        b.add("repeat.count", ["GroupingIdentifier": g, "WFControlFlowMode": 2])
+    }
+
     // MARK: Send to Mac / Get from Mac (iCloud Drive)
 
     static func sendToMac(subpath: String, labels: SyncShortcutLabels) -> [[String: Any]] {
@@ -152,6 +160,7 @@ enum SyncShortcuts {
         guard let keys = pairing.keys, !pairing.isLegacy else { return nil }
         let b = B()
         b.setVariable("cocaineLast", b.text([.t("0")]))
+        b.setVariable("cocaineCommand", b.text([.t("")]))
         let group = UUID().uuidString
         let items = [labels.sendClipboard, labels.getNewest, labels.list, labels.getItem]
         b.add("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 0, "WFMenuPrompt": "Cocaine Clip", "WFMenuItems": items])
@@ -169,10 +178,13 @@ enum SyncShortcuts {
                 for k in (1...ClipRemote.maxParts).reversed() { count = b.replace(count, "^x{\(k)}$", "\(k)") }
                 count = b.replace(count, #"(?s)^(?![1-6]$).*$"#, "7")
                 let id = b.replace(b.add("number.random", ["WFRandomNumberMinimum": 100_000, "WFRandomNumberMaximum": 999_999], output: "Random Number"), "[^0-9]", "")
-                for k in 1...ClipRemote.maxParts {
-                    let piece = b.replace(clean, #"(?s)^(?:(?:.{\#(pieceSize)}){\#(k - 1)}(.{1,\#(pieceSize)}).*|.*)$"#, "$1")
+                // One piece per round (Repeat Index 1…6), sealed and sent; a round past the end has no piece and sends nothing.
+                // A filler piece in front lets the round's own index skip the pieces before it.
+                let padded = b.text([.t(String(repeating: "#", count: pieceSize)), clean])
+                repeatCount(b, ClipRemote.maxParts) {
+                    let piece = b.replace(padded, [.t(#"(?s)^(?:(?:.{\#(pieceSize)}){"#), .v("Repeat Index"), .t(#"}(.{1,\#(pieceSize)}).*|.*)$"#)], "$1")
                     ifHasValue(b, piece, then: {
-                        let nonce = sendCommand(b, pairing: pairing, keys: keys, b.text([.t("clip part "), id, .t(" \(k)/"), count, .t(" "), piece]))
+                        let nonce = sendCommand(b, pairing: pairing, keys: keys, b.text([.t("clip part "), id, .t(" "), .v("Repeat Index"), .t("/"), count, .t(" "), piece]))
                         b.setVariable("cocaineLast", nonce)
                     })
                 }
@@ -182,16 +194,20 @@ enum SyncShortcuts {
             })
         }
         item(labels.getNewest)
-        b.setVariable("cocaineLast", sendCommand(b, pairing: pairing, keys: keys, b.text([.t("clip get")])))
+        b.setVariable("cocaineCommand", b.text([.t("clip get")]))
         item(labels.list)
-        b.setVariable("cocaineLast", sendCommand(b, pairing: pairing, keys: keys, b.text([.t("clip list")])))
+        b.setVariable("cocaineCommand", b.text([.t("clip list")]))
         item(labels.getItem)
         do {
             let asked = b.add("ask", ["WFAskActionPrompt": labels.itemPrompt, "WFInputType": "Text", "WFAllowsMultilineText": false], output: "Provided Input")
             let digits = b.replace(b.replace(asked, "[^0-9]", ""), "^(.{0,2}).*$", "$1")
-            b.setVariable("cocaineLast", sendCommand(b, pairing: pairing, keys: keys, b.text([.t("clip get "), digits])))
+            b.setVariable("cocaineCommand", b.text([.t("clip get "), digits]))
         }
         b.add("choosefrommenu", ["GroupingIdentifier": group, "WFControlFlowMode": 2])
+        let command = b.text([.v("cocaineCommand")])
+        ifHasValue(b, command, then: {                                     // get, list or a pinboard item (not set when sending)
+            b.setVariable("cocaineLast", sendCommand(b, pairing: pairing, keys: keys, command))
+        })
 
         // The answer to the last command sent (a longer text: its last piece), checked and decrypted; once more after a while.
         func answer() -> (ok: Part, text: Part) {
@@ -267,7 +283,8 @@ enum SyncShortcuts {
     /// WFFileDestinationPath "/Folder/File.txt"), Get File (WFShowFilePicker, WFGetFilePath "folder/file.txt",
     /// WFFileErrorIfNotFound), Set Name (WFInput, WFName, WFDontIncludeFileExtension: "Shortcuts will automatically include a
     /// file extension"), If (the legacy keys WFInput/WFCondition/WFConditionalActionString, mapped by Shortcuts to its
-    /// newer Subject/Operator form), Format Date's Custom style (WFDateFormat).
+    /// newer Subject/Operator form), Repeat (WFRepeatCount; its round is the magic variable "Repeat Index"), Format Date's Custom
+    /// style (WFDateFormat).
     static let knownParameters: [String: [String: Set<String>?]] = [
         "getclipboard": [:],
         "setclipboard": ["WFInput": nil, "WFLocalOnly": nil],
@@ -275,6 +292,7 @@ enum SyncShortcuts {
         "documentpicker.open": ["WFShowFilePicker": nil, "WFGetFilePath": nil, "WFFileErrorIfNotFound": nil],
         "setitemname": ["WFInput": nil, "WFName": nil, "WFDontIncludeFileExtension": nil],
         "conditional": ["GroupingIdentifier": nil, "WFControlFlowMode": nil, "WFCondition": nil, "WFInput": nil],
+        "repeat.count": ["GroupingIdentifier": nil, "WFControlFlowMode": nil, "WFRepeatCount": nil],
         "format.date": ["WFDate": nil, "WFDateFormatStyle": ["Custom", "ISO 8601"], "WFDateFormat": nil, "WFISO8601IncludeTime": nil],
     ]
 
@@ -301,7 +319,8 @@ enum SyncShortcuts {
         func refs(_ any: Any, _ w: String) {
             if let d = any as? [String: Any] {
                 if let u = d["OutputUUID"] as? String, !outputs.contains(u) { problems.append("\(w): output used before it exists") }
-                if d["Type"] as? String == "Variable", let n = d["VariableName"] as? String, !variables.contains(n) { problems.append("\(w): variable \(n) used before it is set") }
+                if d["Type"] as? String == "Variable", let n = d["VariableName"] as? String, !variables.contains(n),
+                   !(n == "Repeat Index" && stack.contains { $0.kind == "repeat.count" }) { problems.append("\(w): variable \(n) used before it is set") }
                 d.values.forEach { refs($0, w) }
             } else if let a = any as? [Any] { a.forEach { refs($0, w) } }
         }
@@ -330,7 +349,7 @@ enum SyncShortcuts {
                 }
             }
             refs(p, "#\(i) \(id)")
-            if id == "conditional" || id == "choosefrommenu", let mode = p["WFControlFlowMode"] as? Int {
+            if id == "conditional" || id == "choosefrommenu" || id == "repeat.count", let mode = p["WFControlFlowMode"] as? Int {
                 let g = p["GroupingIdentifier"] as? String ?? ""
                 switch mode {
                 case 0:

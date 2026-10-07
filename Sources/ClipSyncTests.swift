@@ -26,8 +26,11 @@ final class SyncShortcutSim {
         return base.value(p[key])
     }
 
+    private(set) var rounds = 0         // Repeat rounds run (all loops)
+
     func run(_ actions: [[String: Any]]) {
         var pc = 0
+        var loops: [(start: Int, round: Int, count: Int)] = []
         func find(after: Int, _ group: String?, _ test: ([String: Any]) -> Bool) -> Int? {
             actions.indices.first { i in i > after && {
                 let q = actions[i]["WFWorkflowActionParameters"] as? [String: Any] ?? [:]
@@ -72,6 +75,23 @@ final class SyncShortcutSim {
                     guard let i = find(after: pc, group, { $0["WFControlFlowMode"] as? Int == 2 }) else { base.error = "unclosed menu"; break }
                     pc = i
                 }
+            case "repeat.count":
+                let mode = p["WFControlFlowMode"] as? Int ?? -1, group = p["GroupingIdentifier"] as? String
+                if mode == 0 {
+                    let n = p["WFRepeatCount"] as? Int ?? 0
+                    guard let end = find(after: pc, group, { $0["WFControlFlowMode"] as? Int == 2 }) else { base.error = "unclosed Repeat"; break }
+                    if n < 1 { pc = end } else { loops.append((pc, 1, n)); base.vars["Repeat Index"] = "1" }
+                } else if mode == 2, let l = loops.last {
+                    if l.round < l.count {
+                        loops[loops.count - 1].round += 1
+                        base.vars["Repeat Index"] = String(l.round + 1)
+                        pc = l.start
+                    } else {
+                        loops.removeLast()
+                        base.vars["Repeat Index"] = loops.last.map { String($0.round) }
+                        rounds += l.count
+                    }
+                }
             case "exit": return
             default: base.run([a]); pc += 1; continue
             }
@@ -86,6 +106,7 @@ enum ClipSyncTests {
         setvbuf(stdout, nil, _IOLBF, 0)
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  clipsync: " + name); if !ok { failed += 1 } }
+        Language.set("en", persist: false)                 // the messages checked below, whatever this Mac's language (settings are in memory)
         let fm = FileManager.default
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cocaine-clipsync-\(getpid())-\(UUID().uuidString.prefix(6))")
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -164,7 +185,7 @@ enum ClipSyncTests {
         func e(_ name: String, _ size: Int, _ age: Double = 10) -> InboxEntry { InboxEntry(name: name, size: size, modified: t0.addingTimeInterval(-age)) }
         let a1 = s.scan([e("a.txt", 10), e(".b.txt.icloud", 0), e("c.tmp", 5), e("big.png", 5000), e("z.txt", 0)], now: t0)
         check("scan: a new file waits (not stable yet); a placeholder is asked for; a big one refused unread; temporary ignored",
-              a1 == [.reject("big.png", .tooBig), .download(".b.txt.icloud")] && s.waiting >= 2)
+              a1.count == 2 && a1.contains(.reject("big.png", .tooBig)) && a1.contains(.download(".b.txt.icloud")) && s.waiting >= 2)
         let a2 = s.scan([e("a.txt", 10), e(".b.txt.icloud", 0), e("z.txt", 0)], now: t0.addingTimeInterval(2))
         check("scan: unchanged for the wait → taken; an empty file refused; the placeholder not asked again within a minute",
               a2.contains(.ingest("a.txt")) && a2.contains(.reject("z.txt", .empty)) && !a2.contains(.download(".b.txt.icloud")))
