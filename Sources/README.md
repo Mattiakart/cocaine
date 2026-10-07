@@ -17,7 +17,7 @@ Where things are:
 - The island: IslandModel.swift, IslandController.swift (one window per screen, IslandRouting, the keyboard mode), IslandView.swift,
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
-  IslandStatus (batteries; usage in Usage.swift), IslandCalendar, IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
+  IslandStatus (batteries; usage in Usage.swift), IslandCalendar (logic in CalendarGrid.swift, --calendar-test in CalendarTests.swift), IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
   IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift).
 - AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices), Agent*.swift (sessions, approvals, focus, list).
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.

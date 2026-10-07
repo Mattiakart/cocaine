@@ -140,8 +140,9 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent; a network problem is said as such). What
   plays comes from the apps' own announcements; their scripting (the Automation permission) is used for the artwork and, while
   this page is open, the position.
-- **Calendar**: today and your next events, two weeks ahead (asks for Calendar access the first time; if it was refused, a
-  button opens System Settings).
+- **Calendar**: Day, Week and Month views with previous/next, *Today* and the arrow keys; click an event for its details
+  (time, calendar, place, video-call link, people, notes) and *Open in Calendar*. Asks for Calendar access the first time; if
+  it was refused, a button opens System Settings. See [docs/calendar.en.md](docs/calendar.en.md).
 - **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake for its length, *Reset* turns Cocaine
   off again only if the focus turned it on, the end is announced (a sound, a flash, an alert when you're away), and a running
   focus survives a restart or an update.
