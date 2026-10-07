@@ -27,6 +27,7 @@ struct IslandView: View {
     @ObservedObject var mic: MicWatch
     @ObservedObject var usage: UsageWatch
     @ObservedObject var dialogs = DialogCenter.shared
+    @ObservedObject var display = DisplayOptions.shared
 
     private var g: NotchGeometry { model.geometry }
     var files: FileShelf { model.files }
@@ -57,6 +58,7 @@ struct IslandView: View {
             }
             .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
             .mask(IslandOutline(pose: pose, layout: l))                            // nothing ever shows outside the black
+            if !open { closedElement(l) }
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -85,12 +87,12 @@ struct IslandView: View {
     /// Every item of the top strip, closed or open. Left: the bag (it becomes the Home tab), the tabs, the microphone. Right: what is
     /// live (it melts into the gear), the tabs and the gear. Tabs wait behind the notch while closed and slide out of it on opening.
     @ViewBuilder private func strip(_ s: IslandPose, _ l: IslandLayout) -> some View {
-        let tabs = Island.tabs(external: Island.external), half = (tabs.count + 1) / 2, cell = cellWidth
+        let tabs = model.tabs, half = (tabs.count + 1) / 2, cell = cellWidth
         // The outermost highlights' edges on the page's text edge (18 pt in), whatever the cell width.
         let left0 = Self.stripStart(l.cx, cell: cell), right1 = 2 * l.cx - left0
         let leftTabs = Array(tabs.prefix(half).enumerated()), rightTabs = Array(tabs.dropFirst(half).enumerated()), nRight = tabs.count - half
         ForEach(leftTabs, id: \.element.id) { i, t in
-            Group { if i == 0 { homeButton(t, s) } else { tabButton(t) } }
+            Group { if i == 0 { homeButton(t, s, cell: cell) } else { tabButton(t, cell: cell) } }
                 .modifier(StripSlide(pose: s, layout: l, from: i == 0 ? .leftWing : .behindLeft, to: left0 + cell * (CGFloat(i) + 0.5),
                                      width: cell, order: i, fade: i == 0 ? .none : .reveal))
         }
@@ -99,10 +101,10 @@ struct IslandView: View {
                 .modifier(StripSlide(pose: s, layout: l, from: .behindLeft, to: left0 + cell * CGFloat(half) + 12, width: 24, order: half, fade: .reveal))
                 .transition(.opacity)
         }
-        rightWing.frame(width: max(1, model.rightW), height: g.height).allowsHitTesting(false).accessibilityHidden(model.open)
+        rightWing.frame(width: max(1, model.rightW), height: g.height).allowsHitTesting(false).accessibilityHidden(true)   // (said by closedElement)
             .modifier(StripSlide(pose: s, layout: l, from: .rightWing, to: right1 - cell / 2, width: max(1, model.rightW), order: 0, fade: .melt))
         ForEach(rightTabs, id: \.element.id) { j, t in
-            tabButton(t).modifier(StripSlide(pose: s, layout: l, from: .behindRight, to: right1 - cell * (CGFloat(nRight - j) + 0.5),
+            tabButton(t, cell: cell).modifier(StripSlide(pose: s, layout: l, from: .behindRight, to: right1 - cell * (CGFloat(nRight - j) + 0.5),
                                              width: cell, order: nRight - j, fade: .reveal))
         }
         Button { model.showSettings() } label: {
@@ -115,31 +117,53 @@ struct IslandView: View {
     }
 
     /// The Home tab is the bag itself: closed it sits left of the notch (or a flash icon does), open it is the first tab.
-    private func homeButton(_ t: (id: String, icon: String, title: String), _ s: IslandPose) -> some View {
+    private func homeButton(_ t: (id: String, icon: String, title: String), _ s: IslandPose, cell: CGFloat) -> some View {
         let selected = model.tab == t.id
         return Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: Self.highlight(cellWidth), height: 26)
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: Self.highlight(cell), height: 26)
                     .modifier(CellMorph(pose: s, kind: .highlight))
-                Image(nsImage: Self.bag(level: m.bagLevel, pouring: m.bagPouring, pink: m.bagPink)).frame(width: 20, height: 20)
+                BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)       // only it redraws while the powder pours
                     .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
                 if let f = model.flash {
                     Image(systemName: f.icon).foregroundStyle(Island.accent).modifier(CellMorph(pose: s, kind: .flashIcon))
                 }
             }
-            .frame(width: cellWidth, height: g.height)
+            .frame(width: cell, height: g.height)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .allowsHitTesting(model.open).accessibilityHidden(!model.open)
     }
 
-    /// The menu-bar bag, always in its light-on-dark colors (the island is black).
-    private static func bag(level: CGFloat, pouring: Bool, pink: Bool) -> NSImage {
-        NSImage(size: NSSize(width: 20, height: 20), flipped: false) { rect in
-            Baggie.draw(in: rect, level: level, pouring: pouring, palette: Baggie.palette(dark: true, pink: pink))
-            return true
-        }
+    /// The closed island for VoiceOver: one element, "Cocaine", saying what the wings show; its action opens the island with the
+    /// keyboard in it (as ⌃⌥⌘I does). The window ignores the pointer while closed, so this is the way in without a mouse.
+    private func closedElement(_ l: IslandLayout) -> some View {
+        Color.clear
+            .frame(width: g.notchWidth + model.leftW + max(model.rightW, 1), height: g.height)
+            .offset(x: l.notchLeft - model.leftW, y: l.top)
+            .allowsHitTesting(false)
+            .accessibilityElement()
+            .accessibilityLabel("Cocaine")
+            .accessibilityValue(closedSummary)
+            .accessibilityHint(L("Opens the island. Left and right arrows change tabs, Escape closes."))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { model.toggleKeyboard() }
+    }
+
+    /// What the closed island shows, in words (the bag and the right wing).
+    private var closedSummary: String {
+        var parts = [m.on ? L("Cocaine is on") : L("Cocaine is off")]
+        if let f = model.flash, f.level == nil { parts.append(f.text) }
+        if focus.running { parts.append(focus.spoken) }
+        if waiting { parts.append(L("An AI needs you")) }
+        if mic.active { parts.append(L("Microphone in use")) }
+        if working { parts.append(String(format: L("%d AI at work"), m.board.filter { $0.state == "working" }.count)) }
+        if model.music.playing { parts.append(L("Music playing")) }
+        if m.on, let u = m.onUntil { parts.append(String(format: L("until %@"), PanelView.timeString(u))) }
+        if !m.on && (m.stayActive || m.presenceActive) { parts.append(L("Stay active")) }
+        return parts.joined(separator: ", ")
     }
 
     /// Right of the notch: what is going on, by importance.
@@ -153,11 +177,15 @@ struct IslandView: View {
                 Text(f.text).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1).truncationMode(.tail).padding(.horizontal, Space.m)
             }
         }
-        else if focus.running { Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white) }
+        else if focus.running {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in       // the countdown redraws itself, not the whole island
+                Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
+            }
+        }
         else if waiting { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
         else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
         else if working { aiAtWork }
-        else if model.music.playing { Visualizer(playing: true) }
+        else if model.music.playing { Visualizer(playing: !Motion.reduce) }                     // Reduce Motion: still bars
         else if m.on { Text(m.onUntil.map { Self.remaining($0) } ?? "∞").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)) }
         else if m.stayActive || m.presenceActive { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Color(red: 1, green: 0.5, blue: 0.72)) }
     }
@@ -200,21 +228,21 @@ struct IslandView: View {
         .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))
     }
 
-    private var cellWidth: CGFloat { Self.cellWidth(tabs: Island.tabs(external: Island.external).count) }
+    private var cellWidth: CGFloat { Self.cellWidth(tabs: model.tabs.count) }
     static func cellWidth(tabs: Int) -> CGFloat { tabs >= 11 ? 28 : 31 }     // 11: room for the mic too
     /// A tab's highlight: never wider than its cell (it would cover the neighbours).
     static func highlight(_ cell: CGFloat) -> CGFloat { min(30, cell - 2) }
     /// Where the strip's first cell starts, so its highlight's left edge is on the page's text edge.
     static func stripStart(_ cx: CGFloat, cell: CGFloat) -> CGFloat { cx - IslandLayout.openBody / 2 + Space.page - (cell - highlight(cell)) / 2 }
 
-    private func tabButton(_ t: (id: String, icon: String, title: String)) -> some View {
+    private func tabButton(_ t: (id: String, icon: String, title: String), cell: CGFloat) -> some View {
         Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: Self.highlight(cellWidth), height: 26)
+                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: Self.highlight(cell), height: 26)
                 Image(systemName: t.icon).font(UI.tabIcon)
                     .foregroundStyle(model.tab == t.id ? Color.white : UI.hint)
             }
-            .frame(width: cellWidth, height: g.height)            // the whole cell, the full height of the strip
+            .frame(width: cell, height: g.height)            // the whole cell, the full height of the strip
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)

@@ -16,11 +16,11 @@ enum CTL {
     static let label = Font.system(size: 12, weight: .medium)
     static let labelStrong = Font.system(size: 12, weight: .semibold)
     static let link = Font.system(size: 11)
-    static let fill = Color.white.opacity(0.10)
-    static let fillHover = Color.white.opacity(0.14)
+    static var fill: Color { Color.white.opacity(DisplayOptions.contrast ? 0.18 : 0.10) }
+    static var fillHover: Color { Color.white.opacity(DisplayOptions.contrast ? 0.24 : 0.14) }
     static let fillPressed = Color.white.opacity(0.20)
-    static let track = Color.white.opacity(0.08)
-    static let destructive = Color(red: 0.92, green: 0.26, blue: 0.24)        // a fill (white ink on it)
+    static var track: Color { Color.white.opacity(DisplayOptions.contrast ? 0.18 : 0.08) }
+    static let destructive = Color(red: 0.78, green: 0.18, blue: 0.16)        // a fill: white 12 pt ink on it at 5.4:1 (it was 3.9:1)
     static let destructiveInk = Color(red: 1.0, green: 0.45, blue: 0.42)      // red text on black, over 5:1
     static let onAccentInk = Color.black                                       // 8:1 on the accent; white would be 2.6:1
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)               // the island's accent
@@ -178,6 +178,8 @@ struct Segments<T: Hashable>: View {
     var name: String = ""                       // what VoiceOver calls the group
     let label: (T) -> String
     var spoken: (T) -> String? = { _ in nil }   // a better name for VoiceOver ("No limit" for "∞")
+    /// A shorter label for when the full one doesn't fit at 11 pt ("30′" for "30 Min."); VoiceOver still says the full one.
+    var compact: ((T) -> String)? = nil
 
     @Environment(\.isEnabled) private var enabled
     @Environment(\.dimmedByContainer) private var dimmedByContainer
@@ -185,7 +187,7 @@ struct Segments<T: Hashable>: View {
     var body: some View {
         EqualWidthHStack(spacing: 2) {
             ForEach(values, id: \.self) { v in
-                SegmentCell(title: label(v), spoken: spoken(v) ?? label(v), on: v == selection) {
+                SegmentCell(title: label(v), short: compact?(v), spoken: spoken(v) ?? label(v), on: v == selection) {
                     guard v != selection else { return }
                     ControlHaptics.tap()
                     selection = v
@@ -195,6 +197,7 @@ struct Segments<T: Hashable>: View {
         .padding(2)
         .frame(height: CTL.h)
         .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
+        .overlay(RoundedRectangle(cornerRadius: CTL.radius).strokeBorder(UI.boundary, lineWidth: 1))     // its edge, 3:1 on the card
         .opacity(enabled || dimmedByContainer ? 1 : CTL.disabled)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(name)
@@ -203,15 +206,27 @@ struct Segments<T: Hashable>: View {
 
 private struct SegmentCell: View {
     let title: String
+    var short: String? = nil
     let spoken: String
     let on: Bool
     let action: () -> Void
     @StateObject private var hover = HoverState()
 
+    /// The label as it fits: as written, with a thin space, the short form when there is one, then shrunk — never below 11 pt.
+    private var label: some View {
+        let last = short ?? title.replacingOccurrences(of: " ", with: "")
+        return ViewThatFits(in: .horizontal) {
+            Text(title).fixedSize()
+            Text(title.replacingOccurrences(of: " ", with: "\u{2009}")).fixedSize()     // a thin space
+            Text(last).fixedSize()
+            Text(last).minimumScaleFactor(11.0 / 12)
+        }
+    }
+
     var body: some View {
         Button(action: action) {
-            Text(title).font(CTL.label.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
-                .foregroundStyle(on ? CTL.onAccentInk : Color.white.opacity(0.78))
+            label.font(CTL.label.monospacedDigit()).lineLimit(1)
+                .foregroundStyle(on ? CTL.onAccentInk : Color.white.opacity(DisplayOptions.contrast ? 0.95 : 0.78))
                 .padding(.horizontal, 3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: CTL.radius - 2).fill(on ? CTL.accent : hover.on ? Color.white.opacity(0.08) : .clear))
@@ -469,6 +484,7 @@ final class PickerCenter: ObservableObject {
         self.onPick = onPick; self.onChange = onChange
         cardHeight = 0; revealed = false
         state = PickerLogic.open(spec)
+        A11y.announce(spec.title + (state?.highlight.flatMap { h in spec.items.first { $0.id == h }?.title }.map { ", " + $0 } ?? ""))
     }
 
     func close() {
@@ -493,8 +509,14 @@ final class PickerCenter: ObservableObject {
     @discardableResult
     func handle(_ k: PickerLogic.Key) -> Bool {
         guard state != nil else { return false }
+        let before = state!.highlight
         let o = PickerLogic.key(&state!, k)
         if o == .pass { return false }
+        // VoiceOver can't follow the highlight by itself: say the row the arrows (or typing) moved to.
+        if o == .none, let st = state, st.highlight != before, let row = st.spec.items.first(where: { $0.id == st.highlight }) {
+            let picked = st.selected.contains(row.id)
+            A11y.announce(row.title + (st.spec.mode == .multi ? ", " + (picked ? L10nControls.ticked : L10nControls.unticked) : ""))
+        }
         apply(o)
         return true
     }
@@ -622,6 +644,9 @@ enum L10nControls {
     static var selected = "%d selected"
     static var search = "Search"
     static var openNow = "Open now"
+    static var highlighted = "Highlighted"
+    static var ticked = "ticked"
+    static var unticked = "not ticked"
 }
 
 // MARK: - Rows: shared by dialog choices and dropdowns
@@ -633,6 +658,8 @@ struct ChoiceRow: View {
     var leading: Leading = .none
     var checked = false                  // single choice: an accent check mark on the right
     var showsCheckColumn = false
+    /// VoiceOver says "selected" for the checked row of a choice (not for action rows, which have nothing to be selected).
+    var selectable = true
     var highlighted = false
     var destructive = false
     var lines = 1
@@ -658,7 +685,8 @@ struct ChoiceRow: View {
         }
         .buttonStyle(.plain)
         .onHover(perform: hover)
-        .accessibilityAddTraits(checked ? .isSelected : [])
+        .accessibilityAddTraits(checked && selectable ? .isSelected : [])
+        .accessibilityValue(highlighted && !checked ? L10nControls.highlighted : "")
     }
 
     @ViewBuilder private var lead: some View {
@@ -744,6 +772,7 @@ struct PickerCard: View {
         .overlay(RoundedRectangle(cornerRadius: CTL.cardRadius).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
         .accessibilityLabel(st.spec.title)
     }
 

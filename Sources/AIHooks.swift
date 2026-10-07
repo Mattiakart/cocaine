@@ -207,18 +207,10 @@ enum AIHooks {
     static func assumeClaudeVersion(_ v: [Int]?) { claudeVersionCache = .some(v) }   // tests: not the Mac's own Claude Code
     static func claudeVersion(atLeast need: [Int]) -> Bool {
         if claudeVersionCache == nil {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            p.arguments = ["-lc", "claude --version"]
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = FileHandle.nullDevice
+            // A login shell finds it as Terminal does; one that waits for input (a prompt in .zprofile) is given up after 10 s.
+            let out = Proc.run("/bin/zsh", ["-lc", "claude --version"], timeout: 10, capture: true, limit: 4096).text
             var parsed: [Int]?
-            if (try? p.run()) != nil {
-                let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                p.waitUntilExit()
-                if let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) { parsed = out[r].split(separator: ".").compactMap { Int($0) } }
-            }
+            if let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) { parsed = out[r].split(separator: ".").compactMap { Int($0) } }
             claudeVersionCache = .some(parsed)
         }
         guard let have = claudeVersionCache ?? nil else { return false }
@@ -374,7 +366,7 @@ enum AIHooks {
     private static func write(_ text: String, to path: String) -> Bool {
         let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
-        do { try Data(text.utf8).write(to: url, options: .atomic) } catch { return false }
+        guard SafeFile.writePrivate(Data(text.utf8), to: url) else { return false }       // 0600 until its own permissions are back
         if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: url.path) }
         return true
     }

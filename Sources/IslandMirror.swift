@@ -77,6 +77,7 @@ final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutp
             for old in self.session.inputs { self.session.removeInput(old) }
             if self.session.canAddInput(input) { self.session.addInput(input) }
             if !self.session.outputs.contains(self.output), self.session.canAddOutput(self.output) {
+                self.output.alwaysDiscardsLateVideoFrames = true
                 self.output.setSampleBufferDelegate(self, queue: self.queue)
                 self.session.addOutput(self.output)
             }
@@ -89,10 +90,17 @@ final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutp
         }
     }
 
+    /// The first picture: the camera works. The data output was only there to see it: it is removed (it would keep converting
+    /// and delivering 30 frames a second next to the preview for as long as the page is open). Choosing another camera adds it again.
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard !gotFrame else { return }
         gotFrame = true
         DispatchQueue.main.async { self.hasFrames = true; self.stalled = false }
+        queue.async {
+            self.session.beginConfiguration()
+            if self.session.outputs.contains(self.output) { self.session.removeOutput(self.output) }
+            self.session.commitConfiguration()
+        }
     }
 
     func stop() {

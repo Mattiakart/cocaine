@@ -23,7 +23,8 @@ struct SavedSettings {
     static let keys = ["triggerSchedule", "scheduleDays", "scheduleStart", "scheduleEnd", "triggerPower", "triggerDisplay", "triggerAll", "dimEnabled", "screenOff",
                        "timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
                        "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD", "haptics", "alertDone", "alertInput", "alertFlash", "alertSpeak", "alertVoice",
-                       "alertPerSession", "agentApprovals", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language"]
+                       "alertPerSession", "agentApprovals", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language",
+                       "shortcuts.v1", "focus.v1", "shelf.v1", "phoneShortcut", "phoneNtfy"]
     let values: [String: Any] = Dictionary(uniqueKeysWithValues: keys.compactMap { k in UserDefaults.standard.object(forKey: k).map { (k, $0) } })
     func restore() {
         for k in Self.keys { if let v = values[k] { UserDefaults.standard.set(v, forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) } }

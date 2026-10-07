@@ -204,11 +204,8 @@ final class AgentBoard {
     @discardableResult
     func write(cocaineOn: Bool, until: Date?, now: Date = Date()) -> Bool {
         let snap = Snapshot(updated: now.timeIntervalSince1970, cocaine: cocaineOn ? "ON" : "OFF", until: until?.timeIntervalSince1970, agents: entries)
-        let dir = file.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        guard let data = try? JSONEncoder().encode(snap), (try? data.write(to: file, options: .atomic)) != nil else { return false }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        return true
+        guard let data = try? JSONEncoder().encode(snap) else { return false }
+        return SafeFile.writePrivate(data, to: file)                     // 0600 from the first byte (it was briefly umask's)
     }
 
     /// At launch: what the board held before the app quit, marked as restored, minus what has gone stale or whose process is

@@ -93,29 +93,4 @@ final class MenuPanel: NSPanel {
         l.cornerRadius = toTop ? 28 : 12
         l.maskedCorners = toTop ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     }
-
-    private static func roundedMask(radius r: CGFloat) -> NSImage {
-        let edge = 2 * r + 1
-        let img = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
-            return true
-        }
-        img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
-        img.resizingMode = .stretch
-        return img
-    }
-}
-
-
-/// A menu item that runs a closure.
-private final class ClosureItem: NSMenuItem {
-    private let handler: () -> Void
-    init(title: String, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: "")
-        target = self
-    }
-    required init(coder: NSCoder) { fatalError() }
-    @objc private func run() { handler() }
 }

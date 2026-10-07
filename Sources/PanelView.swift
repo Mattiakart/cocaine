@@ -31,6 +31,8 @@ struct PanelView: View {
     @ObservedObject var up = Updater.shared
     @ObservedObject var dialogs = DialogCenter.shared
     @ObservedObject var pickers = PickerCenter.shared
+    @ObservedObject var keys = ShortcutCenter.shared
+    @ObservedObject var display = DisplayOptions.shared
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -78,8 +80,11 @@ struct PanelView: View {
             HStack(spacing: Space.s) {
                 Text(title).font(UI.title).lineLimit(wraps ? 2 : 1).fixedSize(horizontal: !wraps, vertical: true)
                 if live {
-                    Circle().fill(Color.green).frame(width: 6, height: 6)
-                        .help(L("True now")).accessibilityLabel(L("True now"))
+                    Group {       // Differentiate Without Colour: a check mark, not just a green dot
+                        if display.differentiateWithoutColor { Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(Color.green) }
+                        else { Circle().fill(Color.green).frame(width: 6, height: 6) }
+                    }
+                    .help(L("True now")).accessibilityLabel(L("True now"))
                 }
             }
             if let detail {
@@ -207,7 +212,8 @@ struct PanelView: View {
 
     private var timerCard: some View {
         card("hourglass", L("Stay on for"), trailing: { customTimer }) {
-            Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: durationLabel, spoken: noLimit)
+            Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: durationLabel, spoken: noLimit,
+                     compact: { Dur.compact(minutes: $0) })
                 .frame(maxWidth: .infinity)
                 .onScrollSteps(every: 24) { n in stepTimerPreset(n) }
             if !m.on {
@@ -329,8 +335,15 @@ struct PanelView: View {
 
     private var appCard: some View {
         card("gearshape", "Cocaine") {
-            row(L("Open at login")) {
-                CocaineSwitch(on: m.loginEnabled) { m.setLogin(!m.loginEnabled) }.accessibilityLabel(L("Open at login"))
+            row(L("Open at login"), detail: m.loginNeedsApproval ? L("Waiting for your OK in System Settings → General → Login Items") : nil,
+                warning: m.loginNeedsApproval) {
+                HStack(spacing: Space.s) {
+                    if m.loginNeedsApproval {
+                        Button(L("Open Settings")) { m.openLoginItems() }.buttonStyle(CocaineButtonStyle())
+                    }
+                    CocaineSwitch(on: m.loginEnabled || m.loginNeedsApproval) { m.setLogin(!(m.loginEnabled || m.loginNeedsApproval)) }
+                        .accessibilityLabel(L("Open at login"))
+                }
             }
             row(L("Updates"), detail: up.statusText, warning: { if case .failed = up.phase { return true }; return false }()) { updateControl }
             row(L("Check for updates automatically"), tip: L("Once a day. Nothing is downloaded until you press Install.")) {
@@ -341,13 +354,9 @@ struct PanelView: View {
                 ValueButton(id: "language", title: L("Language"), value: "\(Language.flag(code))  \(Language.nativeName(code))",
                             spec: { languageSpec }, onPick: { m.language = $0 })
             }
-            row(L("Show in the notch"), detail: L("Replaces the menu-bar icon"),
-                tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(L("Show in the notch"), $m.island) }
+            row(islandTitle, detail: L("Replaces the menu-bar icon"),
+                tip: L("Shows Cocaine and its tools in the notch, or at the top of the screen")) { toggle(islandTitle, $m.island) }
             row(L("Haptic feedback"), tip: L("A light tap on the trackpad when you change a timer, switch a page or toggle something")) { toggle(L("Haptic feedback"), $m.haptics) }
-            row(L("Global shortcuts"), detail: "⌃⌥⌘C \(L("on/off")) · ⌃⌥⌘O \(L("panel")) · ⌃⌥⌘P \(L("pause alerts"))",
-                tip: "⌃⌥⌘C: " + L("Turn Cocaine on or off") + "\n⌃⌥⌘O: " + L("Open the panel") + "\n⌃⌥⌘P: " + L("Pause or resume alerts")) {
-                toggle(L("Global shortcuts"), $m.hotkeys)
-            }
             row(L("Shortcuts app and links"),
                 tip: L("Lets the Shortcuts app and cocaine:// links turn Cocaine on and off without asking. Off: Cocaine asks you first.")) {
                 toggle(L("Shortcuts app and links"), $m.allowLinks)
@@ -383,7 +392,10 @@ struct PanelView: View {
     private var permissionsCard: some View {
         card("lock.shield", L("Permissions"), warning: true) {
             ForEach(m.permissionProblems) { p in
-                row(p.title, detail: p.reason, warning: true) { Button(L("Allow")) { m.requestPermission(p) }.buttonStyle(CocaineButtonStyle(kind: .primary)) }
+                row(p.title, detail: p.reason, warning: true) {
+                    Button(L("Allow")) { m.requestPermission(p) }.buttonStyle(CocaineButtonStyle(kind: .primary))
+                        .keyboardShortcut(p == m.permissionProblems.first ? .defaultAction : nil)    // Return: the first one
+                }
             }
             Text(SigningTier.current.panelLine).font(UI.detail).foregroundStyle(UI.secondary)   // what the permissions are tied to
                 .lineLimit(3).fixedSize(horizontal: false, vertical: true)
@@ -397,6 +409,30 @@ struct PanelView: View {
             idleCard
             batteryCard
             appCard
+            shortcutsCard
+        }
+    }
+
+    /// On a Mac without a notch the island is a slim bar at the top of the screen: the switch says so.
+    private var islandTitle: String { (NotchGeometry.current()?.hasNotch ?? true) ? L("Show in the notch") : L("Show at the top of the screen") }
+
+    /// The global shortcuts: on/off, one recorder per action (with what went wrong, in words), Reset to defaults.
+    private var shortcutsCard: some View {
+        card("command", L("Keyboard shortcuts"), trailing: { toggle(L("Keyboard shortcuts"), $m.hotkeys) }) {
+            Group {
+                ForEach(ShortcutAction.allCases) { a in
+                    let d = keys.detail(a)
+                    row(a.title, detail: d?.text, warning: d?.warning ?? false) { ShortcutRecorderButton(action: a) }
+                }
+                HStack(spacing: Space.m) {
+                    Text(L("Work in every app, no permission needed")).font(UI.detail).foregroundStyle(UI.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: Space.m)
+                    Button(L("Reset to defaults")) { keys.resetToDefaults() }.buttonStyle(CocaineButtonStyle())
+                        .disabled(keys.isDefault && keys.note.isEmpty)
+                }
+            }
+            .dimGroup(!m.hotkeys)
         }
     }
 
@@ -655,7 +691,8 @@ struct PanelView: View {
                 }
             }
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
-                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away.")) {
+                row(L("Stay available in chat apps"),
+                    detail: L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away. The screen then doesn't dim, sleep or lock by itself.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
                 }
                 Group {
@@ -699,11 +736,18 @@ struct PanelView: View {
                         }
                     }
                 }
-                row(L("Wake for iPhone"), tip: L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone")) {
-                    toggle(L("Wake for iPhone"), $m.wakeForPhone)
+                row(L("Wake for iPhone"), detail: m.phoneCount == 0 ? (m.wakeForPhone ? L("No iPhone paired: nothing to wake for") : L("Pair an iPhone first")) : nil,
+                    tip: L("Every 15 minutes it wakes briefly, even with the lid closed, to answer your iPhone"), warning: m.wakeForPhone && m.phoneCount == 0) {
+                    toggle(L("Wake for iPhone"), $m.wakeForPhone).disabled(m.phoneCount == 0 && !m.wakeForPhone)
                 }
-                row(L("Phone alerts"), detail: m.phone.isEmpty ? L("Not set up: see the guide") : m.phone) {
-                    Button(L("Test")) { m.testPhone() }.buttonStyle(CocaineButtonStyle()).disabled(m.phone.isEmpty).help(L("Send a test to your phone"))
+                row(L("Phone alerts"), detail: m.phoneTest ?? (m.phone.isEmpty ? L("Not set up") : m.phone),
+                    tip: L("When you're away, alerts also go to your phone")) {
+                    HStack(spacing: Space.s) {
+                        Button(m.phone.isEmpty ? L("Set up…") : L("Change…")) { m.setUpPhoneAlerts() }.buttonStyle(CocaineButtonStyle())
+                        if !m.phone.isEmpty {
+                            Button(L("Test")) { m.testPhone() }.buttonStyle(CocaineButtonStyle()).help(L("Send a test to your phone"))
+                        }
+                    }
                 }
                 LinkButton(title: L("Remote work guide")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
             }
@@ -783,7 +827,7 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {                                // header and footer sit on the content edge
-            Image(nsImage: Baggie.imageOnDark(level: m.bagLevel, pouring: m.bagPouring, size: 28, pink: m.bagPink))
+            BagIcon(bag: m.bag, size: 28)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("Cocaine").font(UI.appTitle)
@@ -794,7 +838,7 @@ struct PanelView: View {
                     .help(status)
             }
             Spacer(minLength: 8)
-            CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }
+            PowderSwitch(bag: m.bag, on: m.on) { m.toggleCocaine() }
                 .help(m.on ? L("Turn Cocaine off") : L("Turn Cocaine on"))
                 .accessibilityLabel(L("Cocaine, keeps the Mac awake"))
         }
@@ -838,6 +882,7 @@ struct PanelView: View {
             }
         }
         .disabled(asking)                                    // a question is on top (PanelDialogOverlay): nothing under it reacts
+        .accessibilityHidden(asking)                         // …and VoiceOver reads only the question
         .padding(.horizontal, Space.frame).padding(.bottom, Space.frame).padding(.top, g == nil ? Space.frame : Layout.overscan)
         .frame(width: Layout.width, alignment: .topLeading)   // never centered, never wider: nothing can slide out sideways
         // A dropdown hangs under its row, over the page (never above the row, so never up into the notch).

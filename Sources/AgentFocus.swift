@@ -152,19 +152,8 @@ enum AgentFocus {
 
     @discardableResult
     static func runTool(_ path: String, _ args: [String], timeout: Double = 3) -> (status: Int32, out: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return (-1, "") }
-        let deadline = Date().addingTimeInterval(timeout)
-        while p.isRunning && Date() < deadline { usleep(20_000) }
-        if p.isRunning { p.terminate(); return (-1, "") }
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return (p.terminationStatus, out)
+        let r = Proc.run(path, args, timeout: timeout, capture: true, limit: 256 * 1024)     // drained as it runs: no 64 KB pipe stall
+        return r.timedOut ? (-1, "") : (r.status, r.text)
     }
 
     /// tmux: select the pane's window and the pane; returns the tty of a terminal attached to its session, if any.

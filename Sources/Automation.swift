@@ -1,4 +1,4 @@
-// Automation: the timer, Battery Guard, Smart Triggers state, power/lid readings and global hotkeys.
+// Automation: the timer, Battery Guard, Smart Triggers state and power/lid readings (global shortcuts: Sources/Shortcuts.swift).
 
 import AppKit
 import AVFoundation
@@ -17,7 +17,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
-// MARK: - Automation: timer, battery guard, smart triggers, agent states, hotkeys, phone alerts
+// MARK: - Automation: timer, battery guard, smart triggers, agent states, phone alerts
 
 extension Settings {
     static let timerChoices = [0, 30, 60, 120, 240, 480]        // minutes Cocaine stays on when turned on by hand; 0 = until turned off
@@ -34,9 +34,7 @@ extension Settings {
     var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
     var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
     // Power, display and schedule triggers (Sources/Power.swift)
-    static let powerMinimumChoices = [10, 20, 30, 50]
     var triggerPower: String { get { d.string(forKey: "triggerPower") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerPower") } }   // "" | ac | battery
-    var triggerPowerMin: Int { get { d.object(forKey: "triggerPowerMin") as? Int ?? 20 } nonmutating set { d.set(newValue, forKey: "triggerPowerMin") } }
     var triggerDisplay: String { get { d.string(forKey: "triggerDisplay") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerDisplay") } }   // "" | connected | disconnected
     var triggerSchedule: Bool { get { flag("triggerSchedule", false) } nonmutating set { d.set(newValue, forKey: "triggerSchedule") } }
     var scheduleDays: [Int] { get { (d.array(forKey: "scheduleDays") as? [Int])?.filter { (1...7).contains($0) } ?? [2, 3, 4, 5, 6] } nonmutating set { d.set(newValue, forKey: "scheduleDays") } }
@@ -50,7 +48,9 @@ extension Settings {
     var screenOff: Bool { get { flag("screenOff", false) } nonmutating set { d.set(newValue, forKey: "screenOff") } }
     /// Shortcuts and cocaine:// links may turn Cocaine on and off without asking.
     var allowLinks: Bool { get { flag("allowLinks", false) } nonmutating set { d.set(newValue, forKey: "allowLinks") } }
-    var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    /// Global shortcuts (Sources/Shortcuts.swift): on unless turned off, so the keyboard always has a way to Cocaine (with the island
+    /// on there is no menu-bar icon to reach). Which keys: "shortcuts.v1".
+    var hotkeys: Bool { get { flag("hotkeys", true) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
     var haptics: Bool { get { flag("haptics", true) } nonmutating set { d.set(newValue, forKey: "haptics") } }
     var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
     var stayActiveAlways: Bool { get { flag("stayActiveAlways", false) } nonmutating set { d.set(newValue, forKey: "stayActiveAlways") } }
@@ -68,9 +68,15 @@ extension Settings {
     var alertError: Bool { get { flag("alertError", true) } nonmutating set { d.set(newValue, forKey: "alertError") } }
     /// Claude Code's and Codex's requests can be answered from the notch (off: they're only shown, the terminal asks).
     var agentApprovals: Bool { get { flag("agentApprovals", false) } nonmutating set { d.set(newValue, forKey: "agentApprovals") } }
-    /// Phone alerts: a Shortcut to run (given the alert text) and/or an ntfy topic URL. Set with `cocaine remote notify`.
-    var phoneShortcut: String { d.string(forKey: "phoneShortcut") ?? "" }
-    var phoneNtfy: String { d.string(forKey: "phoneNtfy") ?? "" }
+    /// Phone alerts: a Shortcut to run (given the alert text) and/or an ntfy topic URL. Set in the panel or with `cocaine remote notify`.
+    var phoneShortcut: String {
+        get { d.string(forKey: "phoneShortcut") ?? "" }
+        nonmutating set { if newValue.isEmpty { d.removeObject(forKey: "phoneShortcut") } else { d.set(newValue, forKey: "phoneShortcut") } }
+    }
+    var phoneNtfy: String {
+        get { d.string(forKey: "phoneNtfy") ?? "" }
+        nonmutating set { if newValue.isEmpty { d.removeObject(forKey: "phoneNtfy") } else { d.set(newValue, forKey: "phoneNtfy") } }
+    }
 }
 
 /// Battery Guard: fires once when the battery (on battery power) reaches the threshold, and re-arms when it recovers.
@@ -135,16 +141,7 @@ extension System {
 
     /// Names of every running process and app, lowercased (what a Smart Trigger matches against).
     static func runningNames() -> Set<String> {
-        var names = Set<String>()
-        let count = proc_listallpids(nil, 0)
-        if count > 0 {
-            var pids = [pid_t](repeating: 0, count: Int(count) + 64)
-            let n = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
-            var buf = [CChar](repeating: 0, count: 256)
-            for pid in pids.prefix(Int(n)) where pid > 0 {
-                if proc_name(pid, &buf, UInt32(buf.count)) > 0 { names.insert(String(cString: buf).lowercased()) }
-            }
-        }
+        var names = Set(ProcessList.all().map { $0.name.lowercased() })
         for app in NSWorkspace.shared.runningApplications {
             if let n = app.localizedName { names.insert(n.lowercased()) }
             if let n = app.bundleURL?.deletingPathExtension().lastPathComponent { names.insert(n.lowercased()) }
@@ -159,36 +156,4 @@ extension System {
     }
 }
 
-// MARK: Global hotkeys (⌃⌥⌘ + letter): Carbon's RegisterEventHotKey needs no privacy permission
-
-private var hotkeyHandler: ((UInt32) -> Void)?
-
-final class Hotkeys {
-    static let keys: [(id: UInt32, code: UInt32, label: String)] = [(1, 8, "C"), (2, 31, "O"), (3, 35, "P")]   // toggle, panel, pause
-    private var refs: [EventHotKeyRef?] = []
-    private var installed = false
-
-    func set(enabled: Bool, action: @escaping (UInt32) -> Void) {
-        refs.forEach { if let r = $0 { UnregisterEventHotKey(r) } }
-        refs = []
-        guard enabled else { return }
-        hotkeyHandler = action
-        if !installed {
-            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
-                var hk = EventHotKeyID()
-                GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
-                                  MemoryLayout<EventHotKeyID>.size, nil, &hk)
-                DispatchQueue.main.async { hotkeyHandler?(hk.id) }
-                return noErr
-            }, 1, &spec, nil, nil)
-            installed = true
-        }
-        for k in Self.keys {
-            var ref: EventHotKeyRef?
-            RegisterEventHotKey(k.code, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: OSType(0x434F4341), id: k.id),
-                                GetApplicationEventTarget(), 0, &ref)
-            refs.append(ref)
-        }
-    }
-}
+// Global shortcuts live in Sources/Shortcuts.swift.

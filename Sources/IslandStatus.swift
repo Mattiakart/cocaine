@@ -1,4 +1,4 @@
-// The island's Status page: batteries and the AI tools' usage.
+// The island's Status page: batteries (BatteryWatch) and the AI tools' usage (Usage.swift).
 
 import AppKit
 import AVFoundation
@@ -16,6 +16,65 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 import os
+
+struct BatteryItem: Identifiable {
+    var id: String
+    var name: String
+    var icon: String
+    var parts: [(label: String, percent: Int)]
+    var charging = false
+}
+
+/// Charge of the Mac and of connected Bluetooth devices (AirPods, keyboard, mouse, trackpad). The Bluetooth list comes from
+/// system_profiler (1–3 s each time): it is kept a minute, so opening the page again is instant.
+final class BatteryWatch: ObservableObject {
+    @Published var items: [BatteryItem] = []
+    private var busy = false
+    private var bluetoothCache: (at: Date, items: [BatteryItem])?
+    static let bluetoothMaxAge: TimeInterval = 60
+
+    func refresh() {
+        guard !busy else { return }
+        let mac = System.battery.map { BatteryItem(id: "mac", name: "Mac", icon: "laptopcomputer", parts: [("", $0.percent)], charging: $0.onAC) }
+        if let c = bluetoothCache, Date().timeIntervalSince(c.at) < Self.bluetoothMaxAge {
+            items = (mac.map { [$0] } ?? []) + c.items
+            return
+        }
+        busy = true
+        DispatchQueue.global(qos: .utility).async {
+            let bt = Self.bluetooth()
+            DispatchQueue.main.async {
+                self.bluetoothCache = (Date(), bt)
+                self.items = (mac.map { [$0] } ?? []) + bt
+                self.busy = false
+            }
+        }
+    }
+
+    private static func bluetooth() -> [BatteryItem] {
+        let r = Proc.run("/usr/sbin/system_profiler", ["SPBluetoothDataType", "-json"], timeout: 15, capture: true, limit: 4 << 20)
+        guard r.status == 0, let root = (try? JSONSerialization.jsonObject(with: r.output)) as? [String: Any],
+              let top = (root["SPBluetoothDataType"] as? [[String: Any]])?.first,
+              let connected = top["device_connected"] as? [[String: Any]] else { return [] }
+        func pct(_ v: Any?) -> Int? { (v as? String).flatMap { Int($0.replacingOccurrences(of: "%", with: "")) } }
+        var items: [BatteryItem] = []
+        for entry in connected {
+            for (name, value) in entry {
+                guard let d = value as? [String: Any] else { continue }
+                var parts: [(String, Int)] = []
+                for (key, label) in [("device_batteryLevelMain", ""), ("device_batteryLevelLeft", "L"), ("device_batteryLevelRight", "R"), ("device_batteryLevelCase", "↳")] {
+                    if let v = pct(d[key]) { parts.append((label, v)) }
+                }
+                guard !parts.isEmpty else { continue }
+                let kind = (d["device_minorType"] as? String ?? "").lowercased()
+                let icon = kind.contains("head") || name.lowercased().contains("airpods") ? "airpodspro" : kind.contains("keyboard") ? "keyboard"
+                    : kind.contains("mouse") ? "computermouse" : kind.contains("trackpad") ? "rectangle.and.hand.point.up.left" : "dot.radiowaves.left.and.right"
+                items.append(BatteryItem(id: name, name: name, icon: icon, parts: parts))
+            }
+        }
+        return items.sorted { $0.name < $1.name }
+    }
+}
 
 extension IslandView {
     // MARK: batteries
@@ -44,6 +103,10 @@ extension IslandView {
                                 }
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.name)
+                    .accessibilityValue(item.parts.map { (Self.partName($0.label).map { $0 + " " } ?? "") + "\($0.percent)%" }.joined(separator: ", ")
+                                        + (item.charging ? ", " + L("Charging") : ""))
                 }
             }
         }
@@ -92,6 +155,7 @@ extension IslandView {
                                 .font(UI.detail).foregroundStyle(UI.hint)
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,7 +163,8 @@ extension IslandView {
                 Text("Claude Code").font(UI.groupTitle)
                 tokenRow(L("Last 5 hours"), usage.claudeFive)
                 tokenRow(L("Last 7 days"), usage.claudeWeek)
-                Text(L("Tokens in your conversations on this Mac")).font(UI.detail).foregroundStyle(UI.hint)
+                Text(usage.partial ? L("Still counting: the totals grow as the rest is read") : L("Tokens in your conversations on this Mac"))
+                    .font(UI.detail).foregroundStyle(usage.partial ? warningColor : UI.hint)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -109,6 +174,7 @@ extension IslandView {
     /// A label and a count, on one baseline: "Last 7 days … 8,6 Mln" in the app's language.
     private func tokenRow(_ label: String, _ n: Int) -> some View {
         HStack(alignment: .firstTextBaseline) { Text(label).font(UI.detail).foregroundStyle(UI.secondary); Spacer()
-            Text(Dur.count(n, locale: Language.locale)).font(UI.metric) }
+            Text((usage.partial ? "≥ " : "") + Dur.count(n, locale: Language.locale)).font(UI.metric) }
+            .accessibilityElement(children: .combine)
     }
 }

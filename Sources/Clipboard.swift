@@ -476,21 +476,7 @@ final class ClipStore {
     private func write(_ data: Data, to url: URL) throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
-        let tmp = dir.appendingPathComponent(".tmp-" + UUID().uuidString)
-        let fd = open(tmp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-        guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
-        let ok = data.withUnsafeBytes { p -> Bool in
-            guard let base = p.baseAddress else { return true }
-            var off = 0
-            while off < p.count {
-                let n = Darwin.write(fd, base + off, p.count - off)
-                if n <= 0 { return false }
-                off += n
-            }
-            return fsync(fd) == 0
-        }
-        close(fd)
-        guard ok, rename(tmp.path, url.path) == 0 else { unlink(tmp.path); throw CocoaError(.fileWriteUnknown) }
+        guard SafeFile.writePrivate(data, to: url) else { throw CocoaError(.fileWriteUnknown) }
     }
 }
 
@@ -708,7 +694,7 @@ final class ClipboardHistory: ObservableObject {
         let kept = core.add(item)
         let removed = core.prune(now: now(), settings: settings)
         if saving, !before.contains(kept.id), kept.kind == .image, let png = kept.payload, !removed.contains(where: { $0.id == kept.id }) {
-            io.async { [store] in try? store.writeImage(kept.id, png) }
+            writeImage(kept.id, png)
         }
         forget(removed)
         if saving { scheduleSave() }
@@ -727,9 +713,40 @@ final class ClipboardHistory: ObservableObject {
         moved.date = now()
         moved.payload = payload ?? item.payload
         core.add(moved)
-        if saving { scheduleSave() }
+        if saving { scheduleSave(); dropPayload(moved.id) }
         publish()
         return true
+    }
+
+    /// The keyboard on the island's Clipboard page: ↓/↑ move the highlight (the row the pointer would be on) through what is shown.
+    func step(_ n: Int) {
+        let list = visible
+        guard !list.isEmpty else { return }
+        let i = list.firstIndex { $0.id == hovered }
+        let j = i.map { min(list.count - 1, max(0, $0 + n)) } ?? (n > 0 ? 0 : list.count - 1)
+        hovered = list[j].id
+        A11y.announce(list[j].kind == .text ? String(list[j].text.prefix(120)) : list[j].kind == .image ? clipboardL("Image") : list[j].names.first ?? "")
+    }
+
+    /// Saves an image's PNG; once it is on disk the copy in memory goes (it is read back from the file when needed), so a saved
+    /// history doesn't also keep every image in RAM. A failure is said where the history's problems are, not swallowed.
+    private func writeImage(_ id: UUID, _ png: Data) {
+        io.async { [weak self, store] in
+            do {
+                try store.writeImage(id, png)
+                DispatchQueue.main.async { self?.dropPayload(id) }
+            } catch {
+                log.error("clipboard: image not saved: \(String(describing: error), privacy: .public)")
+                DispatchQueue.main.async { self?.problem = clipboardL("Couldn't save the history.") + " " + error.localizedDescription }
+            }
+        }
+    }
+
+    /// With the history saved, an image's PNG stays on disk only (favorites included: the file is the copy that counts).
+    private func dropPayload(_ id: UUID) {
+        guard saving, let i = core.items.firstIndex(where: { $0.id == id }), core.items[i].payload != nil,
+              FileManager.default.fileExists(atPath: store.blob(id).path) else { return }
+        core.items[i].payload = nil
     }
 
     func togglePin(_ id: UUID) {
@@ -851,7 +868,8 @@ final class ClipboardHistory: ObservableObject {
         saving = true
         forget(core.prune(now: now(), settings: settings))
         for i in core.items where i.kind == .image {
-            if let png = i.payload { io.async { [store] in if !FileManager.default.fileExists(atPath: store.blob(i.id).path) { try? store.writeImage(i.id, png) } } }
+            guard let png = i.payload else { continue }
+            if FileManager.default.fileExists(atPath: store.blob(i.id).path) { dropPayload(i.id) } else { writeImage(i.id, png) }
         }
         saveNow()
         publish()

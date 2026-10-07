@@ -160,6 +160,8 @@ final class DialogCenter: ObservableObject {
             }
             r.spec.surface = shownOn
             current = r
+            // VoiceOver: the card is modal (its trait) and what it asks is said at once, since focus can't be moved onto it.
+            A11y.announce([r.spec.title, r.spec.message].compactMap { $0 }.joined(separator: ". "))
         }
         changed()
     }
@@ -175,6 +177,9 @@ final class DialogCenter: ObservableObject {
     }
 
     func press(_ id: String) { apply(current.map { DialogLogic.press($0.spec, id, text: text, choice: choice) }) }
+
+    /// The window the card is in changed (VoiceOver looks at it again). Set by the app.
+    var window: (DialogSurface) -> NSWindow? = { _ in nil }
 
     func tapChoice(_ id: String) {
         guard let r = current else { return }
@@ -210,7 +215,7 @@ final class DialogCenter: ObservableObject {
     private func apply(_ o: DialogLogic.Outcome?) {
         switch o {
         case .finish(let result)?: finish(result)
-        case .invalid(let why)?: problem = why
+        case .invalid(let why)?: problem = why; A11y.announce(why)
         default: break
         }
     }
@@ -299,8 +304,12 @@ struct InAppDialogCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.black))          // opaque over the dimmed page
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(DisplayOptions.contrast ? 0.5 : 0.12), lineWidth: DisplayOptions.contrast ? 1 : 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)                           // VoiceOver stays in the card while it is up
+        .accessibilityLabel(s.title)
+        .onAppear { if let w = center.window(s.surface) { DispatchQueue.main.async { A11y.layoutChanged(w) } } }
     }
 
     private func choices(_ s: DialogSpec) -> some View {
@@ -309,7 +318,7 @@ struct InAppDialogCard: View {
             ForEach(s.choices) { c in
                 let picked = s.choiceMode == .pick && center.choice == c.id
                 let lead: ChoiceRow.Leading = c.image.map { .image($0) } ?? c.symbol.map { .symbol($0) } ?? .none
-                ChoiceRow(title: c.title, leading: lead, checked: picked, showsCheckColumn: s.choiceMode == .pick,
+                ChoiceRow(title: c.title, leading: lead, checked: picked, showsCheckColumn: s.choiceMode == .pick, selectable: s.choiceMode == .pick,
                           highlighted: picked || center.hovered == c.id, destructive: c.destructive, lines: 2, font: style.row, iconFont: style.icon,
                           action: { center.tapChoice(c.id) },
                           hover: { inside in if inside { center.hovered = c.id } else if center.hovered == c.id { center.hovered = nil } })
@@ -345,10 +354,10 @@ struct DialogTextField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextField {
         let f = NSTextField()
-        f.isBordered = false; f.drawsBackground = false; f.focusRingType = .none; f.isBezeled = false
+        f.isBordered = false; f.drawsBackground = false; f.focusRingType = .exterior; f.isBezeled = false   // Full Keyboard Access sees where it is
         f.font = .systemFont(ofSize: 12)
         f.textColor = .white
-        f.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.35),
+        f.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.5),     // 5.3:1 on black (it was 0.35, 3.2:1)
                                                                                              .font: NSFont.systemFont(ofSize: 12)])
         f.cell?.isScrollable = true; f.cell?.wraps = false; f.lineBreakMode = .byClipping
         f.delegate = context.coordinator
@@ -385,8 +394,8 @@ struct DialogHost: ViewModifier {
     func body(content: Content) -> some View {
         let on = center.isShowing(on: surface)
         return ZStack(alignment: .top) {
-            content.disabled(on).opacity(on ? 0.4 : 1)
-                .overlay { if on { Color.black.opacity(0.45).contentShape(Rectangle()).onTapGesture { center.cancel() } } }
+            content.disabled(on).opacity(on ? 0.4 : 1).accessibilityHidden(on)       // the page under the card isn't read
+                .overlay { if on { Color.black.opacity(DisplayOptions.shared.reduceTransparency ? 0.7 : 0.45).contentShape(Rectangle()).onTapGesture { center.cancel() } } }
             if on { InAppDialogCard(center: center, style: style).frame(maxWidth: maxWidth).padding(inset).transition(.opacity) }
         }
         .animation(.easeOut(duration: 0.15), value: center.current?.id)

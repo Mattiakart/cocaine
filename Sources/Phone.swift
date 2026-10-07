@@ -57,21 +57,14 @@ enum PhoneLink {
         return []
     }
 
-    /// Atomic and private from the first byte (it holds the pairings' keys): 0600 temporary file, fsync, rename.
+    /// Atomic and private from the first byte (it holds the pairings' keys): SafeFile, in a 0700 folder.
     @discardableResult
     static func save(_ list: [Pairing], to at: URL = file) -> Bool {
         let dir = at.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         chmod(dir.path, 0o700)
         guard let data = try? JSONEncoder().encode(list) else { return false }
-        let tmp = at.path + ".\(getpid()).tmp"
-        unlink(tmp)
-        let fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { return false }
-        let ok = data.withUnsafeBytes { write(fd, $0.baseAddress, data.count) } == data.count && fsync(fd) == 0
-        close(fd)
-        guard ok, rename(tmp, at.path) == 0 else { unlink(tmp); return false }
-        return true
+        return SafeFile.writePrivate(data, to: at)
     }
 
     /// A new pairing: 192-bit topics and a 256-bit key, valid 180 days.
@@ -80,31 +73,14 @@ enum PhoneLink {
     /// Runs one command from a phone through the gate (the same allow-list as `cocaine remote gate`) and returns what
     /// to answer: its output (cut to fit later). The text only ever travels in an environment variable, never in a shell line.
     static func execute(_ text: String, tier: String) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        p.arguments = [scriptPath, "remote", "gate", "--tier=\(tier == "agents" ? "agents" : "basic")"]
         var env = ProcessInfo.processInfo.environment
         env["SSH_ORIGINAL_COMMAND"] = String(text.prefix(1000))
-        p.environment = env
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = out
-        p.standardInput = FileHandle.nullDevice
-        // Read what it prints as it comes and stop when the command ends (or after 25 s): a child that kept the pipe
-        // open, such as an agent starting up, must not hold the answer back.
-        let lock = NSLock(), done = DispatchSemaphore(value: 0)
-        var data = Data()
-        out.fileHandleForReading.readabilityHandler = { h in
-            let chunk = h.availableData
-            lock.lock(); if data.count < 8192 { data.append(chunk) }; lock.unlock()
-        }
-        p.terminationHandler = { _ in done.signal() }
-        do { try p.run() } catch { return "cocaine: can't run" }
-        if done.wait(timeout: .now() + 25) == .timedOut { p.terminate() }
-        Thread.sleep(forTimeInterval: 0.2)               // the last bytes
-        out.fileHandleForReading.readabilityHandler = nil
-        lock.lock(); let got = data; lock.unlock()
-        let text = String(decoding: got.prefix(3500), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        // What it prints is read as it comes; it stops when the command ends (or after 25 s): a child that kept the pipe open,
+        // such as an agent starting up, doesn't hold the answer back (Proc).
+        let r = Proc.run("/bin/zsh", [scriptPath, "remote", "gate", "--tier=\(tier == "agents" ? "agents" : "basic")"], timeout: 25,
+                         capture: true, stderr: true, env: env, limit: 8192)
+        if r.status == -1 && !r.timedOut && r.output.isEmpty { return "cocaine: can't run" }
+        let text = String(decoding: r.output.prefix(3500), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? "OK" : text
     }
 
@@ -254,15 +230,7 @@ enum PhoneShortcut {
 
 enum RelayTest {
     static func curl(_ url: String) -> String {
-        let p = Process(), out = Pipe()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        p.arguments = ["-sS", "-m", "10", url]
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return "" }
-        let d = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        Proc.run("/usr/bin/curl", ["-sS", "-m", "10", url], timeout: 15, capture: true).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -280,20 +248,30 @@ enum Phone {
     }
 
     /// Sends the alert text to the phone. The Shortcut runs with the text as its input (build one that messages you);
-    /// ntfy posts it to the topic, so the text leaves the Mac: only used when the user set that topic.
-    static func send(_ text: String) {
+    /// ntfy posts it to the topic, so the text leaves the Mac: only used when the user set that topic. `done` (on the main
+    /// queue) gets what happened, in words, for the panel's Test.
+    static func send(_ text: String, done: ((String) -> Void)? = nil) {
         let s = Settings()
         DispatchQueue.global().async {
+            var said: [String] = []
             if !s.phoneShortcut.isEmpty {
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-\(UUID().uuidString).txt")
-                if (try? text.write(to: file, atomically: true, encoding: .utf8)) != nil {
-                    run("/usr/bin/shortcuts", ["run", s.phoneShortcut, "--input-path", file.path])
+                if SafeFile.writePrivate(Data(text.utf8), to: file) {
+                    let r = Proc.run("/usr/bin/shortcuts", ["run", s.phoneShortcut, "--input-path", file.path], timeout: 60)
                     try? FileManager.default.removeItem(at: file)
-                }
+                    said.append(r.status == 0 ? String(format: L("Shortcut “%@” ran"), s.phoneShortcut)
+                                : r.timedOut ? String(format: L("Shortcut “%@” didn't finish in a minute"), s.phoneShortcut)
+                                : String(format: L("Shortcut “%@” failed (is it named exactly so?)"), s.phoneShortcut))
+                } else { said.append(L("Couldn't write the text for the Shortcut")) }
             }
             if s.phoneNtfy.hasPrefix("https://") {
-                run("/usr/bin/curl", ["-sS", "-m", "10", "-H", "Title: Cocaine", "--data-raw", text, s.phoneNtfy])
+                let r = Proc.run("/usr/bin/curl", ["-sS", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}", "-H", "Title: Cocaine", "--data-raw", text, s.phoneNtfy],
+                                 timeout: 15, capture: true)
+                let code = Int(r.text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                said.append(code == 200 ? L("ntfy got it") : code == 0 ? L("ntfy couldn't be reached") : String(format: L("ntfy answered %d"), code))
             }
+            if said.isEmpty { said.append(L("Not set up")) }
+            DispatchQueue.main.async { done?(said.joined(separator: " · ")) }
         }
     }
 }
