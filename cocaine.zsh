@@ -355,5 +355,10 @@ case "$1" in
           esac
           exit 0 ;;
   remote) shift; exec /bin/zsh "${SELF:h}/remote.zsh" "$@" ;;
-  *)      print -ru2 -- "usage: cocaine on [duration]|off|status [--json]|mode …|release|forget|remote …"; exit 64 ;;
+  shelf)  shift                                   # the island's shelf: add <file>…, list [--all] [--json], clear (the app does it)
+          app="${SELF:h:h}/MacOS/Cocaine"
+          [ -x "$app" ] || { print -ru2 -- "cocaine shelf: needs the engine inside Cocaine.app"; exit 69; }
+          (( $# >= 1 )) || { print -ru2 -- "usage: cocaine shelf add <file>…|list [--all] [--json]|clear"; exit 64; }
+          exec "$app" --shelf "$@" ;;
+  *)      print -ru2 -- "usage: cocaine on [duration]|off|status [--json]|mode …|release|forget|remote …|shelf …"; exit 64 ;;
 esac

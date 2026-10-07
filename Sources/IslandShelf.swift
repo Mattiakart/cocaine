@@ -46,6 +46,7 @@ struct ShelfModuleView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Space.xs) { ForEach(store.items) { i in tile(i, icon: 24, named: false) } }
             }
+            .mask(Self.fadeRight)
             menuButton
         }
         .frame(maxHeight: .infinity)
@@ -65,6 +66,7 @@ struct ShelfModuleView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Space.xs) { ForEach(store.items) { i in tile(i, icon: 30, named: box.height >= 70) } }
                 }
+                .mask(Self.fadeRight)
                 .background(dropTint)
             }
             Spacer(minLength: 0)
@@ -92,6 +94,11 @@ struct ShelfModuleView: View {
     }
 
     // MARK: pieces
+
+    /// A row that scrolls sideways fades out at its right edge instead of cutting an item.
+    static var fadeRight: some View {
+        HStack(spacing: 0) { Rectangle(); LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 22) }
+    }
 
     private var dropTint: some View {
         RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Island.accent.opacity(hover ? 0.10 : 0)).padding(-4)
@@ -293,7 +300,7 @@ struct ShelfModuleView: View {
     @ViewBuilder private var statusLine: some View {
         if let r = tasks.running {
             HStack(spacing: Space.s) {
-                if let p = r.progress { ProgressView(value: p).progressViewStyle(.linear).tint(Island.accent).frame(width: 80).motion(.value, value: p) }
+                if let p = r.progress { ShelfProgressBar(value: p).frame(width: 80) }
                 else { BusyDots(color: Island.accent) }
                 Text(r.title).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
                 Button(L("Cancel")) { tasks.cancel() }.buttonStyle(.plain).font(UI.detail).foregroundStyle(CTL.accent)
@@ -320,7 +327,7 @@ struct ShelfModuleView: View {
     private var instantStrip: some View {
         HStack(spacing: Space.s) {
             ForEach(center.config.config.actions.filter(\.instant)) { a in
-                Label(a.name, systemImage: a.symbol).font(UI.value).lineLimit(1)
+                Label(a.name, systemImage: a.symbol).font(UI.value).lineLimit(1).fixedSize()
                     .padding(.horizontal, 10).frame(height: CTL.hDialog)
                     .background(Capsule().fill(Island.accent.opacity(0.25)))
                     .overlay(Capsule().strokeBorder(Island.accent, lineWidth: 1))
@@ -333,6 +340,23 @@ struct ShelfModuleView: View {
         }
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.85)))
+    }
+}
+
+/// A job's progress: the accent filling a track (the same look in every size).
+struct ShelfProgressBar: View {
+    let value: Double
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(CTL.track)
+                Capsule().fill(Island.accent).frame(width: max(4, g.size.width * CGFloat(max(0, min(1, value)))))
+            }
+        }
+        .frame(height: 4)
+        .motion(.value, value: value)
+        .accessibilityElement()
+        .accessibilityValue("\(Int(value * 100))%")
     }
 }
 

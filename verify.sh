@@ -90,6 +90,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--agents-test" "$ISO" --agents-test
   run "--clipboard-test" "$ISO" --clipboard-test
   run "--calendar-test" "$ISO" --calendar-test
+  run "--shelf-test (temporary folders, generated files)" "$ISO" --shelf-test
   run "--dialogs-test" "$ISO" --dialogs-test
   run "--remote-test" "$ISO" --remote-test
   run "--recovery-test (its own temporary copy, stand-ins, temporary folders)" "$ISO" --recovery-test

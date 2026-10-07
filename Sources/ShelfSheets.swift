@@ -17,7 +17,7 @@ struct ShelfSheetLayer: ViewModifier {
                 .overlay { if on { Color.black.opacity(0.4).contentShape(Rectangle()).onTapGesture { Motion.with(.dialog) { center.sheet = nil } }.transition(.opacity) } }
             if let s = center.sheet {
                 ShelfSheetCard(center: center, store: center.store, sheet: s)
-                    .padding(EdgeInsets(top: 0, leading: 18, bottom: 6, trailing: 18))
+                    .padding(EdgeInsets(top: 2, leading: 18, bottom: 12, trailing: 18))
                     .motionAppear(edge: .top)
             }
         }
@@ -364,7 +364,7 @@ struct ShelfImageForm: View {
                          label: { [L("Keep"), L("Width"), "%", L("Longest side")][$0.rawValue] })
                 if kind != .keep {
                     ShelfField(text: Binding(get: { sizeText }, set: { sizeText = String($0.filter(\.isNumber).prefix(5)); setKind(kind) }), placeholder: kind == .percent ? "50" : "1200")
-                        .frame(width: 64, height: CTL.h)
+                        .shelfFieldLook().frame(width: 70)
                     Text(kind == .percent ? "%" : "px").font(UI.detail).foregroundStyle(UI.hint)
                 }
             }
@@ -392,7 +392,7 @@ struct ShelfImageForm: View {
     private func toggle(_ title: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
         HStack(spacing: Space.s) {
             Text(title).font(UI.value).foregroundStyle(UI.secondary).lineLimit(1)
-            CocaineSwitch(on: on, action: action).accessibilityLabel(title)
+            CocaineSwitch(on: on, action: action).fixedSize().accessibilityLabel(title)
         }
         .help(title)
     }
@@ -408,8 +408,16 @@ struct ShelfLabeledField: View {
     var body: some View {
         HStack(spacing: Space.s) {
             Text(title).font(UI.value).foregroundStyle(UI.secondary).frame(width: 84, alignment: .leading).lineLimit(1)
-            ShelfField(text: $text, placeholder: title, autofocus: autofocus).frame(height: CTL.h)
+            ShelfField(text: $text, placeholder: title, autofocus: autofocus).shelfFieldLook()
         }
+    }
+}
+
+extension View {
+    /// The dialogs' field look: 24 pt, a rounded white .08 fill.
+    func shelfFieldLook() -> some View {
+        frame(height: CTL.h).padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: CTL.radius).fill(Color.white.opacity(0.08)))
     }
 }
 
@@ -422,7 +430,7 @@ struct ShelfField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextField {
         let f = NSTextField()
-        f.isBordered = false; f.drawsBackground = true; f.backgroundColor = NSColor.white.withAlphaComponent(0.08)
+        f.isBordered = false; f.drawsBackground = false
         f.focusRingType = .exterior; f.isBezeled = false
         f.font = .systemFont(ofSize: 12); f.textColor = .white
         f.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.5), .font: NSFont.systemFont(ofSize: 12)])
