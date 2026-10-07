@@ -71,6 +71,21 @@ check "status says ON, display held" '[[ "$($E status)" == $'"'"'ON\ndisplay: he
 check "on 90m writes the deadline" '$E on 90m && u=$(/usr/bin/defaults read $T/prefs onUntil) && (( ${u%.*} - EPOCHSECONDS >= 5390 && ${u%.*} - EPOCHSECONDS <= 5400 ))'
 check "status --json has the minutes left" '[[ "$($E status --json)" == *"\"state\":\"ON\""*"\"remaining_minutes\":90"*"\"screen\":\"kept on\""* ]]'
 check "1h30m and plain minutes are read" '$E on 1h30m && $E on 45'
+# on until <time>: the same answers as the app's UntilTime (Sources/AwakeTests.swift checks these very epochs), Europe/Rome.
+U() { TZ=Europe/Rome COCAINE_NOW=$1 $E on until "${@[2,-1]}" 2>/dev/null && print -r -- $(/usr/bin/defaults read $T/prefs onUntil); }
+check "on until 18:30 at noon: today 18:30 (and the helper's until file)" '[[ $(U 1791367200 18:30) == 1791390600 && $(<$T/support/until) == 1791390600 ]]'
+check "on until 08:00 tomorrow" '[[ $(U 1791367200 08:00 tomorrow) == 1791439200 ]]'
+check "on until 00:10 at 23:50: past midnight, 20 minutes" '[[ $(U 1791409800 00:10) == 1791411000 ]]'
+check "on until 22:00 across the October DST change: 23.5 h" '[[ $(U 1792877400 22:00) == 1792962000 ]]'
+check "on until 23:00 across it would be 24.5 h: refused" '! U 1792877400 23:00 >/dev/null'
+check "on until 02:30 on the March jump day: 03:30 (as if the clocks hadn't jumped)" '[[ $(U 1806192000 02:30) == 1806197400 ]]'
+check "on until a local ISO time" '[[ $(U 1791367200 2026-10-07T18:30) == 1791390600 ]]'
+for bad in 25:00 18:60 "18:30 yesterday" 2027-03-28T02:30 2026-04-31T10:00 2026-10-07T11:00 2026-10-09T10:00 "\$(id)" "18:30;id" ""; do
+  check "on until '$bad' refused" 'TZ=Europe/Rome COCAINE_NOW=1791367200 $E on until "$bad" 2>/dev/null; [[ $? == 64 ]]'
+done
+check "on until without a time is refused" '$E on until 2>/dev/null; [[ $? == 64 ]]'
+# Those deadlines are on a fake clock: gone before the helper (on the real one) ends the session over them.
+/usr/bin/defaults delete $T/prefs onUntil 2>/dev/null; /bin/rm -f $T/support/until; $E on
 before=$(/usr/bin/wc -l < $T/pmset.log)
 for bad in 0 1441 25h 90x "1;id" '$(id)' -5 "" 1e3 "1 2"; do
   check "bad duration '$bad' refused before anything changes" '$E on "$bad" 2>/dev/null; [[ $? == 64 ]]'
