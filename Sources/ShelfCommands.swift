@@ -456,16 +456,28 @@ final class ShelfCenter: ObservableObject {
     func shareLink(provider: String) {
         sheet = nil
         let urls = selectedURLs
-        guard let upload = CloudShareHook.upload, !urls.isEmpty else { return }
-        say("arrow.up.circle", L("Uploading…"))
-        upload(urls, provider) { [weak self] r in
+        guard !urls.isEmpty else { return }
+        let finish: (Result<[URL], Error>) -> Void = { [weak self] r in
             guard let self else { return }
             switch r {
             case .success(let links):
-                let pb = self.pasteboard(); pb.clearContents(); pb.setString(links.map(\.absoluteString).joined(separator: "\n"), forType: .string)
+                let pb = self.pasteboard()
+                if let deliver = CloudShareHook.deliver { deliver(links, pb) }      // kept out of clipboard histories
+                else { pb.clearContents(); pb.setString(links.map(\.absoluteString).joined(separator: "\n"), forType: .string) }
+                Haptic.tap(.generic)
                 self.say("link", links.count == 1 ? L("Link copied") : String(format: L("%d links copied"), links.count))
-            case .failure(let e): self.fail(e.localizedDescription)
+            case .failure(let e):
+                if case ShareError.cancelled = e { self.say("xmark.circle", L("Cancelled")) } else { self.fail(e.localizedDescription) }
             }
+        }
+        if let prepare = CloudShareHook.prepare {                            // the shelf's own progress line and Cancel
+            prepare(urls, provider) { [weak self] title, work in
+                guard let self else { return }
+                if !self.tasks.start(title, work: work, done: finish) { self.fail(L("Wait for the job running now to finish")) }
+            }
+        } else if let upload = CloudShareHook.upload {
+            say("arrow.up.circle", L("Uploading…"))
+            upload(urls, provider, finish)
         }
     }
 

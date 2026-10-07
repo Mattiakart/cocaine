@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else if settings.triggerOwned { settings.triggerOwned = false }
         // A link that started us during an update's hand-over (or after a crash) must not end that session 6 s later.
         launchedForAlert = Recovery.alertOnly(launchedForAlert: launchedForAlert, adoptedSession: adopted)
+        CloudShareCenter.shared.install()            // the shelf's "Share link…" (Sources/CloudShare.swift)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
