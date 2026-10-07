@@ -79,17 +79,24 @@ or 10 minutes while you're away, and a test). With VoiceOver, every alert is als
 **Every session, in the notch.** The island's Home tab and the panel list all your AI sessions (scrolling when there are many;
 up to 100), the ones that need you first. The list is saved and comes back after a restart (marked ↺ with its age); a session
 whose process has ended is dropped. **Click a session or an alert** to go back to where it runs: the exact Terminal or iTerm2
-tab (needs the *Automation* permission for that app, asked the first time), the tmux or WezTerm pane, or the VS Code, Cursor
-or Windsurf window of its folder; when it can't get that far it brings the app forward or opens the folder, and always tells
-you what it did. An IDE's built-in terminal, JetBrains, Ghostty, kitty and Warp can only be brought forward as an app, and
-sessions started before this version don't say where they run.
+tab (needs the *Automation* permission for that app, asked the first time), the tmux, Zellij or WezTerm pane, the Ghostty
+terminal (1.3+), the kitty window (with its remote control on), the cmux surface, or the VS Code, Cursor or Windsurf window of
+its folder; your own **jump rules** (a small JSON file) cover other apps. When it can't get that far it brings the app forward
+or opens the folder, and always tells you what it did. An IDE's built-in terminal, JetBrains and Warp can only be brought
+forward as an app, and sessions started before this version don't say where they run.
 
-**Allow or deny from the island** (off by default; Claude Code 2.0.45+ and Codex): permission requests, and Claude Code's MCP
-questions with simple answers (Claude Code 2.1.78+), appear with **Allow** / **Deny** / **In the terminal**. It uses only the tools' documented hooks
-(`PermissionRequest`, `Elicitation`) over a private socket, with answers signed and tied to one request. Nothing is approved on
-its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Claude Code's
-`AskUserQuestion` has no hook for answers, so it is only announced. Other tools in the table only alert. Details:
-[AI sessions](docs/ai-sessions.en.md).
+**Review and answer from the island** (off by default; Claude Code 2.0.45+ and Codex): Claude Code's **plans** (plan mode) in
+rendered Markdown with **Approve** or **Feedback** that Claude reads and revises; its **questions** (AskUserQuestion) with the
+options, ⌘1–9 and an answer of your own; permission requests with the **whole** input (an edit as a coloured diff), **Allow**,
+**Always allow** (the rule Claude Code itself suggests), **Deny** with an optional reason, and **In the terminal**. ⌘Y / ⌘N work
+while the island has the keyboard (⌃⌥⌘I), never globally. It uses only the tools' documented hooks (`PreToolUse`,
+`PermissionRequest`, `Elicitation`) over a private socket, with answers signed and tied to one request. Nothing is approved on
+its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Other tools
+in the table only alert. Details: [Plan review](docs/ai-plans.en.md), [AI sessions](docs/ai-sessions.en.md).
+
+**Plan limits.** The island's Status page shows Claude's 5-hour and weekly limits (Pro/Max, from Claude Code's own statusline,
+when you turn on *Claude plan limits*; your statusline keeps working) and Codex's windows, named by their real length, with the
+time to each reset. No passwords, Keychain or network: [Plan limits](docs/ai-quotas.en.md).
 
 **Beyond the hooks.** Claude Code's own session files and CLIs started in a terminal show open sessions (also without hooks),
 sessions end when their process exits or their app quits (no more rows stuck on "working"), and the same session seen several

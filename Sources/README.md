@@ -21,7 +21,12 @@ Where things are:
   IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The pages are drawn as modules: ScreenLayout.swift (the
   user's screens, pure rules), ScreenModules.swift (module views, the screen grid), ScreensEditor.swift (the Settings card),
   ScreensTests.swift (--screens-test, render fixtures).
-- AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices), Agent*.swift (sessions, approvals, focus, list).
+- AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices, sounds per event, quiet hours, AgentPrefs), Agent*.swift (sessions,
+  approvals, focus, list; AgentEvents.swift: `--agent-event`, the cards' in-memory extras). The review of a request:
+  PlanReviewModel.swift (detail, diff, questions, review state, ⌘ keys), PlanReviewView.swift, PlanReviewTests.swift,
+  PlanReviewFixtures.swift (render fixtures); Markdown.swift (block Markdown for plans); Quotas.swift (the statusline wrapper
+  `--statusline` / `--quota-hook`, plan limits, the "quotas" module); JumpRules.swift (the user's jump rules).
+  Strings: Localization/<lang>.lproj/Plans.strings.
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
 - Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
   MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).

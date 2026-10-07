@@ -79,7 +79,7 @@ enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys", "Screens", "Calendar"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys", "Screens", "Calendar", "Plans"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"
