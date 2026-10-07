@@ -70,7 +70,9 @@ final class SSHHostManager: ObservableObject {
     func host(_ id: String?) -> SSHHost? { store.hosts.first { $0.id == id } }
     func isUp(_ id: String) -> Bool { conns[id]?.isUp == true }
     var anyConfigured: Bool { !store.hosts.isEmpty }
-    var connectedCount: Int { store.hosts.filter { isUp($0.id) }.count }
+    /// Connected as the state machine says (what the UI shows; the operations check the connection itself).
+    func connected(_ id: String) -> Bool { status[id]?.phase == .connected }
+    var connectedCount: Int { store.hosts.filter { connected($0.id) }.count }
 
     // MARK: Life
 
@@ -507,6 +509,27 @@ final class SSHHostManager: ObservableObject {
 
     private func audit(_ id: String?, _ what: String) { SSHAudit.append(support, host: host(id), what) }
 
+    /// Renders (`--ssh-sample`, `--ssh-review`): sample hosts in every state, in memory only (nothing read, written or connected).
+    func applyFixture(_ args: [String]) {
+        guard args.contains("--ssh-sample") || args.contains("--ssh-review") else { return }
+        store = SSHHostStore(enabled: true, hosts: [
+            SSHHost(id: "aaaaaa", alias: "devbox", name: "Dev box", deployed: true, hooks: ["claude", "codex"]),
+            SSHHost(id: "bbbbbb", alias: "gpu-training-cluster-node-07.internal.example.com", deployed: true),
+            SSHHost(id: "cccccc", alias: "build", deployed: true),
+            SSHHost(id: "dddddd", alias: "me@203.0.113.9:2222"),
+        ])
+        status = ["aaaaaa": SSHHostStatus(phase: .connected, hooksOn: ["claude", "codex"]),
+                  "bbbbbb": SSHHostStatus(phase: .retrying(Date().addingTimeInterval(240))),
+                  "cccccc": SSHHostStatus(phase: .stopped(.hostKeyChanged)),
+                  "dddddd": SSHHostStatus()]
+        if args.contains("--ssh-review") {
+            let before = "{\n  \"model\": \"opus\"\n}\n"
+            let tools = SSHInstaller.tools(present: ["claude", "codex"], claudeVersion: "2.1.90")
+            let files = [".claude/settings.json": SSHRemoteFile(path: ".claude/settings.json", exists: true, text: before, sha: SSHWire.sha256(Data(before.utf8))),
+                         ".codex/hooks.json": SSHRemoteFile(path: ".codex/hooks.json", exists: false, text: nil, sha: "")]
+            review = SSHReview(host: "aaaaaa", plan: SSHInstaller.plan(on: true, tools: tools, files: files))
+        }
+    }
     static func word(_ f: SSHFailure) -> String {
         switch f {
         case .auth: return "login refused"

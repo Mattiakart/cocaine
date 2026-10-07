@@ -300,6 +300,7 @@ func cliRenderPanel() {
     // --island / --no-island: hanging from the notch (the strip) or not, whatever the real setting; --notch-width 210: another Mac's notch.
     applyScreensFixture(CommandLine.arguments)                  // --screens-fixture <name>, --screens-edit <screen id>
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
+    SSHHostManager.shared.applyFixture(CommandLine.arguments)   // --ssh-sample / --ssh-review: sample SSH hosts in Settings → AI
     if CommandLine.arguments.contains("--island") { model.island = true }
     if CommandLine.arguments.contains("--no-island") { model.island = false }
     if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {

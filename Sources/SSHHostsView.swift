@@ -140,7 +140,7 @@ struct SSHHostsCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
-                kit.toggle(String(format: L("Connect to %@"), h.label), Binding(get: { h.enabled }, set: { ssh.setEnabled(h.id, $0) }))
+                kit.toggle(String(format: L("Connect to %@"), h.label), Binding(get: { h.enabled && h.deployed }, set: { ssh.setEnabled(h.id, $0) }))
                     .disabled(!h.deployed || !ssh.store.enabled)
             }
             actions(h, s)
@@ -150,7 +150,7 @@ struct SSHHostsCard: View {
     }
 
     @ViewBuilder private func actions(_ h: SSHHost, _ s: SSHHostStatus) -> some View {
-        let up = ssh.isUp(h.id)
+        let up = ssh.connected(h.id)
         let needsRelay = !h.deployed || s.phase == .stopped(.relayMissing) || s.phase == .stopped(.keyMismatch) || s.failure == .relayMissing
         let needsLogin: Bool = { if case .stopped(let f) = s.phase { return f == .auth || f == .hostKeyUnknown }; return s.failure == .auth }()
         let canRetry: Bool = { switch s.phase { case .stopped, .retrying: return h.deployed && h.enabled; default: return false } }()
@@ -226,9 +226,9 @@ struct SSHHostsCard: View {
 
     private func remove(_ h: SSHHost) {
         var choices = [DialogChoice(id: "local", title: L("Remove from Cocaine only"), symbol: "minus.circle")]
-        if ssh.isUp(h.id) { choices.insert(DialogChoice(id: "clean", title: L("Remove, and take Cocaine off the host"), symbol: "trash", destructive: true), at: 0) }
+        if ssh.connected(h.id) { choices.insert(DialogChoice(id: "clean", title: L("Remove, and take Cocaine off the host"), symbol: "trash", destructive: true), at: 0) }
         let spec = DialogSpec(icon: "server.rack", title: String(format: L("Remove %@?"), h.label),
-                              message: ssh.isUp(h.id) ? L("Taking Cocaine off the host removes its hooks there and ~/.cocaine.")
+                              message: ssh.connected(h.id) ? L("Taking Cocaine off the host removes its hooks there and ~/.cocaine.")
                                   : L("It isn't connected: its hooks and ~/.cocaine stay there until you remove them (rm -rf ~/.cocaine, and Cocaine's lines in the AI tools' settings)."),
                               choices: choices, choiceMode: .act, buttons: [DialogButton(id: "cancel", title: L("Cancel"), role: .cancel)])
         DialogCenter.shared.present(spec) { r in
