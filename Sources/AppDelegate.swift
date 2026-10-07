@@ -304,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (or `&message=…`) from an AI agent's hook or any script; and control commands: `cocaine://on|off|toggle|panel`,
     /// `cocaine://timer?minutes=90`, `cocaine://pause?minutes=60`, `cocaine://resume` (for Shortcuts, scripts, hotkeys).
     func application(_ application: NSApplication, open urls: [URL]) {
+        ShelfEntry.openFiles(urls.filter(\.isFileURL))      // `open -a Cocaine file…`, Open With, `cocaine shelf add` (Sources/ShelfEntry.swift)
         for url in urls where url.scheme == "cocaine" {
             guard url.host == "alert" else {
                 if didFinishLaunching { command(url); continue }

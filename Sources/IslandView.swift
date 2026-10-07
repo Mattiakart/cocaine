@@ -67,20 +67,10 @@ struct IslandView: View {
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
         .contentShape(Rectangle())
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { t in
-            if model.dropHover != t { Motion.with(.hover) { model.dropHover = t } }       // the shelf lights up under the files
-            model.dropTargeted(t)
-        })) { providers in
-            Motion.with(.hover) { model.dropHover = false }
-            for provider in providers {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) {
-                        DispatchQueue.main.async { Haptic.tap(.generic); Motion.with(.appear) { model.shelf.add(u) } }   // it lands on the shelf
-                    }
-                }
-            }
-            return true
-        }
+        // Files, images, links and text dropped anywhere on the island land on the shelf; items dragged inside it are reordered;
+        // with ⌥ held, an instant action takes them (Sources/ShelfInteraction.swift).
+        .coordinateSpace(name: ShelfDrop.space)
+        .onDrop(of: ShelfDrop.types, delegate: ShelfDropDelegate(model: model))
         // Exactly the window's size, the canvas hanging from its top and centred on the notch whatever that size is. (Without the
         // zero minimums this frame takes the canvas's size, 656×228, and the hosting view centres that in the 38 pt closed window:
         // the closed island ended up 95 pt above the window, i.e. invisible. --island-selfcheck guards it.)
@@ -233,6 +223,7 @@ struct IslandView: View {
         .animation(Motion.animation(.page), value: model.tab)
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
         .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
+        .modifier(ShelfSheetLayer(center: model.shelfUI))                  // the shelf's menus and forms (Sources/ShelfSheets.swift)
         .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))
     }
 

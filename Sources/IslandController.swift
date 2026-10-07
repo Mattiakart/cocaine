@@ -106,6 +106,11 @@ final class IslandController {
         model.mic.start()
         startPointerMonitors()
         model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
+        let shelf = model.shelfUI                     // the shelf's controller (Sources/ShelfCommands.swift)
+        shelf.notice = { [weak model] icon, text in model?.flashNotice(icon, text) }
+        shelf.takeKeyboard = { [weak self] in guard let p = self?.openSpot?.panel else { return }; p.keyable = true; p.makeKey() }
+        shelf.hold = { [weak self] on in self?.shelfHold(on) }
+        ShelfEntry.start(shelf)
         model.airDrop = { urls in                     // one tap: straight to AirDrop's own picker; a problem is said in the island
             guard !urls.isEmpty else { return }
             Sharing.shared.perform(NSSharingService(named: .sendViaAirDrop), urls, surface: .island)
@@ -128,9 +133,11 @@ final class IslandController {
             for s in spots.values { s.panel.orderOut(nil) }
             watchTimer?.invalidate(); watchTimer = nil
             model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop()
+            model.shelfUI.watching = false
             return
         }
         model.files.start(); model.clipboard.start(); model.music.start()
+        model.shelfUI.watching = true
         syncHUD(panelModel?.replaceHUD ?? false)
         for s in spots.values { s.missed = 0 }
         relayout()
@@ -292,7 +299,12 @@ final class IslandController {
         endKeyboard()
         guard model.open, model.openScreen == id || spots[model.openScreen] == nil else { return }
         model.open = false
+        if model.shelfUI.sheet != nil { model.shelfUI.sheet = nil }        // the shelf's sheet goes with the island
         guard let s = spots[id] else { return }
+        if !keyboardOpen && s.panel.keyable {                            // the shelf took the keyboard: it goes back
+            s.panel.keyable = false
+            if s.panel.isKeyWindow { s.panel.orderOut(nil); s.panel.orderFrontRegardless() }
+        }
         s.panel.ignoresMouseEvents = true
         s.closingUntil = Date().addingTimeInterval(Motion.islandSettle)
         let gen = s.settle.begin()
@@ -359,10 +371,11 @@ final class IslandController {
             s.panel.isVisible && suspended != s.id
                 && IslandRouting.hoverZone(s.g, open: state.open == s.id && model.open, leftW: model.leftW, rightW: model.rightW).contains(p)
         }?.id
+        if ShelfEntry.shook(e, overIsland: over != nil) { model.tab = "shelf"; setOpen(true); return }   // a shake while dragging files
         guard over != state.hovering else { return }
         // Dragging files over a notch: open straight on the shelf.
         if over != nil, e.type == .leftMouseDragged, NSPasteboard(name: .drag).types?.contains(.fileURL) == true { model.tab = "shelf" }
-        state.dialog = DialogCenter.shared.isShowing(on: .island)
+        state.dialog = DialogCenter.shared.isShowing(on: .island) || model.shelfHold
         state.keyboard = keyboardOpen
         apply(state.pointer(over: over))                   // no delay either way: as fast out as in
     }
@@ -370,7 +383,7 @@ final class IslandController {
     /// The model's hover (the drop target): the island the user is working with.
     private func hoverActive(_ inside: Bool) {
         guard let s = activeSpot else { return }
-        state.dialog = DialogCenter.shared.isShowing(on: .island)
+        state.dialog = DialogCenter.shared.isShowing(on: .island) || model.shelfHold
         state.keyboard = keyboardOpen
         apply(state.pointer(over: inside ? s.id : nil))
     }
@@ -402,6 +415,28 @@ final class IslandController {
             if keyboardOpen { openSpot?.panel.makeKey(); return }        // opened from the keyboard: it keeps the keyboard
             model.setKeyable(false)                                      // the search field takes it again on its own click
             if state.hovering == nil || state.hovering != state.open { setOpen(false) }    // the pointer left while the question was up
+        }
+    }
+
+    private var shelfMonitor: Any?
+
+    /// The shelf holds the island open (a rename or image form, Quick Look, a folder panel): like a dialog, it keeps the keyboard
+    /// and a click in another app ends it; afterwards the island follows the pointer again.
+    private func shelfHold(_ on: Bool) {
+        guard model.shelfHold != on else { return }
+        model.shelfHold = on
+        state.dialog = DialogCenter.shared.isShowing(on: .island) || on
+        if on {
+            if let p = openSpot?.panel { p.keyable = true; p.makeKey() }
+            shelfMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                guard let self, !ShelfQuickLook.shared.active else { return }
+                self.model.shelfUI.sheet = nil
+                self.shelfHold(false)
+            }
+        } else {
+            if let m = shelfMonitor { NSEvent.removeMonitor(m); shelfMonitor = nil }
+            if keyboardOpen || DialogCenter.shared.isShowing(on: .island) { return }
+            if state.hovering == nil || state.hovering != state.open { setOpen(false) }    // the pointer left meanwhile
         }
     }
 
@@ -553,6 +588,8 @@ final class IslandController {
         guard keyboardMonitors.isEmpty, localKeys == nil else { return }
         localKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self, let panel = self.openSpot?.panel, e.window === panel, !DialogCenter.shared.isShowing(on: .island) else { return e }
+            if ShelfKeys.handle(e.keyCode, flags: e.modifierFlags, chars: e.charactersIgnoringModifiers, editing: panel.firstResponder is NSTextView,
+                                shown: self.model.open && self.model.shows("shelf"), center: self.model.shelfUI) { return nil }   // Sources/ShelfInteraction.swift
             return IslandKeys.handle(e.keyCode, flags: e.modifierFlags, editing: panel.firstResponder is NSTextView, model: self.model,
                                      close: { self.setOpen(false) }) ? nil : e
         }

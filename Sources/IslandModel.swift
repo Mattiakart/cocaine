@@ -57,6 +57,10 @@ final class IslandModel: ObservableObject {
     let files = FileShelf()
     let clipboard = ClipboardHistory.shared
     let shelf = ShelfStore()
+    /// The shelf's controller: its sheets, operations, keys, watched folders (Sources/ShelfCommands.swift).
+    lazy var shelfUI = ShelfCenter(store: shelf)
+    /// The shelf keeps the island open (a form being filled in, Quick Look, a folder panel), as a dialog does.
+    var shelfHold = false
     var airDrop: ([URL]) -> Void = { _ in }
     var dropTargeted: (Bool) -> Void = { _ in }
     /// Files are being dragged over the island: the shelf shows where they will land.

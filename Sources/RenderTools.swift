@@ -205,7 +205,7 @@ func cliRenderIsland() {
                           ClipItem.text("https://github.com/Mattiakart/cocaine"), ClipItem.text("Ciao Mario, ti mando il file domani mattina"),
                           ClipItem.files(["/tmp/cocaine-no-such-file.pdf"])])
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
-    if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
+    ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
     // The morph: --progress 0.3 (or a list, 0,0.15,0.3…, drawn one under the other) draws those moments of opening; closing runs
     // the same frames backwards. --flash "text" / --level 0.6 shows a flash message, --pink the pink bag, --external the Monitors tab,
