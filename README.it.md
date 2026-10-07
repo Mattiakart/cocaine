@@ -168,9 +168,13 @@ pagine:
   Tiene dei riferimenti, non copie, e resta dopo un riavvio (i file spariti nel frattempo vengono tolti).
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo col nome del file avvisa
   quando ne arriva uno. Le due cartelle vengono osservate, non rilette ogni pochi secondi.
-- **Appunti**: ciò che hai copiato da poco (testo, immagini, riferimenti a file), con ricerca e preferiti; clicca per copiare di nuovo.
-  Solo in memoria, a meno che attivi *Salva su questo Mac* (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*);
-  mai dai gestori di password. [Dettagli e limiti](docs/clipboard.it.md).
+- **Appunti**: ciò che hai copiato da poco (testo con la sua formattazione, immagini, riferimenti a file), con ricerca e filtri;
+  doppio clic o A capo incollano nell'app che stavi usando (con il permesso Accessibilità; altrimenti copiano), ⌘1–9 incolla
+  rapido, selezione multipla, Pila Incolla, unione, modifica, rinomina, anteprime, testo nelle immagini, suggerimenti per l'app in
+  primo piano, copie da altri dispositivi riconosciute, e `cocaine clip` (spento di default). **Bacheche** (raccolte con nome) e
+  **snippet** con segnaposto sono sempre salvati, cifrati; il resto solo in memoria, a meno che attivi *Salva su questo Mac*
+  (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*); mai dai gestori di password.
+  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md).
 - **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth (aggiornate al massimo una volta al minuto), e
   l'utilizzo di Codex (i limiti, dalle sessioni più recenti che li riportano) e Claude Code (i token delle ultime 5 ore e 7 giorni),
   letti dai loro file locali. I file di Claude Code vengono letti una volta, poi solo la parte aggiunta; un primo conteggio su una
@@ -203,7 +207,7 @@ disegna Centro di Controllo, che Cocaine non tocca. Senza il permesso, macOS cam
 
 **Da tastiera e con VoiceOver.** ⌃⌥⌘I (Generale → *Scorciatoie da tastiera*, modificabile) apre l'isola con la tastiera dentro:
 resta aperta finché premi Esc, di nuovo la scorciatoia o clicchi altrove; ← e → cambiano scheda, Tab passa tra i controlli (con
-Accesso completo da tastiera) e nella pagina Appunti ↑, ↓ e A capo copiano un elemento. Per VoiceOver l'isola chiusa è un solo
+Accesso completo da tastiera) e nella pagina Appunti ↑, ↓ e A capo incollano un elemento. Per VoiceOver l'isola chiusa è un solo
 elemento, "Cocaine", che dice cosa mostra e apre l'isola; mentre VoiceOver è attivo resta anche l'icona nella barra dei menu.
 Vengono annunciati i lampi dell'isola, un'AI che inizia a lavorare, avvisi e richieste, e cosa hanno fatto una scorciatoia o un
 link. Cocaine segue Aumenta contrasto, Differenzia senza colore e Riduci movimento (niente polvere che scende, niente molle,

@@ -51,7 +51,7 @@
 "Everything (⌥0)" = "Tutto (⌥0)";
 "Favorites" = "Preferiti";
 "Filled in when it is pasted. {input:Name} asks for a value." = "Compilato all’incolla. {input:Name} chiede un valore.";
-"Filters: type:image app:Safari board:Name from:device date:7d. ↑ ↓ pick, Return pastes" = "Filtri: type:image app:Safari board:Name from:device date:7d. ↑ ↓ scegli, Invio incolla";
+"Filters: type:image app:Safari board:Name from:device date:7d. ↑ ↓ pick, Return pastes" = "Filtri: type:image app:Safari board:Name from:device date:7d. ↑ ↓ scegli, A capo incolla";
 "Find text in images" = "Trova testo nelle immagini";
 "Fit" = "Adatta";
 "Flag" = "Bandiera";
@@ -68,7 +68,7 @@
 "Heart" = "Cuore";
 "Hide from screen sharing" = "Nascondi dalla condivisione schermo";
 "Hides its settings" = "Nasconde le sue impostazioni";
-"History in memory, pinboards saved. Double-click or Return pastes, ⌘-click selects more." = "Cronologia in memoria, bacheche salvate. Doppio clic o Invio incolla, ⌘-clic ne seleziona altri.";
+"History in memory, pinboards saved. Double-click or Return pastes, ⌘-click selects more." = "Cronologia in memoria, bacheche salvate. Doppio clic o A capo incolla, ⌘-clic ne seleziona altri.";
 "History, pinboards, saved files and their key" = "Cronologia, bacheche, file salvati e la loro chiave";
 "How Paste and Copy put it: with its formatting, or plain text" = "Come Incolla e Copia lo inseriscono: con la formattazione o come testo semplice";
 "Images" = "Immagini";
@@ -82,7 +82,7 @@
 "Merge" = "Unisci";
 "Merged into a new item" = "Unito in un nuovo elemento";
 "Name" = "Nome";
-"Needs Accessibility: until then Return copies only" = "Serve Accessibilità: finché non c’è, Invio copia soltanto";
+"Needs Accessibility: until then Return copies only" = "Serve Accessibilità: finché non c’è, A capo copia soltanto";
 "Never from password managers. Pinboards are always saved on this Mac, encrypted." = "Mai dai gestori di password. Le bacheche sono sempre salvate su questo Mac, cifrate.";
 "New line" = "A capo";
 "New pinboard" = "Nuova bacheca";
@@ -104,7 +104,7 @@
 "Opens the island on this pinboard" = "Apre l’isola su questa bacheca";
 "Orange" = "Arancione";
 "Paste" = "Incolla";
-"Paste (Return)" = "Incolla (Invio)";
+"Paste (Return)" = "Incolla (A capo)";
 "Paste Stack done" = "Pila Incolla completata";
 "Paste Stack: %d items, %@ pastes the next" = "Pila Incolla: %d elementi, %@ incolla il successivo";
 "Paste Stack: %d left, %@ pastes the next" = "Pila Incolla: %d rimasti, %@ incolla il successivo";
@@ -112,7 +112,7 @@
 "Paste as" = "Incolla come";
 "Paste as…" = "Incolla come…";
 "Paste next (Paste Stack)" = "Incolla il prossimo (Pila Incolla)";
-"Paste with Return and double-click" = "Incolla con Invio e doppio clic";
+"Paste with Return and double-click" = "Incolla con A capo e doppio clic";
 "Paste without formatting" = "Incolla senza formattazione";
 "Pastes into the app in front" = "Incolla nell’app in primo piano";
 "Person" = "Persona";
@@ -145,7 +145,7 @@
 "Save as new" = "Salva come nuovo";
 "Saved on this Mac, encrypted, even with the history in memory only." = "Salvate su questo Mac, cifrate, anche con la cronologia solo in memoria.";
 "Saved on this Mac, encrypted, with the history." = "Salvate su questo Mac, cifrate, insieme alla cronologia.";
-"Saved on this Mac, encrypted. Double-click or Return pastes, ⌘-click selects more." = "Salvata su questo Mac, cifrata. Doppio clic o Invio incolla, ⌘-clic ne seleziona altri.";
+"Saved on this Mac, encrypted. Double-click or Return pastes, ⌘-click selects more." = "Salvata su questo Mac, cifrata. Doppio clic o A capo incolla, ⌘-clic ne seleziona altri.";
 "Select" = "Seleziona";
 "Selection cleared" = "Selezione annullata";
 "Sends ⌘V to the app in front. Off: copies only" = "Invia ⌘V all’app in primo piano. Disattivato: copia soltanto";
