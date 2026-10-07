@@ -148,7 +148,7 @@ struct LinkButton: View {
 
 /// Children of equal width that fill the width offered; asked for its ideal size, as wide as the widest child times their
 /// number (so a row can tell whether it fits beside its title).
-struct EqualWidthHStack: Layout {
+struct EqualWidthHStack: SwiftUI.Layout {
     var spacing: CGFloat = 2
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

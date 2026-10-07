@@ -1,0 +1,194 @@
+// Automation: the timer, Battery Guard, Smart Triggers state, power/lid readings and global hotkeys.
+
+import AppKit
+import AVFoundation
+import Combine
+import CoreAudio
+import EventKit
+import Carbon.HIToolbox
+import Darwin
+import ImageIO
+import IOKit
+import IOKit.pwr_mgt
+import IOKit.ps
+import Security
+import ServiceManagement
+import SwiftUI
+import UniformTypeIdentifiers
+import os
+
+// MARK: - Automation: timer, battery guard, smart triggers, agent states, hotkeys, phone alerts
+
+extension Settings {
+    static let timerChoices = [0, 30, 60, 120, 240, 480]        // minutes Cocaine stays on when turned on by hand; 0 = until turned off
+    static let batteryChoices = [0, 10, 15, 20, 30]             // % at which to act on battery; 0 = off
+
+    var timerMinutes: Int { get { d.object(forKey: "timerMinutes") as? Int ?? 0 } nonmutating set { d.set(newValue, forKey: "timerMinutes") } }
+    /// When Cocaine turns itself off (also set by `cocaine remote on --for …`).
+    var onUntil: Date? {
+        get { let v = d.double(forKey: "onUntil"); return v > 0 ? Date(timeIntervalSince1970: v) : nil }
+        nonmutating set { if let n = newValue { d.set(n.timeIntervalSince1970, forKey: "onUntil") } else { d.removeObject(forKey: "onUntil") } }
+    }
+    var batteryThreshold: Int { get { d.object(forKey: "batteryThreshold") as? Int ?? 0 } nonmutating set { d.set(newValue, forKey: "batteryThreshold") } }
+    var batteryTurnsOff: Bool { get { flag("batteryTurnsOff", true) } nonmutating set { d.set(newValue, forKey: "batteryTurnsOff") } }
+    var triggerAgents: Bool { get { flag("triggerAgents", false) } nonmutating set { d.set(newValue, forKey: "triggerAgents") } }
+    var triggerApps: [String] { get { d.stringArray(forKey: "triggerApps") ?? [] } nonmutating set { d.set(newValue, forKey: "triggerApps") } }
+    // Power, display and schedule triggers (Sources/Power.swift)
+    static let powerMinimumChoices = [10, 20, 30, 50]
+    var triggerPower: String { get { d.string(forKey: "triggerPower") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerPower") } }   // "" | ac | battery
+    var triggerPowerMin: Int { get { d.object(forKey: "triggerPowerMin") as? Int ?? 20 } nonmutating set { d.set(newValue, forKey: "triggerPowerMin") } }
+    var triggerDisplay: String { get { d.string(forKey: "triggerDisplay") ?? "" } nonmutating set { d.set(newValue, forKey: "triggerDisplay") } }   // "" | connected | disconnected
+    var triggerSchedule: Bool { get { flag("triggerSchedule", false) } nonmutating set { d.set(newValue, forKey: "triggerSchedule") } }
+    var scheduleDays: [Int] { get { (d.array(forKey: "scheduleDays") as? [Int])?.filter { (1...7).contains($0) } ?? [2, 3, 4, 5, 6] } nonmutating set { d.set(newValue, forKey: "scheduleDays") } }
+    var scheduleStart: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleStart") as? Int ?? 540) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleStart") } }
+    var scheduleEnd: Int { get { TimeWindow.clamp(d.object(forKey: "scheduleEnd") as? Int ?? 1080) } nonmutating set { d.set(TimeWindow.clamp(newValue), forKey: "scheduleEnd") } }
+    var triggerAll: Bool { get { flag("triggerAll", false) } nonmutating set { d.set(newValue, forKey: "triggerAll") } }
+    /// Cocaine is on because a Smart Trigger turned it on (kept across an update's or a crash's adopted session).
+    var triggerOwned: Bool { get { flag("triggerOwned", false) } nonmutating set { d.set(newValue, forKey: "triggerOwned") } }
+    var schedule: TimeWindow { TimeWindow(days: Set(scheduleDays), start: scheduleStart, end: scheduleEnd) }
+    /// "Dim the screen when idle" turns the displays off instead (the Mac keeps working).
+    var screenOff: Bool { get { flag("screenOff", false) } nonmutating set { d.set(newValue, forKey: "screenOff") } }
+    /// Shortcuts and cocaine:// links may turn Cocaine on and off without asking.
+    var allowLinks: Bool { get { flag("allowLinks", false) } nonmutating set { d.set(newValue, forKey: "allowLinks") } }
+    var hotkeys: Bool { get { flag("hotkeys", false) } nonmutating set { d.set(newValue, forKey: "hotkeys") } }
+    var haptics: Bool { get { flag("haptics", true) } nonmutating set { d.set(newValue, forKey: "haptics") } }
+    var stayActive: Bool { get { flag("stayActive", false) } nonmutating set { d.set(newValue, forKey: "stayActive") } }
+    var stayActiveAlways: Bool { get { flag("stayActiveAlways", false) } nonmutating set { d.set(newValue, forKey: "stayActiveAlways") } }
+    var stayActiveApps: [String] { get { d.stringArray(forKey: "stayActiveApps") ?? Presence.defaultApps } nonmutating set { d.set(newValue, forKey: "stayActiveApps") } }
+    var replaceHUD: Bool { get { flag("replaceHUD", false) } nonmutating set { d.set(newValue, forKey: "replaceHUD") } }
+    var island: Bool { get { flag("island", true) } nonmutating set { d.set(newValue, forKey: "island") } }
+    var wakeForPhone: Bool { get { flag("wakeForPhone", false) } nonmutating set { d.set(newValue, forKey: "wakeForPhone") } }
+    /// A random value the app keeps for its own tools (`cocaine remote notify test`); URLs need it for `test=` flags.
+    var testToken: String {
+        if let t = d.string(forKey: "testToken") { return t }
+        let t = UUID().uuidString
+        d.set(t, forKey: "testToken")
+        return t
+    }
+    var alertError: Bool { get { flag("alertError", true) } nonmutating set { d.set(newValue, forKey: "alertError") } }
+    /// Claude Code's and Codex's requests can be answered from the notch (off: they're only shown, the terminal asks).
+    var agentApprovals: Bool { get { flag("agentApprovals", false) } nonmutating set { d.set(newValue, forKey: "agentApprovals") } }
+    /// Phone alerts: a Shortcut to run (given the alert text) and/or an ntfy topic URL. Set with `cocaine remote notify`.
+    var phoneShortcut: String { d.string(forKey: "phoneShortcut") ?? "" }
+    var phoneNtfy: String { d.string(forKey: "phoneNtfy") ?? "" }
+}
+
+/// Battery Guard: fires once when the battery (on battery power) reaches the threshold, and re-arms when it recovers.
+struct BatteryGuard {
+    var tripped = false
+
+    mutating func check(percent: Int, onAC: Bool, threshold: Int) -> Bool {
+        guard threshold > 0 else { tripped = false; return false }
+        if onAC || percent > threshold + 3 { tripped = false; return false }
+        if percent <= threshold && !tripped { tripped = true; return true }
+        return false
+    }
+}
+
+/// Smart Triggers: turns Cocaine on when something wants the Mac awake, and off again a while after it stops, but only
+/// if the trigger (not the user) turned it on; a user who turns it off while a trigger is active is not overruled.
+struct AutoOn {
+    enum Step { case none, turnOn, turnOff }
+    var owned = false                  // Cocaine is on because a trigger turned it on
+    var suppressed = false             // the user said no while a trigger was active
+    var lastActive = Date.distantPast
+
+    mutating func step(active: Bool, isOn: Bool, now: Date, grace: TimeInterval = 180) -> Step {
+        if active {
+            lastActive = now
+            if !isOn && !suppressed { owned = true; return .turnOn }
+            return .none
+        }
+        suppressed = false
+        if owned {
+            if !isOn { owned = false; return .none }
+            if now.timeIntervalSince(lastActive) >= grace { owned = false; return .turnOff }
+        }
+        return .none
+    }
+
+    mutating func userToggled(to on: Bool, triggerActive: Bool) {
+        owned = false
+        if !on && triggerActive { suppressed = true }
+    }
+
+    /// A new instance took over a session a trigger had turned on (an update, a crash): it stays the trigger's, so it
+    /// ends when the trigger does (after the grace), instead of becoming an ON nobody turns off.
+    mutating func resume(now: Date) { owned = true; lastActive = now }
+}
+
+// AgentEntry and AgentBoard (what each AI session is doing) live in Sources/AgentSessions.swift.
+
+extension System {
+    /// Charge and power source of the internal battery; nil on a Mac without one.
+    static var battery: (percent: Int, onAC: Bool)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in list {
+            guard let d = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  (d[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType,
+                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            return (cur * 100 / max, (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue)
+        }
+        return nil
+    }
+
+    /// Names of every running process and app, lowercased (what a Smart Trigger matches against).
+    static func runningNames() -> Set<String> {
+        var names = Set<String>()
+        let count = proc_listallpids(nil, 0)
+        if count > 0 {
+            var pids = [pid_t](repeating: 0, count: Int(count) + 64)
+            let n = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+            var buf = [CChar](repeating: 0, count: 256)
+            for pid in pids.prefix(Int(n)) where pid > 0 {
+                if proc_name(pid, &buf, UInt32(buf.count)) > 0 { names.insert(String(cString: buf).lowercased()) }
+            }
+        }
+        for app in NSWorkspace.shared.runningApplications {
+            if let n = app.localizedName { names.insert(n.lowercased()) }
+            if let n = app.bundleURL?.deletingPathExtension().lastPathComponent { names.insert(n.lowercased()) }
+        }
+        return names
+    }
+
+    /// Regular apps the user can pick as a trigger, by name.
+    static func runningAppNames() -> [String] {
+        Array(Set(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)))
+            .filter { $0 != "Cocaine" }.sorted { $0.lowercased() < $1.lowercased() }
+    }
+}
+
+// MARK: Global hotkeys (⌃⌥⌘ + letter): Carbon's RegisterEventHotKey needs no privacy permission
+
+private var hotkeyHandler: ((UInt32) -> Void)?
+
+final class Hotkeys {
+    static let keys: [(id: UInt32, code: UInt32, label: String)] = [(1, 8, "C"), (2, 31, "O"), (3, 35, "P")]   // toggle, panel, pause
+    private var refs: [EventHotKeyRef?] = []
+    private var installed = false
+
+    func set(enabled: Bool, action: @escaping (UInt32) -> Void) {
+        refs.forEach { if let r = $0 { UnregisterEventHotKey(r) } }
+        refs = []
+        guard enabled else { return }
+        hotkeyHandler = action
+        if !installed {
+            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+                var hk = EventHotKeyID()
+                GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                                  MemoryLayout<EventHotKeyID>.size, nil, &hk)
+                DispatchQueue.main.async { hotkeyHandler?(hk.id) }
+                return noErr
+            }, 1, &spec, nil, nil)
+            installed = true
+        }
+        for k in Self.keys {
+            var ref: EventHotKeyRef?
+            RegisterEventHotKey(k.code, UInt32(cmdKey | optionKey | controlKey), EventHotKeyID(signature: OSType(0x434F4341), id: k.id),
+                                GetApplicationEventTarget(), 0, &ref)
+            refs.append(ref)
+        }
+    }
+}
