@@ -33,6 +33,7 @@ struct PanelView: View {
     @ObservedObject var pickers = PickerCenter.shared
     @ObservedObject var keys = ShortcutCenter.shared
     @ObservedObject var display = DisplayOptions.shared
+    @ObservedObject var envs = AIEnvironmentCenter.shared
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -539,20 +540,58 @@ struct PanelView: View {
         }
     }
 
+    /// Every AI environment on this Mac, what Cocaine can detect there (CapabilityStrip) and its switch where it has one: the
+    /// hooks of a tool, or the web chats' tabs. Apps without any mechanism say so plainly.
+    private var environmentsCard: some View {
+        let rows = AIEnvironments.cardRows(hookTools: m.ai.tools.map { ($0.id, $0.name, $0.installed) }, installed: envs.installed, running: envs.running)
+        return card("sparkles", L("Detected environments"), warning: m.ai.codexNeedsTrust) {
+            ForEach(rows) { r in
+                switch r.kind {
+                case .hook(let id):
+                    let t = m.ai.tools.first { $0.id == id }
+                    let untrusted = id == "codex" && m.ai.codexNeedsTrust
+                    let detail = untrusted ? L("Approve once in Settings → Hooks")
+                        : r.also.isEmpty ? nil : String(format: L("Also: %@"), r.also.joined(separator: ", "))
+                    envRow(r.title, env: r.env, detail: detail, warning: untrusted, tip: toolDetail(id)) {
+                        toggle(r.title, Binding(get: { t?.on ?? false }, set: { m.setAI(id, $0) })).disabled(m.settingAI)
+                    }
+                case .app:
+                    envRow(r.title, env: r.env, detail: (r.running ? L("Running") : L("Installed")) + " · " + L("Only whether it's open: it reports nothing else"),
+                           tip: CapabilityStrip.spoken(AIEnvironments.env(r.env) ?? AIEnvironments.all[0])) { EmptyView() }
+                case .web:
+                    envRow(L("Web chats"), env: r.env, detail: L("Chat tabs in your browser: open, closed, and going back to the tab. Their replies can't be seen."),
+                           tip: L("Asks to control each open browser (Privacy & Security → Automation) when you turn it on")) {
+                        toggle(L("Web chats"), $envs.webChats)
+                    }
+                }
+            }
+            let others = m.ai.tools.filter { !$0.installed }.map(\.name)
+            LinkButton(title: L("Other apps and scripts")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
+                .help(others.isEmpty ? L("Other apps and scripts") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
+        }
+        .onAppear { envs.refresh() }
+    }
+
+    /// A row with what Cocaine can detect there under its name.
+    private func envRow<Control: View>(_ title: String, env: String, detail: String?, warning: Bool = false, tip: String,
+                                       @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: Space.m) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                titleBlock(title, detail, warning: warning)
+                if let e = AIEnvironments.env(env) { CapabilityStrip(env: e, accent: Island.accent) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            control().fixedSize()
+        }
+        .frame(minHeight: 22)
+        .fixedSize(horizontal: false, vertical: true)
+        .help(tip)
+    }
+
     private var aiTab: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             activityCard
-            card("sparkles", L("Connected AIs"), warning: m.ai.codexNeedsTrust) {
-                ForEach(m.ai.tools.filter(\.installed)) { t in
-                    let untrusted = t.id == "codex" && m.ai.codexNeedsTrust
-                    row(t.name, detail: untrusted ? L("Approve once in Settings → Hooks") : nil, tip: toolDetail(t.id), warning: untrusted) {
-                        toggle(t.name, Binding(get: { t.on }, set: { m.setAI(t.id, $0) })).disabled(m.settingAI)
-                    }
-                }
-                let others = m.ai.tools.filter { !$0.installed }.map(\.name)
-                LinkButton(title: L("Other apps and scripts")) { NSWorkspace.shared.open(Feedback.alertsGuide) }
-                    .help(others.isEmpty ? L("Other apps and scripts") : String(format: L("Also supported: %@"), others.joined(separator: ", ")))
-            }
+            environmentsCard
             card("bell.badge", L("When")) {
                 row(L("Finishes"), tip: L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
                 row(L("Needs you"), tip: L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }

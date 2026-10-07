@@ -43,6 +43,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--display-test
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test" { cliDialogsTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--ux-test" { cliUXTest() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" { cliAIAlerts() }
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--ai-environments" { cliAIEnvironments() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" { cliPermissions() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--camera-test" { cliCameraTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-test" { cliPresenceTest() }

@@ -167,6 +167,8 @@ enum AIHooks {
                        .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
                        .init(name: "UserPromptSubmit", kind: "start"),
+                       // Session open and ended (not "compact": that is the same session carrying on, mid-work).
+                       .init(name: "SessionStart", kind: "open", matcher: "startup|resume|clear"), .init(name: "SessionEnd", kind: "end"),
                        .init(name: "StopFailure", kind: "error", minVersion: [2, 1, 78]),
                        // Answered from the notch when the user wants it (the app hands them straight back otherwise).
                        .init(name: "PermissionRequest", kind: "approve", minVersion: [2, 0, 45]),
@@ -175,18 +177,21 @@ enum AIHooks {
          Tool(id: "codex", name: "Codex", folder: home + "/.codex", file: home + "/.codex/hooks.json",
               events: [.init(name: "Stop", kind: "done"), .init(name: "PermissionRequest", kind: "approve"),
                        .init(name: "SubagentStart", kind: "agentstart"), .init(name: "SubagentStop", kind: "agentstop"),
-                       .init(name: "UserPromptSubmit", kind: "start")]),
+                       .init(name: "UserPromptSubmit", kind: "start"),
+                       .init(name: "SessionStart", kind: "open"), .init(name: "SessionEnd", kind: "end")]),
          Tool(id: "cursor", name: "Cursor", folder: home + "/.cursor", file: home + "/.cursor/hooks.json", layout: .flat,
               events: [.init(name: "stop", kind: "done"),   // Cursor has no hook for "waiting for you"
                        .init(name: "subagentStart", kind: "agentstart"), .init(name: "subagentStop", kind: "agentstop"),
-                       .init(name: "beforeSubmitPrompt", kind: "start")],
+                       .init(name: "beforeSubmitPrompt", kind: "start"),
+                       .init(name: "sessionStart", kind: "open"), .init(name: "sessionEnd", kind: "end")],
               handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10"))] },
               top: [.init(key: "version", value: .scalar("1"))]),
          Tool(id: "copilot", name: "GitHub Copilot", folder: home + "/.copilot", file: home + "/.copilot/hooks/cocaine.json",
               layout: .ownFile, contents: copilotFile),  // Copilot CLI and VS Code's Copilot agent both read it
          Tool(id: "gemini", name: "Gemini CLI", folder: home + "/.gemini", file: home + "/.gemini/settings.json",
               events: [.init(name: "AfterAgent", kind: "done"), .init(name: "Notification", kind: "input"),
-                       .init(name: "BeforeAgent", kind: "start")],
+                       .init(name: "BeforeAgent", kind: "start"),
+                       .init(name: "SessionStart", kind: "open"), .init(name: "SessionEnd", kind: "end")],
               handler: { command, kind in                // milliseconds; a name, so it can be disabled by name
                   [.init(key: "name", value: .string("cocaine-\(kind)")), .init(key: "type", value: .string("command")),
                    .init(key: "command", value: .string(command)), .init(key: "timeout", value: .scalar("10000"))] },
@@ -194,7 +199,7 @@ enum AIHooks {
                   let items = (try? FileManager.default.contentsOfDirectory(atPath: t.folder)) ?? []
                   return items.contains { !["antigravity", ".DS_Store"].contains($0) } }),
          Tool(id: "windsurf", name: "Windsurf", folder: home + "/.codeium/windsurf", file: home + "/.codeium/windsurf/hooks.json",
-              layout: .flat, events: [.init(name: "post_cascade_response", kind: "done")],
+              layout: .flat, events: [.init(name: "post_cascade_response", kind: "done"), .init(name: "pre_user_prompt", kind: "start")],
               handler: { command, _ in [.init(key: "command", value: .string(command)), .init(key: "show_output", value: .scalar("false"))] }),
          Tool(id: "qwen", name: "Qwen Code", folder: home + "/.qwen", file: home + "/.qwen/settings.json",
               events: [.init(name: "Stop", kind: "done"), .init(name: "Notification", kind: "input", matcher: "permission_prompt"),
@@ -236,6 +241,10 @@ enum AIHooks {
             .init(key: "hooks", value: .object([
                 .init(key: "agentStop", value: .array([hook("done")])),
                 .init(key: "notification", value: .array([hook("input", matcher: "permission_prompt|elicitation_dialog")])),
+                .init(key: "userPromptSubmitted", value: .array([hook("start")])),
+                .init(key: "errorOccurred", value: .array([hook("error")])),
+                .init(key: "sessionStart", value: .array([hook("open")])),
+                .init(key: "sessionEnd", value: .array([hook("end")])),
             ])),
         ]).render() + "\n"
     }
@@ -243,12 +252,14 @@ enum AIHooks {
     /// ~/.config/opencode/plugins/cocaine.js: an OpenCode plugin (run by Bun) that listens for its events.
     private static func openCodeFile(_ t: Tool) -> String {
         guard case .scalar(let done) = JSONValue.string(command(t, "done")),
-              case .scalar(let input) = JSONValue.string(command(t, "input")) else { return "" }
+              case .scalar(let input) = JSONValue.string(command(t, "input")),
+              case .scalar(let failed) = JSONValue.string(command(t, "error")) else { return "" }
         return """
         // Added by Cocaine ("AI alerts" in its menu-bar panel), which also removes it: it flashes the screen when
         // OpenCode finishes or needs you. https://github.com/Mattiakart/cocaine
         const done = \(done)
         const input = \(input)
+        const failed = \(failed)
 
         export const Cocaine = async ({ $, client }) => ({
           event: async ({ event }) => {
@@ -259,6 +270,8 @@ enum AIHooks {
                 await $`sh -c ${done} < /dev/null`.quiet().nothrow()
               } else if (event.type === "permission.asked" || event.type === "question.asked") {
                 await $`sh -c ${input} < /dev/null`.quiet().nothrow()
+              } else if (event.type === "session.error") {
+                await $`sh -c ${failed} < /dev/null`.quiet().nothrow()
               }
             } catch {}
           },

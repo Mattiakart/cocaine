@@ -128,6 +128,37 @@ enum Permissions {
         return AEDeterminePermissionToAutomateTarget(desc, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
     }
 
+    // MARK: browsers (web chats in the AI tab, opt-in)
+
+    /// The running browsers Cocaine can read chat tabs from (Sources/AIEnvironments.swift).
+    static func runningBrowsers() -> [String] {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return AIEnvironments.browsers.filter { running.contains($0) }
+    }
+
+    /// Asked only when the user turns web chats on: the system's question for each running browser never asked, the
+    /// Automation pane when one was refused. `done(states)` on main: bundle id → granted / denied / notAsked.
+    static func askBrowsers(done: @escaping ([String: State]) -> Void = { _ in }) {
+        let browsers = runningBrowsers()
+        NSApp.activate()
+        probeQueue.async {
+            var states: [String: State] = [:]
+            for b in browsers {
+                let code = automation(b, ask: true)
+                states[b] = code == 0 ? .granted : code == -1743 ? .denied : .notAsked
+            }
+            DispatchQueue.main.async {
+                if states.values.contains(.denied) { openPane(.automation) }
+                done(states)
+            }
+        }
+    }
+
+    /// Without asking (off the main thread): the running browsers that haven't allowed it.
+    static func browsersNotAllowed() -> [String] {
+        runningBrowsers().filter { automation($0, ask: false) != 0 }
+    }
+
     static func openPane(_ p: Permission) {
         if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(p.pane)") { NSWorkspace.shared.open(u) }
     }

@@ -285,6 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Opening the app turns Cocaine on; a link that started it decides by itself (cocaine://off must not turn it on first).
         if !System.cocaineOn && pendingCommands.isEmpty { toggleCocaine() }
         startApprovals()                             // not in an instance started just for an alert: it quits in 6 s
+        startDetectors()
         Updater.shared.start()                       // leftovers of an update, then a check at most once a day
         pendingCommands.forEach(command)             // then whatever was asked for while it started
         pendingCommands = []
@@ -330,6 +331,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !isTest { boardSet(session, from, project, "error", origin) }
                 if settings.alertError { alert(Notice(from: from, message: p.message ?? L("stopped with an error"), project: project, session: session, origin: origin),
                                                 away: trusted && p.test == "away" ? true : nil) }
+                continue
+            }
+            if event == "open" || event == "end" {                 // a session started or ended (SessionStart / SessionEnd hooks)
+                if !isTest { boardSet(session, from, project, event == "open" ? "idle" : "ended", origin) }
                 continue
             }
             if event != "done" && event != "input" {                 // silent signs of life: prompts, agents and tasks
@@ -446,9 +451,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A hook's news, through the board's one way in (Sources/AgentIngest.swift), so a session the detectors also see stays one row.
     private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String, _ origin: AgentOrigin? = nil) {
         let was = board.entry(session)?.state
-        board.set(session, from: from, project: project, state: state, origin: origin)
+        let o = origin ?? board.entry(session)?.origin
+        board.ingest(AgentSignal(env: AIEnvironments.forHook(from: from, origin: o), from: from, source: .hook,
+                                 state: AgentSignal.State(rawValue: state) ?? .working, session: session, project: project, origin: origin))
         writeBoard()
         if state == "working" && was != "working" { A11y.announce(String(format: L("%@ is at work"), from)) }   // VoiceOver: an AI started
     }
@@ -535,6 +543,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         publishApprovals()
     }
 
+    // MARK: Detectors beyond the hooks (Sources/AgentDetectors.swift)
+
+    private func startDetectors() {
+        let c = AIEnvironmentCenter.shared
+        c.onBatch = { [weak self] b in
+            guard let self else { return }
+            var seen = Set<String>()
+            for s in b.signals { if let k = self.board.ingest(s).key { seen.insert(k) } }
+            if b.full { self.board.sweep(source: b.source, envs: b.envs, seen: seen) }
+            self.writeBoard()
+        }
+        c.onAppQuit = { [weak self] id in
+            guard let self, !self.board.appQuit(id).isEmpty else { return }
+            self.writeBoard()
+        }
+        c.start()
+    }
+
     // MARK: Going back to a session (Sources/AgentFocus.swift)
 
     private func goToSession(_ origin: AgentOrigin?, _ name: String) {
@@ -557,6 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .exact: return nil
         case .window: return String(format: L("Opened the project in %@ (its terminal panel can't be selected from outside)."), app)
         case .app:
+            if r.note == .noDeepLink { return String(format: L("Brought %@ forward: it can't be told from outside which conversation to show."), app) }
             return r.note == .automationDenied
                 ? String(format: L("Brought %@ forward. To select the exact tab, allow Cocaine to control %@ in Privacy & Security → Automation."), app, app)
                 : String(format: L("Brought %@ forward, but not the exact tab (it was closed, or %@ can't be steered from outside)."), app, app)

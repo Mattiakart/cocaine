@@ -10,7 +10,8 @@ enum AgentFocus {
     static let wezterm = "com.github.wez.wezterm"
     /// Opening a folder with these brings forward the window that has it open.
     static let vscodeFamily: Set<String> = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92",
-                                            "com.exafunction.windsurf", "com.vscodium", "com.visualstudio.code.oss", "com.trae.app"]
+                                            "com.exafunction.windsurf", "com.vscodium", "com.visualstudio.code.oss", "com.trae.app",
+                                            "com.google.antigravity", "dev.kiro.desktop"]
     /// $TERM_PROGRAM → bundle id, for when the hook didn't get __CFBundleIdentifier (tmux, ssh, …).
     static let termPrograms = ["Apple_Terminal": terminal, "iTerm.app": iterm, "WezTerm": wezterm, "ghostty": "com.mitchellh.ghostty",
                                "WarpTerminal": "dev.warp.Warp-Stable", "Hyper": "co.zeit.hyper", "Tabby": "org.tabby", "kitty": "net.kovidgoyal.kitty"]
@@ -23,6 +24,8 @@ enum AgentFocus {
         case itermSession(tty: String?, uuid: String?)    // iTerm2: the session on that tty / with that id
         case weztermPane(String)
         case openFolder(app: String, path: String)        // VS Code family: the window with that folder
+        case browserTab(browser: String, url: String)     // a web chat: its tab in that browser
+        case deepLink(url: String, app: String)           // the app's documented link to that session (codex://threads/<id>)
         case activate(app: String)
         case revealFolder(String)
     }
@@ -30,7 +33,11 @@ enum AgentFocus {
     /// The ways to get there, best first. Pure: what is possible is decided by the executor.
     static func plan(_ o: AgentOrigin) -> [Step] {
         var steps: [Step] = []
+        if let url = o.url, url.hasPrefix("https://"), let b = o.browser {          // a web chat
+            return [.browserTab(browser: b, url: url), .activate(app: b)]
+        }
         let app = appID(o)
+        if let url = o.url, url.hasPrefix("codex://") { steps.append(.deepLink(url: url, app: AIEnvironments.codexApp)) }
         if let pane = o.tmuxPane { steps.append(.tmux(socket: o.tmuxSocket, pane: pane)) }
         if o.tmuxPane == nil {                                       // inside tmux the tty is tmux's, not the terminal's
             if app == terminal, let t = o.tty { steps.append(.terminalTab(tty: t)) }
@@ -93,7 +100,8 @@ enum AgentFocus {
         static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
     }
     /// Why it didn't get further than `level`.
-    enum Note: Equatable { case none, automationDenied, tabNotFound, appNotRunning, noInfo }
+    /// noDeepLink: the app came forward, but it can't be told from outside which conversation to show.
+    enum Note: Equatable { case none, automationDenied, tabNotFound, appNotRunning, noInfo, noDeepLink }
     struct Result: Equatable { var level: Level; var appName: String?; var note: Note }
 
     // MARK: running it
@@ -185,6 +193,7 @@ enum AgentFocus {
         guard !steps.isEmpty else { return Result(level: .none, appName: name, note: .noInfo) }
         var note = Note.none
         var tmuxDone = false
+        let exactTried = steps.contains { if case .activate = $0 { return false }; if case .openFolder = $0 { return false }; if case .revealFolder = $0 { return false }; return true }
         for step in steps {
             switch step {
             case .tmux(let socket, let pane):
@@ -230,8 +239,27 @@ enum AgentFocus {
                 }
                 _ = sem.wait(timeout: .now() + 5)
                 if ok { return Result(level: tmuxDone ? .exact : .window, appName: name, note: note) }
+            case .browserTab(let browser, let url):
+                guard running(browser) != nil else { note = .appNotRunning; continue }
+                guard let s = AIEnvironments.tabScript(browser: browser, url: url) else { continue }
+                let x = runScript(s, app: browser)
+                if x.ok { return Result(level: .exact, appName: name, note: .none) }
+                note = x.denied ? .automationDenied : .tabNotFound
+            case .deepLink(let url, let app):
+                guard let link = URL(string: url), let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app),
+                      NSWorkspace.shared.urlForApplication(toOpen: link)?.standardizedFileURL == appURL.standardizedFileURL else { continue }
+                let sem = DispatchSemaphore(value: 0)
+                var ok = false
+                let cfg = NSWorkspace.OpenConfiguration()
+                cfg.activates = true
+                NSWorkspace.shared.open([link], withApplicationAt: appURL, configuration: cfg) { a, err in ok = a != nil && err == nil; sem.signal() }
+                _ = sem.wait(timeout: .now() + 5)
+                if ok { return Result(level: .exact, appName: name, note: .none) }
             case .activate(let app):
-                if activate(app) { return Result(level: tmuxDone ? .exact : .app, appName: name, note: tmuxDone ? .none : (note == .none ? .tabNotFound : note)) }
+                if activate(app) {
+                    let why: Note = note != .none ? note : (exactTried ? .tabNotFound : .noDeepLink)
+                    return Result(level: tmuxDone ? .exact : .app, appName: name, note: tmuxDone ? .none : why)
+                }
                 note = .appNotRunning
             case .revealFolder(let path):
                 guard isPlainFolder(path) else { continue }
