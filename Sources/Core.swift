@@ -97,11 +97,11 @@ let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionS
 
 /// UI text in the current language (Localization/*.lproj).
 func L(_ key: String) -> String { Language.text(key) }
-/// L() for Sources/Agent*.swift (L itself is private to this file).
+/// L() under the name Sources/Agent*.swift use.
 func agentsL(_ key: String) -> String { L(key) }
-/// The app's language as a Locale, for formatters in Sources/ (Language is private to this file).
+/// The app's language as a Locale, for formatters in Sources/.
 func appLocale() -> Locale { Language.locale }
-/// The same lookup for the updater and signature code in Sources/ (L is private to this file).
+/// The same lookup for the updater and signature code in Sources/.
 func updatesText(_ key: String) -> String { Language.text(key) }
 
 @discardableResult

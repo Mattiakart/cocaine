@@ -311,3 +311,301 @@ func powerSelfTest(_ check: (String, Bool) -> Void) {
     let off = Dictionary(uniqueKeysWithValues: ControlURL.status(on: false, until: t0 + 600, now: t0, screenOff: false, trigger: false))
     check("link: status when off has no deadline", off["state"] == "off" && off["remaining_minutes"] == "" && off["until"] == "")
 }
+
+/// `--agents-test`, run from main.swift.
+func cliAgentsTest() {
+    // AI sessions: the pure logic, the approval protocol over a real socket with this binary as the hook, and the hooks
+    // written into a temporary home (never the real ~/.claude or ~/.codex). PASS/FAIL lines, exit status.
+    var failed = 0
+    func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    let exe = Bundle.main.executablePath ?? CommandLine.arguments[0]
+    AgentTests.pure(check)
+    AgentTests.protocolTests(binary: exe, check)
+    let home = AgentTests.tempDir()
+    defer { try? FileManager.default.removeItem(at: home) }
+    AIHooks.home = home.path
+    AIHooks.binary = "/Applications/Cocaine.app/Contents/MacOS/Cocaine"
+    AIHooks.assumeClaudeVersion([2, 1, 100])
+    for d in [".claude", ".codex"] { try? FileManager.default.createDirectory(at: home.appendingPathComponent(d), withIntermediateDirectories: true) }
+    let settingsPath = home.appendingPathComponent(".claude/settings.json").path
+    let mine = #"{"model":"opus","hooks":{"PermissionRequest":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-guard.sh"}]}]}}"#
+    try? mine.write(toFile: settingsPath, atomically: true, encoding: .utf8)
+    let claude = AIHooks.tool("claude")!, codex = AIHooks.tool("codex")!
+    func text(_ p: String) -> String { (try? String(contentsOfFile: p, encoding: .utf8)) ?? "" }
+    func commands(_ path: String, _ event: String) -> [String] {
+        (AIHooks.load(path)?["hooks"]?[event]?.items ?? []).flatMap { $0["hooks"]?.items ?? [] }.compactMap {
+            if case .scalar(let s)? = $0["command"] { return (try? JSONSerialization.jsonObject(with: Data(s.utf8), options: .fragmentsAllowed)) as? String }
+            return nil
+        }
+    }
+    check("hooks: on (temporary home)", AIHooks.set(true, only: [claude, codex]).isEmpty)
+    let pr = commands(settingsPath, "PermissionRequest")
+    check("hooks: Claude Code's PermissionRequest runs the app's binary next to the user's own hook",
+          pr.count == 2 && pr.contains("my-guard.sh") && pr.contains { $0.contains("'/Applications/Cocaine.app/Contents/MacOS/Cocaine' --agent-request claude") })
+    check("hooks: the request hook may wait for the notch (timeout \(ApprovalTiming.config) s)", text(settingsPath).contains("\"timeout\": \(ApprovalTiming.config)"))
+    check("hooks: MCP questions (Elicitation) too, and the alerts as before",
+          commands(settingsPath, "Elicitation").count == 1 && commands(settingsPath, "Notification").count == 1 && commands(settingsPath, "Stop").count == 1)
+    check("hooks: alert commands also send where the session runs", commands(settingsPath, "Stop").first?.contains("\"$PPID\"") == true)
+    let once = text(settingsPath)
+    _ = AIHooks.set(true, only: [claude, codex])
+    check("hooks: turning on twice changes nothing", text(settingsPath) == once)
+    check("hooks: Codex's PermissionRequest runs the binary as well",
+          commands(codex.file, "PermissionRequest").first?.contains("--agent-request codex") == true)
+    check("hooks: off", AIHooks.set(false, only: [claude, codex]).isEmpty)
+    let off = text(settingsPath)
+    check("hooks: off removes only Cocaine's hooks; the user's own and their settings stay",
+          !off.contains(AIHooks.marker) && commands(settingsPath, "PermissionRequest") == ["my-guard.sh"] && off.contains("\"model\": \"opus\""))
+    _ = AIHooks.set(false, only: [claude, codex])
+    check("hooks: off twice changes nothing", text(settingsPath) == off)
+    AIHooks.assumeClaudeVersion([2, 0, 0])
+    _ = AIHooks.set(true, only: [claude])
+    check("hooks: an older Claude Code gets no request hooks it doesn't know",
+          commands(settingsPath, "PermissionRequest") == ["my-guard.sh"] && commands(settingsPath, "Elicitation").isEmpty)
+    AIHooks.assumeClaudeVersion([2, 1, 100])
+    AIHooks.update()
+    check("hooks: …and gets them once it's updated (at the app's launch)", commands(settingsPath, "PermissionRequest").count == 2)
+    AIHooks.binary = nil
+    _ = AIHooks.set(true, only: [claude, codex])
+    check("hooks: without an installed app to run, no request hooks for Claude Code (its Notification alerts)",
+          commands(settingsPath, "PermissionRequest") == ["my-guard.sh"])
+    check("hooks: …and Codex's request just alerts as before", commands(codex.file, "PermissionRequest").first.map { $0.contains("event=input") && !$0.contains("--agent-request") } == true)
+    _ = AIHooks.set(false, only: [claude, codex])
+
+    // The origin the alert command sends, run by a real shell, read back by the app's own parser.
+    AIHooks.binary = exe
+    let stop = AIHooks.command(claude, "done")
+    if let a = stop.range(of: "$(/usr/bin/perl -e 'sub e"), let b = stop.range(of: "\"$PPID\" 2>/dev/null)", range: a.upperBound..<stop.endIndex) {
+        let snippet = String(stop[a.lowerBound..<b.upperBound])
+        let odd = home.appendingPathComponent("my proj&x=1")
+        try? FileManager.default.createDirectory(at: odd, withIntermediateDirectories: true)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "cd \"$1\" && x=" + snippet + "; printf %s \"$x\"", "sh", odd.path]
+        p.environment = ["TMUX_PANE": "%7", "TMUX": "/private/tmp/tmux-501/default,123,0", "__CFBundleIdentifier": "com.googlecode.iterm2",
+                         "ITERM_SESSION_ID": "w0t1p0:ABCDEF12-0000-1111", "TERM_PROGRAM": "iTerm.app", "PATH": "/usr/bin:/bin"]
+        let pipe = Pipe(); p.standardOutput = pipe
+        try? p.run(); p.waitUntilExit()
+        let q = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let got = AlertParams.parse(URL(string: "cocaine://alert?from=Claude%20Code&event=done" + q)!).origin
+        check("hooks: the session's origin survives the shell, the URL and the parser (\(q.prefix(60))…)",
+              got.cwd == odd.resolvingSymlinksInPath().path || got.cwd == odd.path)
+        check("hooks: …with its terminal app, iTerm2 session, tmux pane and socket, and the agent's pid",
+              got.app == "com.googlecode.iterm2" && got.termSession == "ABCDEF12-0000-1111" && got.tmuxPane == "%7"
+              && got.tmuxSocket == "/private/tmp/tmux-501/default" && got.pid == getpid())
+    } else { check("hooks: the alert command carries the origin snippet", false) }
+
+    // The exact request-hook command, run by a real shell against a real socket.
+    let support = AgentTests.tempDir()
+    defer { try? FileManager.default.removeItem(at: support) }
+    if let key = ApprovalKey.loadOrCreate(AgentPaths.key(support)) {
+        let server = ApprovalServer(path: AgentPaths.socket(support), key: key)
+        server.onRequest = { id, _, _, _, _ in server.reply(id, decision: "deny", content: nil) }
+        try? server.start()
+        let cmd = AIHooks.command(claude, "approve")
+        let r = AgentTests.runHook(["-c", cmd], executable: "/bin/sh", input: AgentTests.sampleInput, support: support)
+        check("hooks: the installed request command, run by sh, returns the notch's answer", r.out.contains(#""behavior":"deny""#) && r.status == 0)
+        server.stop()
+        let none = AgentTests.runHook(["-c", cmd], executable: "/bin/sh", input: AgentTests.sampleInput, support: support)
+        check("hooks: …and nothing, exit 0, when the app isn't there", none.out.isEmpty && none.status == 0)
+        let moved = AgentTests.runHook(["-c", cmd.replacingOccurrences(of: exe, with: "/nonexistent/Cocaine")], executable: "/bin/sh",
+                                       input: AgentTests.sampleInput, support: support)
+        check("hooks: …and when the app was moved away (exit 0, no decision)", moved.out.isEmpty && moved.status == 0)
+    }
+    exit(failed == 0 ? 0 : 1)
+}
+
+/// `--layout-test`, run from main.swift.
+func cliLayoutTest() {
+    // Where the panel lands for a click on the icon of each screen, for two-monitor layouts.
+    let size = NSSize(width: Layout.width, height: 198)
+    let layouts: [(String, NSRect, CGFloat)] = [   // name, visible frame (below its menu bar), click x
+        ("MacBook, icon near right edge", NSRect(x: 0, y: 0, width: 1512, height: 945), 1460),
+        ("external on the right",         NSRect(x: 1512, y: -200, width: 2560, height: 1415), 3900),
+        ("external on the left",          NSRect(x: -1920, y: 0, width: 1920, height: 1055), -60),
+        ("external above",                NSRect(x: 0, y: 982, width: 1920, height: 1055), 1850),
+    ]
+    for (name, vis, x) in layouts {
+        let f = AppDelegate.panelFrame(size: size, anchorX: x, top: vis.maxY - 6, visible: vis)
+        print("\(name): panel \(f.debugDescription)  inside that screen: \(vis.contains(f))")
+    }
+    // The panel's top strip on other Macs' notches (14" ≈ 185 pt; scaled resolutions make it narrower or wider): no cell under
+    // the notch, all inside the frame, none narrower than 24 pt; with and without the AI tab. Too wide a notch: no strip (nil),
+    // the panel then shows its tabs as a segmented control, which is also fine.
+    var stripFailures = 0
+    for notch: CGFloat in [150, 165, 185, 200, 210, 220] {
+        for left in [2, 3] {      // back + General (+ AI alerts) | Automation + Island + Quit
+            guard let s = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: notch, left: left, right: 3) else {
+                print("FAIL  strip, notch \(Int(notch)) pt, \(left)+3 cells: doesn't fit"); stripFailures += 1; continue
+            }
+            let p = s.problems()
+            if !p.isEmpty { stripFailures += 1 }
+            print("\(p.isEmpty ? "PASS" : "FAIL")  strip, notch \(Int(notch)) pt, \(left)+3 cells: cell \(s.cell), highlight \(s.highlight), left \(s.leftCells.map { "\($0.lowerBound)…\($0.upperBound)" }), right \(s.rightCells.map { "\($0.lowerBound)…\($0.upperBound)" })" + (p.isEmpty ? "" : " " + p.joined(separator: "; ")))
+        }
+    }
+    let tooWide = StripLayout.make(panelWidth: Layout.width, frameInset: Space.frame, contentInset: Space.l, notchWidth: 300, left: 3, right: 2)
+    print(tooWide == nil ? "PASS  strip, notch 300 pt: no strip (tabs fall back to the segmented control)" : "FAIL  strip, notch 300 pt: cells of \(tooWide!.cell) pt")
+    if tooWide != nil { stripFailures += 1 }
+    // The old layout (4 cells of 38 pt left of a 185 pt notch) must be refused: it put the Automation tab under the notch.
+    let old = StripLayout(panelWidth: Layout.width, frameInset: Space.frame, notchWidth: 185, cell: 38, side: 113.5, edgeInset: 4, left: 4, right: 2)
+    print(old.problems().isEmpty ? "FAIL  strip: the old 4×38 pt layout isn't caught" : "PASS  strip: the old 4×38 pt layout is caught (\(old.problems()[0]))")
+    if old.problems().isEmpty { stripFailures += 1 }
+    exit(stripFailures == 0 ? 0 : 1)
+}
+
+/// `--remote-test`, run from main.swift.
+func cliRemoteTest() {
+    // Remote control protocol, Shortcut and listener tests only (also part of --selftest).
+    var failed = 0
+    RemoteTests.run(gate: Bundle.main.path(forResource: "remote", ofType: "zsh")) { name, ok in
+        print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 }
+    }
+    exit(failed == 0 ? 0 : 1)
+}
+
+/// `--selftest`, run from main.swift.
+func cliSelfTest() {
+    // The pure automation logic: battery guard, smart triggers, agent board. Prints PASS/FAIL lines.
+    var failed = 0
+    func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    check("launch: an alert-only launch that adopted a session (update hand-over, crash) runs on as the app",
+          !Recovery.alertOnly(launchedForAlert: true, adoptedSession: true) && Recovery.alertOnly(launchedForAlert: true, adoptedSession: false)
+          && !Recovery.alertOnly(launchedForAlert: false, adoptedSession: false))
+    setenv("COCAINE_PROBE_SUDO", "/tmp/evil", 1)
+    check("launch: test overrides are dropped from the app's environment (and its children's)",
+          TestOverrides.scrub(prefix: "COCAINE_PROBE") == ["COCAINE_PROBE_SUDO"] && Recovery.env["COCAINE_PROBE_SUDO"] == nil && getenv("COCAINE_PROBE_SUDO") == nil)
+    do {   // phones.json: never written over when it can't be read; private from the first byte
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-phones-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let f = dir.appendingPathComponent("phones.json")
+        let p1 = Pairing.make(tier: "basic", relay: "https://relay.test")!
+        check("phones: missing file = no pairings", PhoneLink.loadChecked(f) == [] && PhoneLink.loadForChange(f) == [])
+        check("phones: saved 0600 in a 0700 folder and read back", PhoneLink.save([p1], to: f) && PhoneLink.load(f) == [p1]
+              && (try? FileManager.default.attributesOfItem(atPath: f.path)[.posixPermissions] as? Int) == 0o600
+              && (try? FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? Int) == 0o700)
+        try? Data("{ not json".utf8).write(to: f)
+        check("phones: a damaged file reads as 'unknown', not as no pairings", PhoneLink.loadChecked(f) == nil)
+        let changed = PhoneLink.loadForChange(f)
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.filter { $0.hasPrefix("phones.unreadable-") } ?? []
+        check("phones: …a change starts empty but the damaged file is kept aside, never overwritten",
+              changed == [] && kept.count == 1 && (try? String(contentsOf: dir.appendingPathComponent(kept[0]), encoding: .utf8)) == "{ not json")
+    }
+    var g = BatteryGuard()
+    check("battery: off threshold never fires", !g.check(percent: 5, onAC: false, threshold: 0))
+    check("battery: above threshold is quiet", !g.check(percent: 40, onAC: false, threshold: 20))
+    check("battery: fires at the threshold", g.check(percent: 20, onAC: false, threshold: 20))
+    check("battery: fires only once while it stays low", !g.check(percent: 15, onAC: false, threshold: 20))
+    check("battery: not re-armed by a small recovery", !g.check(percent: 22, onAC: false, threshold: 20) && !g.check(percent: 19, onAC: false, threshold: 20))
+    check("battery: plugging in re-arms it", !g.check(percent: 19, onAC: true, threshold: 20) && g.check(percent: 19, onAC: false, threshold: 20))
+    check("battery: never fires on power", { var x = BatteryGuard(); return !x.check(percent: 3, onAC: true, threshold: 30) }())
+    do {   // after an update or a crash the new instance adopts the session: a trigger's ON stays the trigger's
+        var fresh = AutoOn(), resumed = AutoOn(); let t = Date()
+        resumed.resume(now: t)
+        check("triggers: an adopted trigger ON ends with its trigger (after the grace); without it, it would stay on forever",
+              resumed.step(active: false, isOn: true, now: t.addingTimeInterval(60)) == .none
+              && resumed.step(active: false, isOn: true, now: t.addingTimeInterval(200)) == .turnOff
+              && fresh.step(active: false, isOn: true, now: t.addingTimeInterval(200)) == .none)
+    }
+    var a = AutoOn(); let t0 = Date()
+    check("trigger: nothing active, nothing to do", a.step(active: false, isOn: false, now: t0) == .none)
+    check("trigger: active and off → turn on", a.step(active: true, isOn: false, now: t0) == .turnOn)
+    check("trigger: stays on while active", a.step(active: true, isOn: true, now: t0 + 60) == .none)
+    check("trigger: waits out the grace period", a.step(active: false, isOn: true, now: t0 + 120) == .none)
+    check("trigger: off after 3 quiet minutes", a.step(active: false, isOn: true, now: t0 + 61 + 180) == .turnOff)
+    var b = AutoOn()
+    _ = b.step(active: true, isOn: false, now: t0)
+    b.userToggled(to: false, triggerActive: true)
+    check("trigger: user's OFF is respected while active", b.step(active: true, isOn: false, now: t0 + 10) == .none)
+    check("trigger: …until the trigger has gone away", b.step(active: false, isOn: false, now: t0 + 20) == .none && b.step(active: true, isOn: false, now: t0 + 30) == .turnOn)
+    var c = AutoOn()
+    check("trigger: a manual ON is never turned off by it", { _ = c.step(active: true, isOn: true, now: t0); return c.step(active: false, isOn: true, now: t0 + 999) == .none }())
+    var d = AutoOn()
+    _ = d.step(active: true, isOn: false, now: t0)
+    d.userToggled(to: true, triggerActive: true)
+    check("trigger: user takes over an auto-on", d.step(active: false, isOn: true, now: t0 + 999) == .none)
+    powerSelfTest(check)
+    let board = AgentBoard(); let now = Date()
+    board.set("s1", from: "Claude Code", project: "x", state: "working", now: now)
+    board.set("s2", from: "Codex", project: nil, state: "waiting", now: now)
+    check("board: working and waiting are live", board.anyLive(now))
+    board.set("s1", from: "Claude Code", project: "x", state: "done", now: now)
+    board.set("s2", from: "Codex", project: nil, state: "done", now: now)
+    check("board: nothing live when all are done", !board.anyLive(now))
+    board.prune(now.addingTimeInterval(1900))
+    check("board: finished sessions fade after 30 minutes", board.entries.isEmpty)
+    board.set("s3", from: "Gemini CLI", project: nil, state: "working", now: now)
+    board.prune(now.addingTimeInterval(7300))
+    check("board: a 'working' nobody updated for 2 hours is dropped", board.entries.isEmpty)
+    check("hud: this process is not mistaken for the system helper", !SystemHUD.helperPIDs().contains(getpid()))
+    check("hud: volume-up key down is decoded", MediaKeys.decode(data1: (0 << 16) | (0xA << 8))?.down == true)
+    check("hud: brightness-down key up is decoded", { let k = MediaKeys.decode(data1: (3 << 16) | (0xB << 8)); return k?.key == 3 && k?.down == false }())
+    check("hud: other keys are ignored", MediaKeys.decode(data1: (16 << 16) | (0xA << 8)) == nil)
+    do {   // a key left to macOS must keep its release, or macOS repeats it forever (brightness running up by itself)
+        var t = MediaKeyTracker()
+        check("hud: a key we handled has its release swallowed too", t.down(2, handled: true) && t.up(2))
+        check("hud: …but only once", !t.up(2))
+        check("hud: a key left to macOS keeps its release (not swallowed)", !t.down(2, handled: false) && !t.up(2))
+        check("hud: a release with no press seen is never swallowed", !t.up(3))
+        _ = t.down(2, handled: true)
+        check("hud: auto-repeat then a pass-through: the release goes to macOS", !t.down(2, handled: false) && !t.up(2))
+        _ = t.down(0, handled: true)
+        check("hud: keys are tracked separately", !t.up(2) && t.up(0))
+    }
+    check("wake: date in pmset's format", WakeSchedule.format(Date(timeIntervalSince1970: 1_790_000_000)).range(of: "^\\d\\d/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d$", options: .regularExpression) != nil)
+    check("wake: the sudo rule allows only schedule wake/cancel wake, tagged cocaine",
+          Authorization.installCommand(user: "u")?.contains("/usr/bin/pmset schedule wake * cocaine, /usr/bin/pmset schedule cancel wake * cocaine,") == true)
+    do {   // the one-time authorization: how its outcome is read (the old code never saw the "rc=" line after `exit`)
+        let dir = NSTemporaryDirectory() + "cocaine-auth-\(getpid())"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let dest = dir + "/rule"
+        let cmd = Authorization.installCommand(user: NSUserName(), dest: dest, asRoot: false)!
+        check("auth: the install command ends with exit (the case the old report missed)", cmd.hasSuffix("exit $r"))
+        check("auth: a successful install is reported as success", Authorization.runPlain(cmd) && FileManager.default.fileExists(atPath: dest))
+        check("auth: a failing install is reported as failure", !Authorization.runPlain("exit 3"))
+        check("auth: a failure inside the install (bad destination) is reported as failure",
+              !Authorization.runPlain(Authorization.installCommand(user: NSUserName(), dest: dir + "/no/such/dir/rule", asRoot: false)!))
+        check("auth: no report line (cancelled, killed) is a failure", !Authorization.succeeded("") && !Authorization.succeeded("garbage\n"))
+        check("auth: only rc=0 is success", Authorization.succeeded("rc=0\n") && !Authorization.succeeded("rc=1\n") && !Authorization.succeeded("rc=10\n"))
+        check("auth: noise before the report is ignored", Authorization.succeeded("warning\nrc=0\n"))
+        try? FileManager.default.removeItem(atPath: dest)
+        check("auth: retry after a failure works", Authorization.runPlain(cmd) && FileManager.default.fileExists(atPath: dest))
+        check("auth: a user name with shell characters is refused", Authorization.installCommand(user: "a; rm -rf /") == nil)
+    }
+    check("wake: sleep/wake notifications can be registered", SleepWatcher().start())
+    check("relay: a message event is read", RemoteListener.message(#"{"id":"a","time":1790000000,"event":"message","message":" status "}"#)?.text == "status")
+    check("relay: keepalives and open events are ignored", RemoteListener.message(#"{"id":"a","time":1,"event":"keepalive"}"#) == nil
+          && RemoteListener.message(#"{"id":"a","time":1,"event":"open"}"#) == nil && RemoteListener.message("garbage") == nil)
+    RemoteTests.run(gate: Bundle.main.path(forResource: "remote", ofType: "zsh"), check)   // iPhone remote control: see Sources/RemoteTests.swift
+    check("permissions: camera states", Permissions.cameraState(.authorized) == .granted && Permissions.cameraState(.notDetermined) == .notAsked
+          && Permissions.cameraState(.denied) == .denied && Permissions.cameraState(.restricted) == .denied)
+    check("permissions: calendar needs full access (write-only counts as refused)", Permissions.calendarState(.fullAccess) == .granted
+          && Permissions.calendarState(.writeOnly) == .denied && Permissions.calendarState(.notDetermined) == .notAsked && Permissions.calendarState(.denied) == .denied)
+    check("permissions: music apps, the worst answer counts", Permissions.automationState([]) == .granted && Permissions.automationState([0, -600]) == .granted
+          && Permissions.automationState([0, -1744]) == .notAsked && Permissions.automationState([-1744, -1743]) == .denied)
+    do {
+        func st(_ m: [Permission: Permissions.State]) -> (Permission) -> Permissions.State { { m[$0] ?? .granted } }
+        check("permissions: nothing listed when all is allowed", AppDelegate.permissionProblems(needed: [.accessibility], island: true, state: st([:])).isEmpty)
+        check("permissions: a needed one that is missing is listed", AppDelegate.permissionProblems(needed: [.accessibility], island: false, state: st([.accessibility: .denied])) == [.accessibility])
+        check("permissions: page permissions only when refused, only with the island",
+              AppDelegate.permissionProblems(needed: [], island: true, state: st([.camera: .denied, .calendar: .notAsked, .files: .denied])) == [.camera, .files]
+              && AppDelegate.permissionProblems(needed: [], island: false, state: st([.camera: .denied])).isEmpty)
+    }
+    if ClipboardTests.run() != 0 { failed += 1 }           // the clipboard history (its own PASS/FAIL lines; temp folders, fake Keychain)
+    _ = NSApplication.shared
+    AgentTests.pure(check)                                 // AI sessions: order, restore, liveness, URLs, focus plan, requests
+    RecoveryTest.selfChecks(check)
+    dialogsSelfTest(check)                                 // in-app dialogs: queue, default buttons, validation, the real flows
+    designSelfTest(check)                                  // language in dates and durations, scroll steps, the panel strip
+    if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
+    exit(failed == 0 ? 0 : 1)
+}
+
+/// `--dialogs-test`, run from main.swift.
+func cliDialogsTest() {
+    // The in-app dialogs alone (also part of --selftest). PASS/FAIL lines, exit status.
+    _ = NSApplication.shared
+    var failed = 0
+    dialogsSelfTest { name, ok in print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
+    designPass2SelfTest { name, ok in print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }   // the dropdowns too
+    exit(failed == 0 ? 0 : 1)
+}

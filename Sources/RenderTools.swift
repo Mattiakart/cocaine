@@ -158,3 +158,222 @@ func renderSampleDialog(_ args: [String], surface: DialogSurface) {
     DialogCenter.shared.present(spec) { _ in }
     if kind == "pattern-bad" { DialogCenter.shared.text = "([a-z"; DialogCenter.shared.press("add") }
 }
+
+/// `--island-selfcheck`, run from main.swift.
+func cliIslandSelfcheck() {
+    _ = NSApplication.shared
+    exit(IslandCheck.run())
+}
+
+/// `--render-island`, run from main.swift.
+func cliRenderIsland() {
+    // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
+    _ = NSApplication.shared
+    let sampleSettings = SavedSettings()
+    let args = CommandLine.arguments
+    let pm = PanelModel()
+    pm.persistLanguage = false
+    pm.language = args.firstIndex(of: "--lang").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
+    pm.on = !args.contains("--off"); pm.fillLevel = pm.on ? 1 : 0
+    pm.ai = AIHooks.Status(tools: AIHooks.tools.enumerated().map { i, t in AIHooks.Entry(id: t.id, name: t.name, installed: i < 3, on: i < 2) }, codexNeedsTrust: false)
+    if args.contains("--agents") {
+        let t = Date().timeIntervalSince1970
+        pm.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
+                    AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90)]
+    }
+    if args.contains("--many-agents") || args.contains("--approval") {         // the full list, and a request to answer
+        (pm.board, pm.approvals) = AgentTests.sample(approval: args.contains("--approval"))
+    }
+    pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
+    if args.contains("--presence") { pm.presenceActive = true; pm.pinkLevel = 1 }
+    if let i = args.firstIndex(of: "--pink-level"), i + 1 < args.count, let v = Double(args[i + 1]) { pm.pinkLevel = CGFloat(v); pm.pinkPouring = v < 1 }        // a frame of the pink powder filling
+    let im = IslandModel()
+    im.pm = pm
+    // --notch-width 210: another Mac's notch (a 14" is 185 pt; scaled resolutions change it).
+    let notchW = args.firstIndex(of: "--notch-width").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }.map { CGFloat($0) } ?? 185
+    im.geometry = NotchGeometry(frame: .zero, notchWidth: notchW, height: 32, centerX: 0, hasNotch: true)
+    im.open = args.contains("--open")
+    if let i = args.firstIndex(of: "--tab"), i + 1 < args.count { im.tab = args[i + 1] }
+    if args.contains("--focus") { im.focus.start() }
+    if args.contains("--mic") { im.mic.active = true }
+    im.batteries.items = [BatteryItem(id: "mac", name: "MacBook Pro", icon: "laptopcomputer", parts: [("", 80)], charging: true),
+                          BatteryItem(id: "a", name: "AirPods Pro", icon: "airpodspro", parts: [("L", 71), ("R", 64), ("↳", 90)]),
+                          BatteryItem(id: "k", name: "Magic Keyboard", icon: "keyboard", parts: [("", 22)])]
+    im.usage.codex = [UsageWatch.Limit(id: "w", name: L("Week"), percent: 5, resets: Date().addingTimeInterval(86400 * 5))]
+    im.files.downloads = [FileShelf.Item(url: URL(fileURLWithPath: "/Applications/Cocaine.app"), date: Date(), size: 5_200_000),
+                          FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), date: Date(), size: 120_000_000)]
+    im.files.shots = (0..<5).map { FileShelf.Item(url: URL(fileURLWithPath: "/System/Library/Desktop Pictures/Sonoma.heic").deletingLastPathComponent().appendingPathComponent("shot\($0).png"), date: Date(), size: 1) }
+    im.clipboard.replace([ClipItem.text("brew upgrade --cask cocaine"), {
+                              var f = ClipItem.files(["/System/Library/CoreServices/Finder.app"]); f.pinned = true; return f }(),
+                          ClipItem.text("https://github.com/Mattiakart/cocaine"), ClipItem.text("Ciao Mario, ti mando il file domani mattina"),
+                          ClipItem.files(["/tmp/cocaine-no-such-file.pdf"])])
+    im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
+    if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
+    im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
+    // The morph: --progress 0.3 (or a list, 0,0.15,0.3…, drawn one under the other) draws those moments of opening; closing runs
+    // the same frames backwards. --flash "text" / --level 0.6 shows a flash message, --pink the pink bag, --external the Monitors tab,
+    // --notch covers the notch like the hardware does (what you really see), --xray shows it in translucent red instead.
+    let progress = args.firstIndex(of: "--progress").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }?
+        .split(separator: ",").compactMap { Double($0).map { CGFloat($0) } }
+    if let i = args.firstIndex(of: "--flash"), i + 1 < args.count {
+        let level = args.firstIndex(of: "--level").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
+        im.flash = (level == nil ? "arrow.down.circle.fill" : "speaker.wave.2.fill", args[i + 1], level)
+    }
+    if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true; pm.pinkLevel = 1 }        // Stay active alone: the pink bag
+    Island.forceExternal = args.contains("--external")
+    renderSampleDialog(args, surface: .island)                 // --dialog <kind>: a dialog in the open island
+    if args.contains("--live-window") {
+        // What the real window shows: the IslandView alone in a hosting view of the live window's size (closed: 465×38 on a
+        // 185 pt notch), not the roomy canvas above. --island-selfcheck runs the same thing and checks the pixels.
+        let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
+        im.geometry = g
+        if let p = progress?.first { im.renderProgress = p; im.open = p > 0 }
+        let rep = IslandCheck.render(im, pm, frame: IslandController.windowFrame(g, open: im.open))
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+        sampleSettings.restore()
+        exit(0)
+    }
+    let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
+    func frame(_ p: CGFloat?) -> NSBitmapImageRep {
+        if let p { im.renderProgress = p; im.open = p > 0 }
+        let l = IslandLayout(notch: notchW, notchH: 32)
+        let view = ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
+            if let notch {
+                IslandOutline(pose: IslandPose(p: 0, leftW: 0, rightW: 0), layout: l).fill(notch).frame(width: l.size.width, height: l.size.height)
+            }
+        }.frame(width: 760, height: im.open || progress != nil ? 250 : 70, alignment: .top).clipped()
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))      // measured sizes (lists that fade when cut) settle
+        host.layoutSubtreeIfNeeded()
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+    var reps = progress.map { $0.map { frame($0) } } ?? [frame(nil)]
+    if reps.count > 1 {                     // a contact sheet, labelled with each frame's progress
+        let w = reps[0].size.width, h = reps[0].size.height, sheet = NSImage(size: NSSize(width: w, height: h * CGFloat(reps.count)))
+        sheet.lockFocus()
+        for (i, r) in reps.enumerated() {
+            r.draw(in: NSRect(x: 0, y: h * CGFloat(reps.count - 1 - i), width: w, height: h))
+            NSString(string: String(format: "p %.2f", progress![i])).draw(at: NSPoint(x: 8, y: h * CGFloat(reps.count - 1 - i) + 8),
+                withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .bold), .foregroundColor: NSColor.black])
+        }
+        sheet.unlockFocus()
+        reps = [NSBitmapImageRep(data: sheet.tiffRepresentation!)!]
+    }
+    try? reps[0].representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+    sampleSettings.restore()
+    exit(0)
+}
+
+/// `--render-panel`, run from main.swift.
+func cliRenderPanel() {
+    // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
+    _ = NSApplication.shared
+    let sampleSettings = SavedSettings()
+    let model = PanelModel()
+    model.persistLanguage = false
+    let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
+    model.language = langArg ?? ""                  // never the user's saved choice: "" = same as the Mac
+    model.on = !CommandLine.arguments.contains("--off")
+    model.fillLevel = model.on ? 1 : 0
+    model.needsAuth = CommandLine.arguments.contains("--needs-auth")
+    model.holdMissing = CommandLine.arguments.contains("--hold-missing")
+    // --ai-on connects the first two tools, --codex-trust shows the Codex reminder, --no-ai hides the row.
+    model.ai = AIHooks.Status(tools: AIHooks.tools.enumerated().map { i, t in
+        AIHooks.Entry(id: t.id, name: t.name, installed: !CommandLine.arguments.contains("--no-ai") && i < 3,
+                      on: CommandLine.arguments.contains("--ai-on") && i < 2)
+    }, codexNeedsTrust: CommandLine.arguments.contains("--codex-trust"))
+    if CommandLine.arguments.contains("--paused") { model.alertsPausedUntil = Date().addingTimeInterval(3600) }
+    if CommandLine.arguments.contains("--ai-open") { model.page = "ai" }
+    if CommandLine.arguments.contains("--last") {                  // a sample "Recent alerts" list
+        model.history = [("Claude Code", "has finished", "Cocaine", 0.0), ("Codex", "needs your input", "PneuSuperStore", 900),
+                         ("Cursor", "has finished", "Gestionale", 4000)]
+            .map { AlertRecord(from: $0.0, message: L($0.1), project: $0.2, at: Date().addingTimeInterval(-$0.3)) }
+    } else {
+        model.history = []                                         // never the user's real alerts (project names) in a render
+    }
+    // --island / --no-island: hanging from the notch (the strip) or not, whatever the real setting; --notch-width 210: another Mac's notch.
+    if CommandLine.arguments.contains("--island") { model.island = true }
+    if CommandLine.arguments.contains("--no-island") { model.island = false }
+    if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {
+        NotchGeometry.override = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: CGFloat(w), height: 32, centerX: 756, hasNotch: true)
+    }
+    if let i = CommandLine.arguments.firstIndex(of: "--auto"), i + 1 < CommandLine.arguments.count {   // open a group of Automation
+        let wanted = CommandLine.arguments[i + 1]
+        model.page = ["none", "timer", "battery", "general"].contains(wanted) ? "" : wanted == "ai" ? "ai" : wanted == "island" ? "island" : "auto"
+        if wanted == "island" { model.island = true }                 // the Island tab exists only while the island is on
+        if CommandLine.arguments.contains("--schedule") { model.triggerSchedule = true; model.scheduleDays = [2, 3, 4, 5, 6]; model.scheduleStart = 540; model.scheduleEnd = 1080 }
+        model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
+        model.phoneCount = CommandLine.arguments.contains("--no-phone") ? 0 : 1; model.phoneLinkUp = true; model.battery = "80%"
+        model.phone = "Comando Rapido “Avvisa iPhone”"
+    }
+    if CommandLine.arguments.contains("--agents") {
+        let t = Date().timeIntervalSince1970
+        model.board = [AgentEntry(id: "1", from: "Claude Code", project: "canonical-com", state: "working", since: t - 400),
+                       AgentEntry(id: "2", from: "Codex", project: "PneuSuperStore", state: "waiting", since: t - 90),
+                       AgentEntry(id: "3", from: "Cursor", project: "Gestionale", state: "error", since: t - 30)]
+    }
+    if CommandLine.arguments.contains("--many-agents") || CommandLine.arguments.contains("--approval") {
+        (model.board, model.approvals) = AgentTests.sample(approval: CommandLine.arguments.contains("--approval"))
+    }
+    if CommandLine.arguments.contains("--speak") {                  // the longest voice name: the widest thing a row can hold
+        model.alertSpeak = true
+        model.alertVoice = Voices.available.map(\.identifier).max { Voices.name($0).count < Voices.name($1).count } ?? ""
+    }
+    if CommandLine.arguments.contains("--longsound") { model.alertDuration = 0; model.alertRepeatMinutes = 10 }
+    if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
+    renderSampleDialog(CommandLine.arguments, surface: .panel)          // --dialog <kind>: a dialog over the panel
+    let checkOverflow = CommandLine.arguments.contains("--overflow-check")
+    // The page with its dialog layer on top, as the panel's window stacks them (the dialog is over the visible area).
+    let surface = PanelView(m: model).overlay(alignment: .top) { PanelDialogOverlay(m: model) }
+    let host = checkOverflow ? NSHostingView(rootView: AnyView(surface.frame(width: Layout.width + 260, alignment: .topLeading)))
+                             : NSHostingView(rootView: AnyView(surface.background(Color.black)))
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+    if CommandLine.arguments.contains("--dark") { window.appearance = NSAppearance(named: .darkAqua) }
+    if CommandLine.arguments.contains("--light") { window.appearance = NSAppearance(named: .aqua) }
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.2))      // the dialog card's measured height reaches the panel
+    // --picker <id>: that row's dropdown open (language, sound, voice, pause, triggerApps, stayApps, excludedApps, patterns,
+    // scheduleStart…), checked to hang under its row, below the strip, inside the panel's frame.
+    var pickerReport: String?
+    if let i = CommandLine.arguments.firstIndex(of: "--picker"), i + 1 < CommandLine.arguments.count {
+        let id = CommandLine.arguments[i + 1]
+        if let open = PickerCenter.shared.openers[id] {
+            open()
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.15)) }
+            let c = PickerCenter.shared, top = PickerLayer.top(c.anchor)
+            let notchBottom = model.island ? Layout.overscan + (NotchGeometry.current()?.height ?? 0) : 0
+            let ok = c.isOpen && top > c.anchor.maxY && top >= notchBottom && c.cardHeight > 0
+            pickerReport = "\(ok ? "PASS" : "FAIL")  dropdown \(id): row bottom \(String(format: "%.1f", c.anchor.maxY)), card top \(String(format: "%.1f", top)) (under its row; strip ends at \(String(format: "%.1f", notchBottom))), card \(String(format: "%.0f", Layout.width - 2 * Space.frame))×\(String(format: "%.0f", c.cardHeight)) pt"
+        } else {
+            pickerReport = "FAIL  dropdown \(id): no such value button on this page (\(PickerCenter.shared.openers.keys.sorted().joined(separator: ", ")))"
+        }
+    }
+    window.setContentSize(host.fittingSize)
+    host.frame = NSRect(origin: .zero, size: host.fittingSize)
+    host.layoutSubtreeIfNeeded()
+    let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+    host.cacheDisplay(in: host.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    if checkOverflow {      // the rightmost painted pixel must stay inside the 14 pt margin
+        var maxX = 0
+        outer: for x in stride(from: rep.pixelsWide - 1, through: 0, by: -1) {
+            for y in 0..<rep.pixelsHigh where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 { maxX = x; break outer }
+        }
+        let right = CGFloat(maxX + 1) * host.bounds.width / CGFloat(rep.pixelsWide)
+        let ok = right <= Layout.width - 14 + 0.5
+        print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
+    }
+    if let pickerReport { print(pickerReport) }
+    sampleSettings.restore()                                // the sample values above must not stay in the real settings
+    print(Bundle.main.preferredLocalizations.first ?? "?")
+
+    exit(0)
+}

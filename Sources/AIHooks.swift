@@ -466,3 +466,35 @@ enum AIHooks {
         return s
     }
 }
+
+/// `--agent-request`, run from main.swift.
+func cliAgentRequest() {
+    // Run by Claude Code's and Codex's request hooks (`AIHooks.command(_, "approve")`): hands the request to the running app
+    // and prints its signed answer as the tool's documented hook output, or nothing (the tool then asks in the terminal).
+    // Never a decision of its own; always exit 0 (exit 2 would mean "block" to some tools).
+    signal(SIGPIPE, SIG_IGN)
+    let env = ProcessInfo.processInfo.environment
+    let timeout = env["COCAINE_HOOK_TIMEOUT"].flatMap(Double.init).map { min(max($0, 1), ApprovalTiming.hook) } ?? ApprovalTiming.hook
+    if let out = ApprovalHook.run(tool: CommandLine.arguments[2], input: ApprovalHook.readInput(), env: env, timeout: timeout) { print(out) }
+    exit(0)
+}
+
+/// `--ai-alerts`, run from main.swift.
+func cliAIAlerts() {
+    // `on|off|status [tool ids…] [--home <dir>]` for the AI alerts hooks: every tool on this Mac unless ids are given.
+    // The Homebrew uninstall runs `off`; --home works on a copy, for tests.
+    var args = Array(CommandLine.arguments.dropFirst(3))
+    if let i = args.firstIndex(of: "--home"), i + 1 < args.count { AIHooks.home = args[i + 1]; args.removeSubrange(i...i + 1) }
+    switch CommandLine.arguments[2] {
+    case "on", "off":
+        let tools = args.isEmpty ? AIHooks.present : args.compactMap(AIHooks.tool)
+        let failed = AIHooks.set(CommandLine.arguments[2] == "on", only: tools)
+        failed.forEach { print("could not update \($0)") }
+        exit(failed.isEmpty ? 0 : 1)
+    default:
+        let s = AIHooks.status()
+        for t in s.tools { print("\(t.id): \(t.installed ? (t.on ? "on" : "off") : "not installed")") }
+        print("codex needs trust: \(s.codexNeedsTrust)")
+        exit(0)
+    }
+}

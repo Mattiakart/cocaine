@@ -297,3 +297,82 @@ enum Phone {
         }
     }
 }
+
+/// `--share-test`, run from main.swift.
+func cliShareTest() {
+    // Activates the app and performs a sharing service ("airdrop" or "notes") on the signed shortcut, then reports the
+    // windows that appear (for tests).
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    guard let file = PhoneShortcut.signedFile(PhoneLink.newPairing(tier: "basic")!) else { print("could not sign"); exit(1) }
+    app.activate()
+    let services = NSSharingService.sharingServices(forItems: [file])
+    print("services: " + services.map(\.title).joined(separator: ", "))
+    guard let service = services.first(where: { $0.title.lowercased().contains(CommandLine.arguments[2]) }) else { print("no such service"); exit(1) }
+    service.perform(withItems: [file])
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+        let windows = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? [])
+            
+        print("windows: \(windows.filter { ($0[kCGWindowBounds as String] as? [String: Any])?["Width"] as? Double ?? 0 > 100 }.map { "\($0[kCGWindowOwnerName as String] ?? "")/\($0[kCGWindowName as String] ?? "")" })")
+        exit(0)
+    }
+    app.run()
+}
+
+/// `--make-shortcut`, run from main.swift.
+func cliMakeShortcut() {
+    // Builds and signs the iPhone Shortcut, copies it to the given path (for tests).
+    guard let f = PhoneShortcut.signedFile(PhoneLink.newPairing(tier: "basic")!) else { print("could not sign"); exit(1) }
+    try? FileManager.default.removeItem(atPath: CommandLine.arguments[2])
+    try? FileManager.default.copyItem(at: f, to: URL(fileURLWithPath: CommandLine.arguments[2]))
+    print("ok")
+    exit(0)
+}
+
+/// `--relay-test`, run from main.swift.
+func cliRelayTest() {
+    // A real round trip through the relay with a throwaway pairing (and its own state file): sends an authenticated,
+    // encrypted unknown command ("ping-test"), which the gate refuses, and expects that refusal back, encrypted, for that
+    // request. Nothing about this Mac leaves it in clear.
+    let pairing = PhoneLink.newPairing(tier: "basic")!, keys = pairing.keys!
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-relay-test-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    var hooks = RemoteListener.Hooks(store: RemoteReplayStore(url: dir.appendingPathComponent("state.json")),
+                                     execute: { PhoneLink.execute($0, tier: $1) },
+                                     publish: { await PhoneLink.publish($0, to: $1, relay: $2, session: $3) })
+    hooks.firstDelay = 1
+    let listener = RemoteListener(hooks: hooks)
+    func send(_ text: String) -> String {
+        let n = (0..<3).map { _ in String(Int.random(in: 100_000_000...999_999_999)) }.joined()
+        _ = RelayTest.curl("\(PhoneLink.relay)/\(pairing.cmd)/publish?message=" +
+                           RemoteProtocol.sealCommand(text, pairingID: pairing.id, keys: keys, nonce: n, ts: RemoteProtocol.timestamp(Date())))
+        return n
+    }
+    func answers(_ nonce: String) -> [String] {
+        RelayTest.curl("\(PhoneLink.relay)/\(pairing.reply)/raw?poll=1&since=120s").split(separator: "\n")
+            .compactMap { RemoteProtocol.openReply(String($0), pairingID: pairing.id, keys: keys, nonce: nonce) }
+    }
+    listener.sync([pairing])
+    Thread.sleep(forTimeInterval: 4)
+    let n1 = send("ping-test")
+    var answer: [String] = []
+    for _ in 0..<12 where answer.isEmpty { Thread.sleep(forTimeInterval: 1.5); answer = answers(n1) }
+    let first = answer.count == 1 && answer[0].contains("not allowed")
+    print(first ? "PASS  relay round trip: \(answer[0])" : "FAIL  relay round trip: \(answer)")
+    // What a sleeping Mac does: the connection is gone, a command arrives meanwhile, and the next wake picks it up.
+    listener.stop()
+    Thread.sleep(forTimeInterval: 1)
+    let n2 = send("ping-while-asleep")
+    Thread.sleep(forTimeInterval: 2)
+    listener.maxAge = { WakeSchedule.maxCommandAge }
+    listener.sync([pairing])
+    var second: [String] = []
+    for _ in 0..<12 where second.isEmpty { Thread.sleep(forTimeInterval: 1.5); second = answers(n2) }
+    print(second.count == 1 ? "PASS  command sent while disconnected is answered after reconnect (once)" : "FAIL  after reconnect: \(second.count) answers")
+    Thread.sleep(forTimeInterval: 4)
+    listener.reconnect()                                    // the wake-up path: no repeat of what was already handled
+    Thread.sleep(forTimeInterval: 6)
+    let total = answers(n1).count + answers(n2).count
+    print(total == 2 ? "PASS  reconnect doesn't run old commands again" : "FAIL  reconnect repeated a command: \(total) answers")
+    exit(first && second.count == 1 && total == 2 ? 0 : 1)
+}

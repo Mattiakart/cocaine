@@ -49,3 +49,17 @@ enum Presence {
         return names.contains { n in running.contains { $0.lowercased().contains(n.lowercased()) } }
     }
 }
+
+/// `--presence-test`, run from main.swift.
+func cliPresenceTest() {
+    // Does a presence nudge reset the system idle time? Prints the permission state and the idle time before and after.
+    print("post-event access:", Presence.hasAccess, " accessibility:", AXIsProcessTrusted())
+    Thread.sleep(forTimeInterval: 3)
+    let before = System.idleSeconds
+    let sent = Presence.nudge()
+    Thread.sleep(forTimeInterval: 0.3)
+    let after = System.idleSeconds
+    print(String(format: "idle before %.1f s, nudge sent: %@, idle after %.1f s", before, sent ? "yes" : "no", after))
+    print(sent && after < before ? "PASS  the nudge resets the idle time" : "FAIL  no effect (permission missing?)")
+    exit(0)
+}

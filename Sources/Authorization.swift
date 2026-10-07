@@ -123,3 +123,24 @@ enum Authorization {
         return succeeded(String(decoding: data, as: UTF8.self))
     }
 }
+
+/// `--auth-selftest`, run from main.swift.
+func cliAuthSelftest() {
+    // Runs the exact install pipeline (AppleScript quoting, printf, visudo, install) without admin rights,
+    // writing the rule to the given file instead of /etc/sudoers.d.
+    let cmd = Authorization.installCommand(user: NSUserName(), dest: CommandLine.arguments[2], asRoot: false)!
+    exit(run("/usr/bin/osascript", ["-e", Authorization.appleScript(for: cmd, admin: false)]))
+}
+
+/// `--auth-preview`, run from main.swift.
+func cliAuthPreview() {
+    // Shows the admin prompt without running anything (to check how it looks).
+    _ = NSApplication.shared
+    exit(Authorization.authorize(prompt: L("Cocaine needs your permission once, to keep your Mac awake.")) { _ in true } ? 0 : 1)
+}
+
+/// `--remove-rule`, run from main.swift.
+func cliRemoveRule() {
+    _ = NSApplication.shared
+    exit(Authorization.remove() ? 0 : 1)
+}

@@ -68,3 +68,19 @@ struct DimPlan {
     var gamma: [(id: CGDirectDisplayID, to: Float)] = []
     var displays: Set<CGDirectDisplayID> { Set(backlit.map(\.id) + gamma.map(\.id)) }
 }
+
+/// `--gamma-test`, run from main.swift.
+func cliGammaTest() {
+    // Software dimming on the main screen for a moment (what non-Apple monitors get), then restored.
+    let d = CGMainDisplayID(), screens = Screens()
+    func maxRed() -> Float {
+        var rMin: CGGammaValue = 0, rMax: CGGammaValue = 0, rG: CGGammaValue = 0, gMin: CGGammaValue = 0, gMax: CGGammaValue = 0
+        var gG: CGGammaValue = 0, bMin: CGGammaValue = 0, bMax: CGGammaValue = 0, bG: CGGammaValue = 0
+        CGGetDisplayTransferByFormula(d, &rMin, &rMax, &rG, &gMin, &gMax, &gG, &bMin, &bMax, &bG)
+        return rMax
+    }
+    print("before: \(maxRed())")
+    screens.setGamma(d, 0.4); usleep(800_000); print("dimmed: \(maxRed())")
+    screens.restoreGamma(); usleep(200_000); print("restored: \(maxRed())")
+    exit(0)
+}

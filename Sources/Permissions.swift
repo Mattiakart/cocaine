@@ -181,3 +181,49 @@ enum Permissions {
 private extension NSError {
     var underlyingErrorCode: Int { (userInfo[NSUnderlyingErrorKey] as? NSError)?.code ?? 0 }
 }
+
+/// `--permissions`, run from main.swift.
+func cliPermissions() {
+    // The state of every permission for this app, without asking for any (Files: listing the folders is the only check, and it
+    // makes macOS ask if it never did; given 3 s, else "notAsked (macOS is asking)"). Then the raw values behind them.
+    _ = NSApplication.shared
+    var probed = false
+    Permissions.probe(files: true) { _ in probed = true }
+    let until = Date().addingTimeInterval(3)
+    while !probed && Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    for p in Permission.allCases {
+        print("\(p.rawValue):", p == .files && !probed ? "notAsked (macOS is asking)" : "\(Permissions.state(p))")
+    }
+    let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: 1 << 14,
+                                callback: { _, _, e, _ in Unmanaged.passUnretained(e) }, userInfo: nil)
+    if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+    print("raw: AXIsProcessTrusted \(AXIsProcessTrusted()), post events \(CGPreflightPostEventAccess()), listen events (Input Monitoring) \(CGPreflightListenEventAccess()),",
+          "HUD-key tap \(tap != nil ? "ok" : "refused"), camera \(AVCaptureDevice.authorizationStatus(for: .video).rawValue), calendar \(EKEventStore.authorizationStatus(for: .event).rawValue),",
+          "music apps \(Permissions.runningMusicApps().map { "\($0)=\(Permissions.automation($0, ask: false))" })")
+    exit(0)
+}
+
+/// `--camera-test`, run from main.swift.
+func cliCameraTest() {
+    // The camera permission state of this app, and (if allowed) whether frames arrive. Never asks for the permission.
+    let st = AVCaptureDevice.authorizationStatus(for: .video)
+    print("camera authorization:", st.rawValue, "(0 not asked, 1 restricted, 2 denied, 3 allowed)")
+    if st == .authorized {
+        let session = AVCaptureSession(), out = AVCaptureVideoDataOutput()
+        final class Counter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+            var frames = 0
+            func captureOutput(_ o: AVCaptureOutput, didOutput b: CMSampleBuffer, from c: AVCaptureConnection) { frames += 1 }
+        }
+        let counter = Counter()
+        if let cam = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: cam), session.canAddInput(input) {
+            session.addInput(input)
+            out.setSampleBufferDelegate(counter, queue: DispatchQueue(label: "camtest"))
+            if session.canAddOutput(out) { session.addOutput(out) }
+            session.startRunning()
+            Thread.sleep(forTimeInterval: 3)
+            session.stopRunning()
+        }
+        print("frames in 3 s:", counter.frames)
+    }
+    exit(0)
+}
