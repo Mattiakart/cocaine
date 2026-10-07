@@ -28,6 +28,7 @@ private extension View {
 struct PanelView: View {
     @ObservedObject var m: PanelModel
     @ObservedObject var clip = ClipboardHistory.shared
+    @ObservedObject var clipKeys = ClipShortcutRecorder.shared
     @ObservedObject var up = Updater.shared
     @ObservedObject var dialogs = DialogCenter.shared
     @ObservedObject var pickers = PickerCenter.shared
@@ -452,6 +453,7 @@ struct PanelView: View {
             }
             card("rectangle.3.group", L("Screens")) { ScreensEditor() }        // Sources/ScreensEditor.swift
             clipboardCard
+            pinboardsCard
         }
     }
 
@@ -489,11 +491,12 @@ struct PanelView: View {
     private var clipboardCard: some View {
         let s = clip.settings
         return card("doc.on.clipboard", L("Clipboard"), warning: clip.problem != nil) {
-            row(L("Save on this Mac"), detail: clip.problem ?? (s.persist ? L("Encrypted, with its key in your Keychain") : L("Off: kept in memory only, gone when Cocaine quits")),
+            row(L("Save on this Mac"), detail: clip.problem ?? (s.persist ? L("Encrypted, with its key in your Keychain")
+                                                                          : L("Off: the history is kept in memory only. Pinboards are always saved, encrypted.")),
                 warning: clip.problem != nil) {
                 CocaineSwitch(on: s.persist) { ClipboardUI.setPersist(clip, !s.persist) }.accessibilityLabel(L("Save on this Mac"))
             }
-            segRow(L("Keep at most"), tip: L("Favorites don't count and are never removed"), clipSetting(\.maxItems), ClipSettings.itemChoices,
+            segRow(L("Keep at most"), tip: L("Pinned items don't count and are never removed"), clipSetting(\.maxItems), ClipSettings.itemChoices,
                    spoken: { String(format: L("%d items"), $0) }) { "\($0)" }
             segRow(L("Forget after"), clipSetting(\.maxAgeHours), ClipSettings.ageChoices, spoken: { $0 == 0 ? L("No limit") : nil }, ageName)
             segRow(L("Space in all"), clipSetting(\.maxTotalMB), ClipSettings.totalChoices) { "\($0) MB" }
@@ -518,10 +521,50 @@ struct PanelView: View {
                     Button(L("Add…")) { pickers.close(); ClipboardUI.addPattern(clip) }.buttonStyle(CocaineButtonStyle())
                 }
             }
-            row(L("Delete everything"), detail: L("History, favorites, saved files and their key")) {
+            pasteRows
+            row(L("Delete everything"), detail: L("History, pinboards, saved files and their key")) {
                 Button(L("Delete…")) { ClipboardUI.confirmDeleteEverything(clip) }.buttonStyle(CocaineButtonStyle(kind: .destructive))
             }
         }
+    }
+
+    /// Pasting, formatting, other devices, text in images, the Paste Stack, screen sharing, the command line (Sources/PasteEngine.swift…).
+    @ViewBuilder private var pasteRows: some View {
+        let s = clip.settings
+        let trusted = PasteEngine.shared.trusted()
+        row(L("Paste with Return and double-click"), detail: s.directPaste && !trusted ? L("Needs Accessibility: until then Return copies only") : L("Sends ⌘V to the app in front. Off: copies only"),
+            warning: s.directPaste && !trusted) {
+            HStack(spacing: Space.s) {
+                if s.directPaste && !trusted { Button(L("Allow…")) { Presence.requestAccess() }.buttonStyle(CocaineButtonStyle()) }
+                toggle(L("Paste with Return and double-click"), clipSetting(\.directPaste))
+            }
+        }
+        row(L("Paste without formatting"), tip: L("Plain text unless ⇧ is held; off: formatted unless ⇧ is held")) { toggle(L("Paste without formatting"), clipSetting(\.pastePlain)) }
+        segRow(L("Between items pasted together"), tip: L("Used by Paste all and Merge"), clipSetting(\.separator), ClipSettings.separatorChoices,
+               spoken: { Self.separatorName($0) }) { Self.separatorGlyph($0) }
+        row(L("Paste next (Paste Stack)"), detail: ClipShortcutRecorder.shared.recording == .pasteNext ? (ClipShortcutRecorder.shared.note ?? L("Type the new shortcut. Esc cancels, Delete removes it."))
+                                                                                                     : L("Active only while a Paste Stack waits")) {
+            ClipShortcutButton(target: .pasteNext, shortcut: s.pasteNext, label: L("Paste next (Paste Stack)"))
+        }
+        row(L("Copies from other devices"), detail: L("Universal Clipboard: shown as Another device")) { toggle(L("Copies from other devices"), clipSetting(\.includeRemote)) }
+        row(L("Find text in images"), detail: L("Read on this Mac when an image is copied; secrets masked")) { toggle(L("Find text in images"), clipSetting(\.ocr)) }
+        row(L("Suggestions for the app in front"), tip: L("From what you copied or pasted there, and pinboards tied to it; nothing is read from other apps")) {
+            toggle(L("Suggestions for the app in front"), clipSetting(\.suggestions))
+        }
+        row(L("Hide from screen sharing"), detail: L("While the island shows the clipboard (some capture tools may still record it)")) { toggle(L("Hide from screen sharing"), clipSetting(\.hideFromCapture)) }
+        segRow(L("Command line"), detail: L("cocaine clip in Terminal and Shortcuts"), clipSetting(\.cliAccess), [0, 1, 2],
+               spoken: { [L("Off"), L("Add only"), L("Add, read and paste")][$0] }) { [L("Off"), L("Add only"), L("Full")][$0] }
+    }
+
+    static func separatorGlyph(_ id: String) -> String {
+        switch id { case "blank": return "¶¶"; case "space": return "␣"; case "comma": return ","; case "tab": return "⇥"; case "none": return "∅"; default: return "¶" }
+    }
+    static func separatorName(_ id: String) -> String {
+        switch id { case "blank": return L("Blank line"); case "space": return L("Space"); case "comma": return L("Comma"); case "tab": return L("Tab"); case "none": return L("Nothing"); default: return L("New line") }
+    }
+
+    private var pinboardsCard: some View {
+        card("pin", L("Pinboards")) { PinboardsManager(h: clip) }          // Sources/PinboardsSettings.swift
     }
 
     // MARK: AI alerts

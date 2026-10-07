@@ -6,6 +6,8 @@
 #   cocaine off
 #   cocaine status [--json]   ON/OFF (first line), then the display hold; --json for scripts and Shortcuts
 #   cocaine mode screen-off|normal|status   screen off: the Mac stays awake but its displays may sleep (and lock)
+#   cocaine clip list|get|put|paste …   the clipboard history and pinboards of the running Cocaine.app (off until allowed
+#                             in Settings → Island → Clipboard → Command line; see docs/clipboard.en.md)
 #   cocaine release | forget  used by Cocaine.app (quit, crash recovery); `watch` is its watchdog, `expire` ends a passed
 #                             command-line deadline (Cocaine --boot-check)
 # cocaine-recovery: 1   (marker: this engine and its app know release/watch and --prepare-update; the cask checks it)
@@ -355,5 +357,10 @@ case "$1" in
           esac
           exit 0 ;;
   remote) shift; exec /bin/zsh "${SELF:h}/remote.zsh" "$@" ;;
-  *)      print -ru2 -- "usage: cocaine on [duration]|off|status [--json]|mode …|release|forget|remote …"; exit 64 ;;
+  clip)   shift   # the clipboard history and pinboards, through the running app (off until allowed in its settings)
+          for b in "${SELF:h:h}/MacOS/Cocaine" "$COPY" /Applications/Cocaine.app/Contents/MacOS/Cocaine; do
+            [[ -x $b ]] && exec "$b" --clip "${@:-help}"
+          done
+          print -ru2 -- "cocaine clip: Cocaine.app not found"; exit 69 ;;
+  *)      print -ru2 -- "usage: cocaine on [duration]|off|status [--json]|mode …|release|forget|remote …|clip …"; exit 64 ;;
 esac

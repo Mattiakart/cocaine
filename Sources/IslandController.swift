@@ -87,6 +87,7 @@ final class IslandController {
             return self.model.openScreen == id || self.spots.count <= 1
         }
         startKeyboard()
+        ClipboardWiring.attach(model: model, openKeyboard: { [weak self] in self?.toggleKeyboard() }, close: { [weak self] in self?.setOpen(false) })
         model.setKeyable = { [weak self] on in
             guard let p = self?.activeSpot?.panel else { return }
             p.keyable = on
@@ -669,18 +670,10 @@ enum IslandRouting {
 /// The island's keys (pure enough to test: the model and a close function are handed in). True when the key was used.
 enum IslandKeys {
     static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel, close: () -> Void) -> Bool {
+        // The Clipboard page's keys (↑↓, Return pastes, ⌘1…9, selection, type to filter…): Sources/IslandClipboard.swift.
+        if model.open, model.shows("clipboard"), ClipboardKeys.handle(code, flags: flags, editing: editing, model: model) { return true }
         let plain = flags.intersection([.command, .option, .control]).isEmpty
         guard plain else { return false }
-        if model.tab == "clipboard", model.open {
-            switch code {
-            case 125: model.clipboard.step(1); return true                         // ↓
-            case 126: model.clipboard.step(-1); return true                        // ↑
-            case 36, 76:                                                          // Return: copy the highlighted one
-                if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.hasMarkedText() { return false }
-                return model.copyHighlighted()
-            default: break
-            }
-        }
         switch code {
         case 53:                                                                  // Esc
             if editing && !model.clipboard.query.isEmpty { return false }         // the search field clears itself first

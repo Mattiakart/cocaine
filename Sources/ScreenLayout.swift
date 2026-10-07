@@ -62,7 +62,7 @@ enum ModuleCatalog {
         ModuleSpec(id: "downloads", title: "Downloads", icon: "arrow.down.circle", home: "files", sizes: [.m, .l], width: .narrow),
         ModuleSpec(id: "screenshots", title: "Screenshots", icon: "camera.viewfinder", home: "files", sizes: [.l], width: .narrow),
         ModuleSpec(id: "shelf", title: "Shelf", icon: "tray.and.arrow.down.fill", home: "shelf", sizes: [.l], width: .wide),
-        ModuleSpec(id: "clipboard", title: "Clipboard", icon: "doc.on.clipboard", home: "clipboard", sizes: [.m, .l], width: .narrow),
+        ModuleSpec(id: "clipboard", title: "Clipboard", icon: "doc.on.clipboard", home: "clipboard", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "batteries", title: "Batteries", icon: "battery.75percent", home: "status", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "usage", title: "AI usage", icon: "gauge.with.needle", home: "status", sizes: [.l], width: .narrow),
         ModuleSpec(id: "mirror", title: "Mirror", icon: "person.crop.square", home: "mirror", sizes: [.l], width: .full),
