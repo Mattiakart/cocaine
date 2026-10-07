@@ -149,6 +149,9 @@ pagine:
 - **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio per la sua durata, *Azzera* spegne
   Cocaine solo se l'aveva acceso il focus, la fine viene annunciata (un suono, un lampo, un avviso se non sei al Mac) e un focus in
   corso sopravvive a un riavvio o a un aggiornamento.
+- **Le tue schermate**: Impostazioni → Isola → *Schermate* mostra o nasconde ogni pagina, le riordina (trascinando, o con le
+  frecce), sceglie quella su cui si apre l'isola e mette moduli di pagine diverse nella stessa schermata (due colonne, ogni modulo
+  S, M o L) con anteprima dal vivo e *Ripristina predefinite*. Vedi [docs/screens.it.md](docs/screens.it.md).
 - **Scaffale**: trascina dei file sull'isola (si apre da sola) e tienili lì, poi trascinali fuori o mandali tutti con AirDrop.
   Tiene dei riferimenti, non copie, e resta dopo un riavvio (i file spariti nel frattempo vengono tolti).
 - **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo col nome del file avvisa

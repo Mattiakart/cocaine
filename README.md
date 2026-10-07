@@ -145,6 +145,9 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
 - **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake for its length, *Reset* turns Cocaine
   off again only if the focus turned it on, the end is announced (a sound, a flash, an alert when you're away), and a running
   focus survives a restart or an update.
+- **Your screens**: Settings → Island → *Screens* shows or hides each page, reorders them (drag, or the arrows), picks the one the
+  island opens on, and puts modules of different pages on one screen (two columns, each module S, M or L) with a live preview and
+  *Restore defaults*. See [docs/screens.en.md](docs/screens.en.md).
 - **Shelf**: drop files on the island (it opens by itself) and keep them there, then drag them out or send them all by AirDrop.
   It holds references, not copies, and is kept across restarts (files gone meanwhile are left out).
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash with the file's name says when a
