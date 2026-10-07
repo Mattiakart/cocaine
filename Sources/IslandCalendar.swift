@@ -543,7 +543,7 @@ extension IslandView {
 /// island's fixed page (576 × 158 pt on a 32 pt notch): nothing scrolls the island; event lists scroll inside their column.
 enum CalendarLayout {
     static let headerGap: CGFloat = Space.s
-    static let switchWidth: CGFloat = 186
+    static let switchWidth: CGFloat = 210
     static let sideWidth: CGFloat = 204
     static let weekNumberWidth: CGFloat = 20
     static let weekdayHeader: CGFloat = 14
@@ -890,13 +890,19 @@ struct CalendarMonthView: View {
             Haptic.tap(.alignment)
             if selected { watch.openDay(d) } else { watch.select(d) }
         } label: {
-            ZStack(alignment: .topTrailing) {
+            ZStack {
                 VStack(spacing: 1) {
                     Text("\(d.d)").font(.system(size: 11, weight: isToday || selected ? .semibold : .regular).monospacedDigit())
                         .foregroundStyle(isToday ? CTL.onAccentInk : inMonth ? UI.primary : UI.hint)
-                        .frame(width: 22, height: 14)
+                        .frame(width: 20, height: 14)
                         .background(Capsule().fill(isToday ? Island.accent : .clear))
                         .calendarPulse(isToday ? watch.pulse : 0, radius: 7)
+                        .overlay(alignment: .leading) {          // "+2" just right of the number, the number stays centred
+                            if more > 0 {
+                                Text("+\(more)").font(UI.detail).foregroundStyle(UI.hint).fixedSize().offset(x: 21)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                     HStack(spacing: 2) {
                         ForEach(Array(dots.enumerated()), id: \.offset) { _, rgb in Circle().fill(CalendarColor.rgb(rgb)).frame(width: 3.5, height: 3.5) }
                     }
@@ -904,9 +910,6 @@ struct CalendarMonthView: View {
                     .opacity(inMonth ? 1 : 0.55)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if more > 0 {
-                    Text("+\(more)").font(UI.detail).foregroundStyle(UI.hint).padding(.trailing, 1)
-                }
             }
             .frame(width: width, height: height)
             .contentShape(Rectangle())
@@ -926,7 +929,9 @@ struct CalendarMonthView: View {
                 Text(CalendarFormat.capitalizedFirst(d.noon(watch.cal).formatted(.dateTime.weekday(.wide).day().month(.wide).locale(loc)), loc))
                     .font(UI.groupTitle).lineLimit(1).minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
-                Text("\(CalendarBuckets.count(list))").font(UI.metric).foregroundStyle(UI.hint).accessibilityHidden(true)
+                if CalendarBuckets.count(list) > 0 {
+                    Text("\(CalendarBuckets.count(list))").font(UI.metric).foregroundStyle(UI.hint).accessibilityHidden(true)
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(watch.dayLabel(d))
