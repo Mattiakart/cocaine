@@ -140,7 +140,7 @@ final class SystemHUD {
             }
             return
         }
-        for pid in pids where !Self.isStopped(pid) { kill(pid, SIGSTOP) }
+        for pid in pids where !Self.isStopped(pid) { RecoverySession.shared.noteFrozen(pid); kill(pid, SIGSTOP) }   // noted first
     }
 
     static func helperPIDs() -> [pid_t] {

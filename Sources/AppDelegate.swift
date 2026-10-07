@@ -223,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         settings.savedBrightness = [:]
-        UserDefaults.standard.removeObject(forKey: "savedBrightness")   // pre-1.6 single-display key
+        AppDefaults.store.removeObject(forKey: "savedBrightness")   // pre-1.6 single-display key
 
         // Quit cleanly (restoring everything) on kill/pkill, Ctrl-C and a closed Terminal too; kill -9 and crashes: the watchdog.
         quitSignals = [SIGTERM, SIGINT, SIGHUP].map { sig in
@@ -749,7 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Never taller than the screen it's on (below the menu bar, 8 pt from the bottom): the rest scrolls.
         let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame ?? .zero
         var limit = max(240, panelTop - visible.minY - 8)
-        let test = UserDefaults.standard.double(forKey: "testMaxHeight")        // tests: pretend the screen is small
+        let test = AppDefaults.store.double(forKey: "testMaxHeight")        // tests: pretend the screen is small
         if test > 0 { limit = test }
         let size = NSSize(width: Layout.width, height: min(natural.height, limit))
         let top = panelTop + (settings.island ? Layout.overscan : 0)        // hanging from the notch: starts above the screen's top edge
