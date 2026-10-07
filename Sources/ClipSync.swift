@@ -162,6 +162,13 @@ final class ClipSyncCenter: ObservableObject {
         self.home = home
         settings = ClipSyncSettings.load(defaults)
         history.keepOffDisk = { [weak self] item in (self?.settings.universalOffDisk ?? false) && item.remote }
+        // Renders (--clipsync-fixture, memory-only settings): everything on, sample counters, never this Mac's folder.
+        if AppDefaults.isolated && CommandLine.arguments.contains("--clipsync-fixture") {
+            settings.folderOn = true; settings.makeCurrent = true; settings.sendEveryCopy = false; settings.universalOffDisk = true
+            settings.remote["a1b2c3d4e5f60718"] = ClipRemotePerm(read: true, write: false)
+            received = 12; sent = 4; refused = 1; notDownloaded = 1; lastSync = Date(timeIntervalSince1970: 1_791_000_000)
+            note = L("Not sent: it looks like a password, key or card number.")
+        }
     }
 
     var folder: SyncFolder { SyncFolder(root: ICloudPaths.root(home: home, name: settings.folderName)) }
@@ -426,5 +433,14 @@ final class ClipSyncCenter: ObservableObject {
     /// Tests and renders: counters and a status set by hand.
     func setForRender(status: SyncFolderStatus, received: Int, sent: Int, lastSync: Date?) {
         self.status = status; self.received = received; self.sent = sent; self.lastSync = lastSync
+    }
+}
+
+/// `--clipsync-fixture` for --render-island (memory-only settings): one sample item from the iPhone, and Send to iPhone offered.
+enum ClipSyncFixtures {
+    static func apply(_ args: [String], _ h: ClipboardHistory) {
+        guard AppDefaults.isolated, args.contains("--clipsync-fixture") else { return }
+        if let i = h.items.first(where: { $0.text == "#ff6b9d" }) { h.modify(i.id) { $0.source = ClipRules.iPhoneSource } }
+        ClipSyncHook.send = { ids in (ids.count, String(format: L("%d sent to the iPhone: run “Get from Mac” there"), ids.count)) }
     }
 }

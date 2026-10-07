@@ -23,7 +23,7 @@
 "Cocaine: the parts didn't match: send it again." = "Cocaine: le parti non corrispondevano: invialo di nuovo.";
 "Cocaine: too long for this channel (about 2,000 characters): use “Send to Mac” (iCloud Drive)." = "Cocaine: troppo lungo per questo canale (circa 2.000 caratteri): usa “Invia al Mac” (iCloud Drive).";
 "Cocaine: the clipboard history is empty." = "Cocaine: la cronologia degli appunti è vuota.";
-"Cocaine: no pinboard is readable from the iPhone. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine: nessuna raccolta è leggibile dall'iPhone. Sul Mac: Impostazioni → Isola → Sincronizzazione appunti con iPhone.";
+"Cocaine: no pinboard is readable from the iPhone. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine: nessuna bacheca è leggibile dall'iPhone. Sul Mac: Impostazioni → Isola → Sincronizzazione appunti con iPhone.";
 "Cocaine: there is no item %d on “%@”." = "Cocaine: non c'è l'elemento %d in “%@”.";
 "Cocaine: “%@” is empty." = "Cocaine: “%@” è vuota.";
 "Cocaine: there was no text to add." = "Cocaine: non c'era testo da aggiungere.";
@@ -39,8 +39,8 @@
 "Nothing from the Mac yet. On the Mac: the clipboard item's menu → Send to iPhone." = "Ancora niente dal Mac. Sul Mac: menu dell'elemento degli appunti → Invia all'iPhone.";
 "Send my clipboard" = "Invia i miei appunti";
 "Get the Mac's newest" = "Ricevi l'ultimo dal Mac";
-"List the iPhone pinboard" = "Elenca la raccolta per iPhone";
-"Get a pinboard item…" = "Ricevi un elemento della raccolta…";
+"List the iPhone pinboard" = "Elenca la bacheca per iPhone";
+"Get a pinboard item…" = "Ricevi un elemento della bacheca…";
 "Which item? (its number in the list)" = "Quale elemento? (il suo numero nell'elenco)";
 "There is no text on the iPhone's clipboard." = "Negli appunti dell'iPhone non c'è testo.";
 "No valid answer yet. If the Mac is asleep, try again in a few minutes." = "Ancora nessuna risposta valida. Se il Mac è in stop, riprova tra qualche minuto.";
@@ -69,12 +69,12 @@
 "Short text over the paired iPhone" = "Testo breve tramite l'iPhone abbinato";
 "Pair an iPhone in Settings → Remote work first. End-to-end encrypted, about 2,000 characters at most." = "Prima abbina un iPhone in Impostazioni → Lavoro da remoto. Cifrato end-to-end, circa 2.000 caratteri al massimo.";
 "Allow iPhone %@ to read my clipboard" = "Consenti all'iPhone %@ di leggere i miei appunti";
-"The newest item only (or the pinboard below), never secrets" = "Solo l'elemento più recente (o la raccolta qui sotto), mai segreti";
+"The newest item only (or the pinboard below), never secrets" = "Solo l'elemento più recente (o la bacheca qui sotto), mai segreti";
 "Allow iPhone %@ to send text to my clipboard" = "Consenti all'iPhone %@ di inviare testo ai miei appunti";
-"Pinboard the iPhone can read" = "Raccolta leggibile dall'iPhone";
+"Pinboard the iPhone can read" = "Bacheca leggibile dall'iPhone";
 "Universal Clipboard" = "Appunti universali";
 "Keep its copies off the saved history" = "Non salvare le sue copie nella cronologia";
-"Apple's own: what you copy on a nearby iPhone or iPad shows up as Another device. Kept in memory only." = "Quelli di Apple: ciò che copi su un iPhone o iPad vicino compare come Altro dispositivo. Tenuto solo in memoria.";
+"Apple's own: what you copy on a nearby iPhone or iPad shows up as Another device. Kept in memory only." = "Quelli di Apple: ciò che copi su un iPhone o iPad vicino compare come Un altro dispositivo. Tenuto solo in memoria.";
 "The folder is missing: turn it off and on again" = "La cartella manca: disattiva e riattiva";
 "Off. When on: %@" = "Disattivato. Quando attivo: %@";
 "Cocaine can't read the folder: allow it when macOS asks, or in Privacy & Security." = "Cocaine non può leggere la cartella: consentilo quando macOS lo chiede, o in Privacy e sicurezza.";

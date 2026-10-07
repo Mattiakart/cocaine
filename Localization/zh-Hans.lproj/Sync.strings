@@ -23,7 +23,7 @@
 "Cocaine: the parts didn't match: send it again." = "Cocaine：各部分不匹配：请重新发送。";
 "Cocaine: too long for this channel (about 2,000 characters): use “Send to Mac” (iCloud Drive)." = "Cocaine：此通道内容过长（约 2,000 个字符）：请使用“发送到 Mac”（iCloud 云盘）。";
 "Cocaine: the clipboard history is empty." = "Cocaine：剪贴板历史为空。";
-"Cocaine: no pinboard is readable from the iPhone. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine：没有可从 iPhone 读取的固定板。在 Mac 上：设置 → 灵动岛 → 与 iPhone 同步剪贴板。";
+"Cocaine: no pinboard is readable from the iPhone. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine：没有可从 iPhone 读取的图钉板。在 Mac 上：设置 → 灵动岛 → 与 iPhone 同步剪贴板。";
 "Cocaine: there is no item %d on “%@”." = "Cocaine：“%2$@”中没有第 %1$d 项。";
 "Cocaine: “%@” is empty." = "Cocaine：“%@”为空。";
 "Cocaine: there was no text to add." = "Cocaine：没有可添加的文本。";
@@ -39,8 +39,8 @@
 "Nothing from the Mac yet. On the Mac: the clipboard item's menu → Send to iPhone." = "尚未收到 Mac 的内容。在 Mac 上：剪贴板项目的菜单 → 发送到 iPhone。";
 "Send my clipboard" = "发送我的剪贴板";
 "Get the Mac's newest" = "获取 Mac 最新的一项";
-"List the iPhone pinboard" = "列出 iPhone 固定板";
-"Get a pinboard item…" = "获取固定板中的一项…";
+"List the iPhone pinboard" = "列出 iPhone 图钉板";
+"Get a pinboard item…" = "获取图钉板中的一项…";
 "Which item? (its number in the list)" = "哪一项？（列表中的编号）";
 "There is no text on the iPhone's clipboard." = "iPhone 剪贴板上没有文本。";
 "No valid answer yet. If the Mac is asleep, try again in a few minutes." = "尚无有效回复。如果 Mac 处于睡眠状态，请几分钟后重试。";
@@ -59,7 +59,7 @@
 "“Send to Mac” (Share Sheet or clipboard) and “Get from Mac”" = "“发送到 Mac”（共享表单或剪贴板）和“从 Mac 获取”";
 "Make it the current clipboard" = "设为当前剪贴板";
 "What arrives from the iPhone is also ready to paste here" = "来自 iPhone 的内容也可直接在此粘贴";
-"Pin what arrives to" = "将收到的内容固定到";
+"Pin what arrives to" = "将收到的内容钉到";
 "Send every copy" = "发送每次拷贝";
 "Off: only what you send with “Send to iPhone”. Never passwords, keys, card numbers or excluded apps." = "关闭：仅发送你用“发送到 iPhone”发送的内容。绝不发送密码、密钥、卡号或被排除 App 的内容。";
 "Keep received files" = "保留收到的文件";
@@ -69,12 +69,12 @@
 "Short text over the paired iPhone" = "通过已配对的 iPhone 传送短文本";
 "Pair an iPhone in Settings → Remote work first. End-to-end encrypted, about 2,000 characters at most." = "请先在“设置”→“远程工作”中配对 iPhone。端到端加密，最多约 2,000 个字符。";
 "Allow iPhone %@ to read my clipboard" = "允许 iPhone %@ 读取我的剪贴板";
-"The newest item only (or the pinboard below), never secrets" = "仅最新的一项（或下方的固定板），绝不发送机密";
+"The newest item only (or the pinboard below), never secrets" = "仅最新的一项（或下方的图钉板），绝不发送机密";
 "Allow iPhone %@ to send text to my clipboard" = "允许 iPhone %@ 向我的剪贴板发送文本";
-"Pinboard the iPhone can read" = "iPhone 可读取的固定板";
+"Pinboard the iPhone can read" = "iPhone 可读取的图钉板";
 "Universal Clipboard" = "通用剪贴板";
 "Keep its copies off the saved history" = "不将其拷贝存入已保存的历史";
-"Apple's own: what you copy on a nearby iPhone or iPad shows up as Another device. Kept in memory only." = "Apple 自带的功能：在附近的 iPhone 或 iPad 上拷贝的内容显示为“另一台设备”。仅保留在内存中。";
+"Apple's own: what you copy on a nearby iPhone or iPad shows up as Another device. Kept in memory only." = "Apple 自带的功能：在附近的 iPhone 或 iPad 上拷贝的内容显示为“其他设备”。仅保留在内存中。";
 "The folder is missing: turn it off and on again" = "文件夹缺失：请关闭后重新打开";
 "Off. When on: %@" = "关闭。打开后：%@";
 "Cocaine can't read the folder: allow it when macOS asks, or in Privacy & Security." = "Cocaine 无法读取文件夹：在 macOS 询问时允许，或在“隐私与安全性”中允许。";

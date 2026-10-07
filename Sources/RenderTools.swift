@@ -206,6 +206,7 @@ func cliRenderIsland() {
                           ClipItem.text("https://github.com/Mattiakart/cocaine"), ClipItem.text("Ciao Mario, ti mando il file domani mattina"),
                           ClipItem.files(["/tmp/cocaine-no-such-file.pdf"])])
     ClipboardFixtures.apply(args, im)                           // --clipboard-fixture <name>: pinboards, selection, details…
+    ClipSyncFixtures.apply(args, im.clipboard)                  // --clipsync-fixture: an item from the iPhone, Send to iPhone (Sources/ClipSync.swift)
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true

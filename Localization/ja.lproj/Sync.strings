@@ -14,7 +14,7 @@
 "Not sent: too big." = "送信しません：大きすぎます。";
 "Not sent: it's empty." = "送信しません：空です。";
 "The folder works: written and read back in %d ms. iCloud uploads it in the background." = "フォルダは正常です：%d msで書き込みと読み取りを確認。iCloudがバックグラウンドでアップロードします。";
-"Cocaine: the clipboard needs a newer Shortcut. On the Mac: Settings → Remote work → iPhone → Send." = "Cocaine：クリップボードには新しいショートカットが必要です。Macで：設定 → リモート作業 → iPhone → 送信。";
+"Cocaine: the clipboard needs a newer Shortcut. On the Mac: Settings → Remote work → iPhone → Send." = "Cocaine：クリップボードには新しいショートカットが必要です。Macで：設定 → リモートワーク → iPhone → 送信。";
 "Cocaine: unknown clipboard command." = "Cocaine：不明なクリップボードコマンドです。";
 "Cocaine: sending text to this Mac's clipboard is off. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine：このMacのクリップボードへのテキスト送信はオフです。Macで：設定 → アイランド → iPhoneとのクリップボード同期。";
 "Cocaine: reading this Mac's clipboard from the iPhone is off. On the Mac: Settings → Island → iPhone clipboard sync." = "Cocaine：iPhoneからこのMacのクリップボードを読む機能はオフです。Macで：設定 → アイランド → iPhoneとのクリップボード同期。";
@@ -67,7 +67,7 @@
 "Off: deleted once taken in" = "オフ：取り込んだら削除";
 "Uses your iCloud Drive: not end-to-end encrypted unless Advanced Data Protection is on. Images and long text go this way." = "iCloud Driveを使います：高度なデータ保護がオンでない限り、エンドツーエンド暗号化されません。画像と長いテキストはこちらを使います。";
 "Short text over the paired iPhone" = "ペアリングしたiPhoneで短いテキスト";
-"Pair an iPhone in Settings → Remote work first. End-to-end encrypted, about 2,000 characters at most." = "まず設定 → リモート作業でiPhoneをペアリングしてください。エンドツーエンド暗号化、最大約2,000文字。";
+"Pair an iPhone in Settings → Remote work first. End-to-end encrypted, about 2,000 characters at most." = "まず設定 → リモートワークでiPhoneをペアリングしてください。エンドツーエンド暗号化、最大約2,000文字。";
 "Allow iPhone %@ to read my clipboard" = "iPhone %@ にクリップボードの読み取りを許可";
 "The newest item only (or the pinboard below), never secrets" = "最新の項目（または下のピンボード）のみ。秘密情報は送りません";
 "Allow iPhone %@ to send text to my clipboard" = "iPhone %@ にクリップボードへのテキスト送信を許可";
