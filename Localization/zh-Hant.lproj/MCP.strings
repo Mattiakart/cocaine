@@ -17,7 +17,7 @@
 "Add text to the AI context" = "將文字加入 AI 上下文";
 "Add text…" = "加入文字…";
 "Allow %@ to read your AI context?" = "允許 %@ 讀取你的 AI 上下文？";
-"Allow once (this session)" = "允許一次（本次工作階段）";
+"Allow once" = "允許一次";
 "Allowed" = "已允許";
 "Another Cocaine is answering AI tools" = "另一個 Cocaine 正在回應 AI 工具";
 "Can't change this file" = "無法更改此檔案";
@@ -41,7 +41,6 @@
 "How AI context works" = "AI 上下文的運作方式";
 "In the AI context" = "AI 上下文中";
 "Install Cocaine in Applications first" = "請先將 Cocaine 安裝到「應用程式」";
-"It can read only the %d item(s) you put in the AI context and the pinboards you share with AI. What it reads goes to that tool's AI provider. Item content is passed as data, never as instructions." = "它只能讀取你放入 AI 上下文的 %d 項以及與 AI 共享的釘選板。它讀取的內容會傳送給該工具的 AI 供應商。內容作為資料傳遞，絕不作為指令。";
 "Items expire after" = "項目到期時間";
 "Keep after restart" = "重新啟動後保留";
 "Let AI tools read the AI context" = "允許 AI 工具讀取 AI 上下文";
@@ -52,6 +51,8 @@
 "Nothing read yet" = "尚未讀取任何內容";
 "Off: AI tools can't read it. Turn it on in Settings → AI." = "已關閉：AI 工具無法讀取。請在「設定 → AI」中開啟。";
 "Off: the AI context lives in memory only. On: references and typed text are kept in a private file on this Mac." = "關：AI 上下文僅保存在記憶體中。開：參照和輸入的文字保存在本 Mac 上的私有檔案中。";
+"Only the %d item(s) you put there and pinboards you share; what it reads goes to its AI provider." = "僅限你放入的 %d 項和你共享的釘選板；它讀取的內容會傳送給其 AI 供應商。";
+"Pick items" = "選擇項目";
 "Pick what to share. Only what you pick is sent; it stays in the AI context." = "選擇要共享的內容。只傳送你選擇的內容；它會保留在 AI 上下文中。";
 "Pinboards shared with AI" = "與 AI 共享的釘選板";
 "Remove from the AI context" = "從 AI 上下文中移除";

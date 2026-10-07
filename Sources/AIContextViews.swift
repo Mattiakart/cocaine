@@ -45,11 +45,12 @@ struct AIContextModuleView: View {
                             ForEach(basket.entries) { e in AIContextRow(entry: e, preview: box.size == .l) { basket.remove(e.id) } }
                         }
                     }
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .motion(.selection, value: basket.entries.map(\.id))
                 }
                 if box.size == .l { access }
             }
-            Spacer(minLength: 0)
+            if box.size == .s || basket.entries.isEmpty { Spacer(minLength: 0) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -148,6 +149,10 @@ final class MCPRegistrationState: ObservableObject {
     @Published var showLog = false                   // the activity log is open in Settings
 
     func refresh() {
+        if AppDefaults.isolated {           // renders and tests: a sample, never the Mac's own AI tools' files
+            status = [.claudeCode: (true, true), .claudeDesktop: (true, false), .codex: (true, false), .cursor: (true, false), .gemini: (false, false)]
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let s = Dictionary(uniqueKeysWithValues: MCPRegistration.Client.allCases.map { ($0, (installed: MCPRegistration.installed($0), on: MCPRegistration.registered($0))) })
             DispatchQueue.main.async { self.status = s }

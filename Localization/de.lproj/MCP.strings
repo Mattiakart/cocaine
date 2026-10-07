@@ -17,7 +17,7 @@
 "Add text to the AI context" = "Text zum KI-Kontext hinzufügen";
 "Add text…" = "Text hinzufügen…";
 "Allow %@ to read your AI context?" = "%@ erlauben, deinen KI-Kontext zu lesen?";
-"Allow once (this session)" = "Einmal erlauben (diese Sitzung)";
+"Allow once" = "Einmal erlauben";
 "Allowed" = "Erlaubt";
 "Another Cocaine is answering AI tools" = "Ein anderes Cocaine antwortet den KI-Tools";
 "Can't change this file" = "Diese Datei lässt sich nicht ändern";
@@ -41,7 +41,6 @@
 "How AI context works" = "So funktioniert der KI-Kontext";
 "In the AI context" = "Im KI-Kontext";
 "Install Cocaine in Applications first" = "Installiere Cocaine zuerst in „Programme“";
-"It can read only the %d item(s) you put in the AI context and the pinboards you share with AI. What it reads goes to that tool's AI provider. Item content is passed as data, never as instructions." = "Es kann nur die %d Objekt(e) im KI-Kontext und die mit KI geteilten Pinnwände lesen. Was es liest, geht an den KI-Anbieter dieses Tools. Inhalte werden als Daten übergeben, nie als Anweisungen.";
 "Items expire after" = "Objekte verfallen nach";
 "Keep after restart" = "Nach Neustart behalten";
 "Let AI tools read the AI context" = "KI-Tools den KI-Kontext lesen lassen";
@@ -52,6 +51,8 @@
 "Nothing read yet" = "Noch nichts gelesen";
 "Off: AI tools can't read it. Turn it on in Settings → AI." = "Aus: KI-Tools können ihn nicht lesen. In Einstellungen → KI einschalten.";
 "Off: the AI context lives in memory only. On: references and typed text are kept in a private file on this Mac." = "Aus: Der KI-Kontext lebt nur im Arbeitsspeicher. An: Verweise und getippter Text bleiben in einer privaten Datei auf diesem Mac.";
+"Only the %d item(s) you put there and pinboards you share; what it reads goes to its AI provider." = "Nur die %d Objekt(e), die du hineinlegst, und geteilte Pinnwände; was es liest, geht an seinen KI-Anbieter.";
+"Pick items" = "Objekte wählen";
 "Pick what to share. Only what you pick is sent; it stays in the AI context." = "Wähle, was du teilst. Nur Gewähltes wird gesendet; es bleibt im KI-Kontext.";
 "Pinboards shared with AI" = "Mit KI geteilte Pinnwände";
 "Remove from the AI context" = "Aus dem KI-Kontext entfernen";

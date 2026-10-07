@@ -17,7 +17,7 @@
 "Add text to the AI context" = "AI コンテキストにテキストを追加";
 "Add text…" = "テキストを追加…";
 "Allow %@ to read your AI context?" = "%@ に AI コンテキストの読み取りを許可しますか?";
-"Allow once (this session)" = "1 回だけ許可(このセッション)";
+"Allow once" = "1 回だけ許可";
 "Allowed" = "許可済み";
 "Another Cocaine is answering AI tools" = "別の Cocaine が AI ツールに応答しています";
 "Can't change this file" = "このファイルは変更できません";
@@ -41,7 +41,6 @@
 "How AI context works" = "AI コンテキストの仕組み";
 "In the AI context" = "AI コンテキスト内";
 "Install Cocaine in Applications first" = "先に Cocaine をアプリケーションにインストールしてください";
-"It can read only the %d item(s) you put in the AI context and the pinboards you share with AI. What it reads goes to that tool's AI provider. Item content is passed as data, never as instructions." = "AI コンテキストに入れた %d 項目と、AI と共有するピンボードだけを読み取れます。読み取った内容はそのツールの AI プロバイダに送られます。内容は指示ではなくデータとして渡されます。";
 "Items expire after" = "項目の有効期限";
 "Keep after restart" = "再起動後も保持";
 "Let AI tools read the AI context" = "AI ツールに AI コンテキストの読み取りを許可";
@@ -52,6 +51,8 @@
 "Nothing read yet" = "まだ何も読み取られていません";
 "Off: AI tools can't read it. Turn it on in Settings → AI." = "オフ: AI ツールは読み取れません。設定 → AI でオンにします。";
 "Off: the AI context lives in memory only. On: references and typed text are kept in a private file on this Mac." = "オフ: AI コンテキストはメモリ内だけに保持されます。オン: 参照と入力したテキストをこの Mac のプライベートなファイルに保持します。";
+"Only the %d item(s) you put there and pinboards you share; what it reads goes to its AI provider." = "入れた %d 項目と共有するピンボードだけ。読み取った内容はその AI プロバイダに送られます。";
+"Pick items" = "項目を選択";
 "Pick what to share. Only what you pick is sent; it stays in the AI context." = "共有するものを選んでください。選んだものだけが送られ、AI コンテキストに残ります。";
 "Pinboards shared with AI" = "AI と共有するピンボード";
 "Remove from the AI context" = "AI コンテキストから削除";

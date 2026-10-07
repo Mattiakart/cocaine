@@ -17,7 +17,7 @@
 "Add text to the AI context" = "Aggiungi testo al contesto AI";
 "Add text…" = "Aggiungi testo…";
 "Allow %@ to read your AI context?" = "Consentire a %@ di leggere il tuo contesto AI?";
-"Allow once (this session)" = "Consenti una volta (questa sessione)";
+"Allow once" = "Consenti una volta";
 "Allowed" = "Consentito";
 "Another Cocaine is answering AI tools" = "Un'altra copia di Cocaine risponde agli strumenti AI";
 "Can't change this file" = "Impossibile modificare questo file";
@@ -41,7 +41,6 @@
 "How AI context works" = "Come funziona il contesto AI";
 "In the AI context" = "Nel contesto AI";
 "Install Cocaine in Applications first" = "Installa prima Cocaine in Applicazioni";
-"It can read only the %d item(s) you put in the AI context and the pinboards you share with AI. What it reads goes to that tool's AI provider. Item content is passed as data, never as instructions." = "Può leggere solo i %d elementi che metti nel contesto AI e le bacheche che condividi con l'AI. Ciò che legge va al fornitore AI di quello strumento. Il contenuto viene passato come dati, mai come istruzioni.";
 "Items expire after" = "Gli elementi scadono dopo";
 "Keep after restart" = "Conserva dopo il riavvio";
 "Let AI tools read the AI context" = "Consenti agli strumenti AI di leggere il contesto AI";
@@ -52,6 +51,8 @@
 "Nothing read yet" = "Ancora nulla letto";
 "Off: AI tools can't read it. Turn it on in Settings → AI." = "Disattivo: gli strumenti AI non possono leggerlo. Attivalo in Impostazioni → AI.";
 "Off: the AI context lives in memory only. On: references and typed text are kept in a private file on this Mac." = "Disattivo: il contesto AI vive solo in memoria. Attivo: riferimenti e testo digitato restano in un file privato su questo Mac.";
+"Only the %d item(s) you put there and pinboards you share; what it reads goes to its AI provider." = "Solo i %d elementi che ci metti e le bacheche che condividi; ciò che legge va al suo fornitore AI.";
+"Pick items" = "Scegli elementi";
 "Pick what to share. Only what you pick is sent; it stays in the AI context." = "Scegli cosa condividere. Viene inviato solo ciò che scegli; resta nel contesto AI.";
 "Pinboards shared with AI" = "Bacheche condivise con l'AI";
 "Remove from the AI context" = "Rimuovi dal contesto AI";
