@@ -648,6 +648,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: Space.l) {
             activityCard
             environmentsCard
+            AIContextSettingsCard()                                   // Sources/AIContextViews.swift: AI context (MCP)
             card("bell.badge", L("When")) {
                 row(L("Finishes"), tip: L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
                 row(L("Needs you"), tip: L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }

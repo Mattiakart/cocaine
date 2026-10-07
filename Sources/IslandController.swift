@@ -88,6 +88,7 @@ final class IslandController {
         }
         startKeyboard()
         ClipboardWiring.attach(model: model, openKeyboard: { [weak self] in self?.toggleKeyboard() }, close: { [weak self] in self?.setOpen(false) })
+        AIContextWiring.attach(model: model)                          // Sources/AIContextWiring.swift: the AI-context basket, MCP
         model.setKeyable = { [weak self] on in
             guard let p = self?.activeSpot?.panel else { return }
             p.keyable = on

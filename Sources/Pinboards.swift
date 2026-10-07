@@ -17,12 +17,13 @@ struct ClipBoard: Codable, Equatable, Identifiable {
     var icon: String?             // an SF Symbol (one of PinboardRules.icons)
     var app: String?              // bundle id: this pinboard's items are suggested first while that app is in front
     var hotkey: Shortcut?         // a global shortcut that opens the island on it (Carbon, no permission)
+    var ai = false                // shared with AI tools through MCP (Sources/MCPServer.swift); off unless the user turns it on
 
     init(id: UUID = UUID(), name: String, color: Int = 0, icon: String? = nil, app: String? = nil, hotkey: Shortcut? = nil) {
         self.id = id; self.name = name; self.color = color; self.icon = icon; self.app = app; self.hotkey = hotkey
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, color, icon, app, hotkey }
+    enum CodingKeys: String, CodingKey { case id, name, color, icon, app, hotkey, ai }
     /// Unknown or missing fields take their defaults (a newer Cocaine's pinboard still loads); a missing id is an error.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -32,6 +33,7 @@ struct ClipBoard: Codable, Equatable, Identifiable {
         icon = (try? c.decodeIfPresent(String.self, forKey: .icon)).flatMap { $0 }.flatMap { PinboardRules.icons.contains($0) ? $0 : nil }
         app = (try? c.decodeIfPresent(String.self, forKey: .app)).flatMap { $0 }
         hotkey = (try? c.decodeIfPresent(Shortcut.self, forKey: .hotkey)).flatMap { $0 }
+        ai = (try? c.decodeIfPresent(Bool.self, forKey: .ai)).flatMap { $0 } ?? false
     }
 
     static var favorites: ClipBoard { ClipBoard(id: favoritesID, name: "", color: 0, icon: "star.fill") }

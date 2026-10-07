@@ -66,6 +66,7 @@ enum ModuleCatalog {
         ModuleSpec(id: "batteries", title: "Batteries", icon: "battery.75percent", home: "status", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "usage", title: "AI usage", icon: "gauge.with.needle", home: "status", sizes: [.l], width: .narrow),
         ModuleSpec(id: "quotas", title: "AI limits", icon: "chart.bar.fill", home: "status", sizes: [.s, .m, .l], width: .narrow),
+        ModuleSpec(id: "aicontext", title: "AI context", icon: "sparkles", home: "clipboard", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "mirror", title: "Mirror", icon: "person.crop.square", home: "mirror", sizes: [.l], width: .full),
         ModuleSpec(id: "monitors", title: "Monitors", icon: "display", home: "display", sizes: [.l], width: .full),
     ]
