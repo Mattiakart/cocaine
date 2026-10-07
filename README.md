@@ -169,9 +169,12 @@ pink powder: Cocaine is off but *Stay available* is on, with or without a chat a
 lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; General → *Haptic feedback* turns it off; with Reduce Motion on in
 macOS's Accessibility settings it appears and goes without the morph, and alerts tint the screen once instead of flashing). The gear opens the settings panel;
 General → *Show in the notch* turns it off. It hides during full-screen video and games on its screen (a big window on another
-monitor doesn't count). It stays on one screen: the one with the notch, else the built-in display, else the main display; it
-doesn't follow the app you are in. With Island → *Replace system HUD* on, Cocaine handles the volume and brightness keys itself
-(fine steps with ⌥⇧; ⌥ alone still opens Sound or Displays settings) and their bar appears in the island instead of macOS's.
+monitor doesn't count). There is an island on every connected screen: the notch where there is one, a slim bar on the others;
+each opens on its own when the pointer touches it, and a full-screen app hides only its screen's island (Island → *Show on all
+screens* off keeps just one: the screen with the notch, else the built-in display, else the main display) ([details](docs/island-screens.en.md)).
+With Island → *Replace system HUD* on, Cocaine handles the volume and brightness keys itself
+(fine steps with ⌥⇧; ⌥ alone still opens Sound or Displays settings) and their bar appears just below the notch, as wide as the
+notch, instead of macOS's; messages such as *Downloaded* or *Copied* appear there too.
 This needs the **Accessibility** permission, which it asks for when you turn the option on. Whenever the island can't be seen
 (a full-screen app, the settings panel open, another user's session) the keys go to macOS and macOS shows its own indicator.
 Before macOS 26 its indicator's helper is also kept frozen while the island shows the bars, and given back when you turn the option

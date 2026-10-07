@@ -173,10 +173,13 @@ bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta disponibile
 seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; Generale → *Feedback aptico* lo disattiva; con Riduci
 movimento attivo nelle impostazioni Accessibilità di macOS compare e scompare senza animazione, e gli avvisi tingono lo schermo una volta invece di
 lampeggiare). L'ingranaggio apre il pannello delle impostazioni; Generale → *Mostra nel notch* la disattiva. Si nasconde durante video a schermo intero e
-giochi sul suo schermo (una finestra grande su un altro monitor non conta). Resta su uno schermo solo: quello col notch, altrimenti
-lo schermo integrato, altrimenti lo schermo principale; non segue l'app in uso. Con Isola → *Sostituisci l'HUD di sistema* attivo,
+giochi sul suo schermo (una finestra grande su un altro monitor non conta). C'è un'isola su ogni schermo collegato: il notch dove
+c'è, una barra sottile sugli altri; ognuna si apre da sola quando il puntatore la tocca, e un'app a schermo intero nasconde solo
+l'isola del suo schermo (Isola → *Mostra su tutti gli schermi* spento ne tiene una sola: lo schermo col notch, altrimenti quello
+integrato, altrimenti il principale) ([dettagli](docs/island-screens.it.md)). Con Isola → *Sostituisci l'HUD di sistema* attivo,
 Cocaine gestisce da sé i tasti di volume e luminosità (passi fini con ⌥⇧; ⌥ da solo apre ancora le impostazioni Suono o Monitor) e
-la loro barra compare nell'isola invece di quella di macOS. Serve il permesso **Accessibilità**, che chiede quando attivi
+la loro barra compare subito sotto il notch, larga quanto il notch, invece di quella di macOS; lì compaiono anche messaggi come
+*Scaricato* o *Copiato*. Serve il permesso **Accessibilità**, che chiede quando attivi
 l'opzione. Quando l'isola non si vede (un'app a schermo intero, il pannello delle impostazioni aperto, la sessione di un altro
 utente) i tasti vanno a macOS e macOS mostra il suo indicatore. Prima di macOS 26 il processo di supporto del suo indicatore resta
 anche congelato mentre l'isola mostra le barre, e torna quando disattivi l'opzione o chiudi Cocaine; se Cocaine va in crash o viene
