@@ -79,7 +79,8 @@ if ./build.sh --no-install --sign "$SIGN"; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $ISOID" "$T/Cocaine.app/Contents/Info.plist"
   codesign --force --deep --sign - "$T/Cocaine.app" 2>/dev/null
   ISO="$T/Cocaine.app/Contents/MacOS/Cocaine"
-  domain() { /usr/bin/defaults export "$1" - 2>/dev/null | /sbin/md5 -q 2>/dev/null; }
+  # NSStatusItem … keys are written by macOS itself for a running copy's menu-bar item (not by a test): left out of the hash.
+  domain() { /usr/bin/defaults read "$1" 2>/dev/null | /usr/bin/grep -v 'NSStatusItem' | /sbin/md5 -q 2>/dev/null; }
   REAL_BEFORE=$(domain local.cocaine.toggle)
 
   step "app test suites (isolated copy, bundle id $ISOID)"
