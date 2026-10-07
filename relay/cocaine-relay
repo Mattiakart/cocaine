@@ -275,7 +275,7 @@ sub put_file {
     if (defined $cur) {
         File::Path::make_path($BACKUP, { mode => 0700 });
         (my $flat = $o->{path}) =~ s{[/.]}{_}g;
-        $backup = "$flat." . time . ".$$";
+        $backup = "$flat." . time . ".$$." . rand_hex(4);           # two writes in the same second keep both
         sysopen(my $b, "$BACKUP/$backup", O_WRONLY | O_CREAT | O_EXCL, 0600) or return { %r, ok => JSON::PP::false, err => 'backup' };
         write_all($b, $cur) or return { %r, ok => JSON::PP::false, err => 'backup' };
         close $b;
@@ -299,6 +299,7 @@ sub put_file {
 sub claude_version {
     my $out = '';
     for my $cmd ("$HOME/.local/bin/claude", "$HOME/.claude/local/claude", 'claude') {
+        next if $cmd eq 'claude' && $ENV{COCAINE_RELAY_NO_LOGIN_SHELL};   # Cocaine's own tests: never a login shell
         my $pid = open(my $ph, '-|') // next;
         if (!$pid) {
             open STDERR, '>', '/dev/null';

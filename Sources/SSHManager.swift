@@ -111,6 +111,7 @@ final class SSHHostManager: ObservableObject {
     }
 
     private func wanted(_ h: SSHHost) -> Bool { store.enabled && h.enabled && h.deployed }
+    private func isOff(_ id: String) -> Bool { (machines[id]?.phase ?? .off) == .off }
 
     private func everyHost(_ e: SSHLinkMachine.Event) { for h in store.hosts { drive(h.id, e) } }
 
@@ -314,7 +315,7 @@ final class SSHHostManager: ObservableObject {
     func retry(_ id: String) {
         guard let h = host(id), wanted(h) else { return }
         update(id) { $0.failure = nil }
-        drive(id, machines[id]?.phase == .off ? .enable : .retry)
+        drive(id, isOff(id) ? .enable : .retry)
     }
 
     /// Puts the relay (and this Mac's key for it) on the host; only after the user said yes (or to update one they installed).
@@ -342,7 +343,7 @@ final class SSHHostManager: ObservableObject {
                 if let i = self.store.hosts.firstIndex(where: { $0.id == id }) { self.store.hosts[i].deployed = true; self.store.save(self.support) }
                 self.audit(id, "relay installed")
                 self.update(id) { $0.note = L("Relay installed."); $0.failure = nil }
-                if let h = self.host(id), self.wanted(h) { self.drive(id, self.machines[id]?.phase == .off ? .enable : .retry) }
+                if let h = self.host(id), self.wanted(h) { self.drive(id, self.isOff(id) ? .enable : .retry) }
                 done(true)
             } else {
                 let f = SSHFailure.classify(stderr: err, status: status)
@@ -441,7 +442,10 @@ final class SSHHostManager: ObservableObject {
         }
         func rollback(_ list: [SSHInstaller.Write], _ why: String) {
             guard let w = list.first else { finish(false, why); return }
-            c.call("put", SSHInstaller.body(w, r: 0)) { _ in rollback(Array(list.dropFirst()), why) }
+            c.call("put", SSHInstaller.body(w, r: 0)) { o in
+                if o?["ok"] as? Bool != true { self.audit(id, "rollback of \(w.path) failed: put it back from ~/.cocaine/backup there") }
+                rollback(Array(list.dropFirst()), why)
+            }
         }
         func step(_ i: Int) {
             guard i < ws.count else { finish(true, nil); return }
