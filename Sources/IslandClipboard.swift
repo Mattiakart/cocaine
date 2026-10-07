@@ -503,6 +503,10 @@ private struct ClipChips: View {
             .padding(.vertical, 1)
         }
         .frame(height: 22)
+        .mask(HStack(spacing: 0) {                         // chips that go on past the edge fade out there (it scrolls)
+            Rectangle()
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+        })
         .motion(.dragSettle, value: h.boards.map(\.id))
     }
 
@@ -734,9 +738,15 @@ private struct ClipSelectionBar: View {
     @ObservedObject var h: ClipboardHistory
     @ObservedObject var ui: ClipPageState
 
+    /// With labels when they fit (in this language), else the symbols alone (their names stay for VoiceOver and the tooltip).
     var body: some View {
+        ViewThatFits(in: .horizontal) { bar(labels: true); bar(labels: false) }
+    }
+
+    private func bar(labels: Bool) -> some View {
         let ids = ui.selection.ids
         let texts = ids.compactMap { id in h.items.first { $0.id == id } }.filter { $0.kind != .image }.count
+        let action = { (title: String, icon: String, run: @escaping () -> Void) in self.action(title, icon, labels: labels, run) }
         return HStack(spacing: Space.xs) {
             Text(String(format: L("%d selected"), ids.count)).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1).fixedSize()
             Spacer(minLength: Space.xs)
@@ -755,10 +765,15 @@ private struct ClipSelectionBar: View {
         .frame(height: 18)
     }
 
-    private func action(_ title: String, _ icon: String, _ run: @escaping () -> Void) -> some View {
-        Button { Haptic.tap(.alignment); run() } label: { Label(title, systemImage: icon).labelStyle(.titleAndIcon).font(UI.detail) }
-            .buttonStyle(CocaineButtonStyle(kind: .plain, height: 18))
-            .accessibilityLabel(title)
+    private func action(_ title: String, _ icon: String, labels: Bool, _ run: @escaping () -> Void) -> some View {
+        Button { Haptic.tap(.alignment); run() } label: {
+            if labels { Label(title, systemImage: icon).labelStyle(.titleAndIcon).font(UI.detail) }
+            else { Image(systemName: icon).font(UI.detail) }
+        }
+        .buttonStyle(CocaineButtonStyle(kind: .plain, height: 18))
+        .fixedSize()
+        .help(title)
+        .accessibilityLabel(title)
     }
 }
 
