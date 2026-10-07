@@ -106,6 +106,7 @@ finish_run() {
     rm -f "$SUPPORT/restore"
     "$ENGINE" off >/dev/null 2>&1
     /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null
+    rm -f "$SUPPORT/until"
   fi
 }
 
@@ -169,15 +170,19 @@ cmd_on() {
   done
   "$ENGINE" on || die "could not turn Cocaine on (is it set up? open Cocaine.app once)"
   # -int, like the engine: a -float is 32-bit (off by up to a minute at today's epoch); the app reads either as a number
-  if [[ -n $mins ]]; then /usr/bin/defaults write "$DOMAIN" onUntil -int $(( $(date +%s) + mins * 60 ))
-  else /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null; fi
+  # $SUPPORT/until: the engine's hold helper ends it at that time if Cocaine.app isn't running to do it
+  if [[ -n $mins ]]; then
+    local u=$(( $(date +%s) + mins * 60 ))
+    /usr/bin/defaults write "$DOMAIN" onUntil -int $u
+    print -r -- $u >| "$SUPPORT/until"
+  else /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null; rm -f "$SUPPORT/until"; fi
   print "Cocaine ON${mins:+ for $mins min}"
 }
 
 cmd_off() {
   "$ENGINE" off || die "could not turn Cocaine off"
   /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null
-  rm -f "$SUPPORT/restore"
+  rm -f "$SUPPORT/restore" "$SUPPORT/until"
   print "Cocaine OFF"
 }
 
