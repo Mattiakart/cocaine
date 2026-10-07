@@ -1,5 +1,8 @@
 // Custom shelf actions the user defines in Settings (never from a link, a dropped file or another app): a shell script, a
-// Shortcut, an Automator workflow, an AppleScript/JXA script, "Open with <app>", "Move to <folder>". Files are always passed as
+// Shortcut, an Automator workflow, an AppleScript/JXA script, "Open with <app>", "Move to <folder>", a webhook (the files or
+// their details sent to the user's https address, secret headers in the Keychain: ShareUploader.swift). An action can have a
+// key (⌥1…⌥9 while the shelf has the keyboard) and a next action (its output files, else the same files, go on to it);
+// actions can be exported and imported as JSON without secrets or approvals (ShelfActionsIO.swift). Files are always passed as
 // separate arguments (absolute paths, so none can be read as an option), never inside a shell string; programs get a small
 // environment of their own, a timeout and Cancel; their output can go to the clipboard or the shelf. A script runs only after
 // the user said yes to that exact file (its SHA-256): a changed script asks again. Tested by --shelf-test with hostile names.
@@ -9,7 +12,7 @@ import CryptoKit
 import Foundation
 
 struct ShelfAction: Codable, Equatable, Identifiable {
-    enum Kind: String, Codable, CaseIterable { case shell, shortcut, automator, applescript, openWith, moveTo }
+    enum Kind: String, Codable, CaseIterable { case shell, shortcut, automator, applescript, openWith, moveTo, webhook }
     enum Output: String, Codable, CaseIterable { case ignore, clipboard, shelf }
     var id = UUID()
     var name: String
@@ -22,6 +25,12 @@ struct ShelfAction: Codable, Equatable, Identifiable {
     var instant = false
     /// The SHA-256 of what the user allowed to run (scripts and workflows; "shortcut:<name>" for a Shortcut). nil: ask first.
     var approved: String? = nil
+    /// A webhook's method and body (the address is `target`).
+    var hook: WebhookSpec? = nil
+    /// ⌥ + this digit (1–9) runs it while the shelf has the keyboard.
+    var key: Int? = nil
+    /// The action that runs next, on this one's output files (else the same files).
+    var then: UUID? = nil
 
     static let timeouts: [Double] = [30, 120, 600, 3600]
 
@@ -33,6 +42,7 @@ struct ShelfAction: Codable, Equatable, Identifiable {
         case .applescript: return "applescript"
         case .openWith: return "arrow.up.forward.app"
         case .moveTo: return "folder"
+        case .webhook: return "paperplane"
         }
     }
 
@@ -44,11 +54,12 @@ struct ShelfAction: Codable, Equatable, Identifiable {
         case .applescript: return L("AppleScript or JavaScript")
         case .openWith: return L("Open with an app")
         case .moveTo: return L("Move to a folder")
+        case .webhook: return L("Webhook")
         }
     }
 
-    /// Runs code the user wrote (asks once per version of it).
-    var runsCode: Bool { [.shell, .shortcut, .automator, .applescript].contains(kind) }
+    /// Runs code the user wrote, or sends files to an address (asks once per version of it).
+    var runsCode: Bool { [.shell, .shortcut, .automator, .applescript, .webhook].contains(kind) }
 }
 
 enum ShelfActionEngine {
@@ -59,7 +70,7 @@ enum ShelfActionEngine {
     static let maxFiles = 1000
 
     enum Problem: Error, LocalizedError, Equatable {
-        case missing(String), badName, newlineInName(String), tooMany, notApproved
+        case missing(String), badName, newlineInName(String), tooMany, notApproved, badAddress(String)
         var errorDescription: String? {
             switch self {
             case .missing(let p): return String(format: L("%@ isn't there any more"), (p as NSString).lastPathComponent)
@@ -67,6 +78,7 @@ enum ShelfActionEngine {
             case .newlineInName(let n): return String(format: L("Automator can't take a file whose name has a line break (%@)"), n)
             case .tooMany: return String(format: L("At most %d files at a time"), ShelfActionEngine.maxFiles)
             case .notApproved: return L("This action hasn't been allowed to run yet")
+            case .badAddress(let why): return why
             }
         }
     }
@@ -77,6 +89,8 @@ enum ShelfActionEngine {
         case .shortcut:
             let n = a.target.trimmingCharacters(in: .whitespacesAndNewlines)
             if n.isEmpty || n.hasPrefix("-") || n.contains(where: \.isNewline) { return .badName }
+        case .webhook:
+            if let p = ShareWebhook.problem(a.target) { return .badAddress(p) }
         case .shell, .automator, .applescript, .openWith, .moveTo:
             if !a.target.hasPrefix("/") || !fileExists(a.target) { return .missing(a.target) }
         }
@@ -113,7 +127,7 @@ enum ShelfActionEngine {
         case .applescript:
             let js = ["js", "jxa"].contains((a.target as NSString).pathExtension.lowercased())
             return Command(path: osascript, args: (js ? ["-l", "JavaScript"] : []) + [a.target] + paths)
-        case .openWith, .moveTo:
+        case .openWith, .moveTo, .webhook:
             throw Problem.missing(a.target)          // not a program: see run()
         }
     }
@@ -129,8 +143,18 @@ enum ShelfActionEngine {
             let doc = URL(fileURLWithPath: a.target).appendingPathComponent("Contents/document.wflow")
             guard let d = try? Data(contentsOf: doc), d.count <= 32 << 20 else { return nil }
             return sha256(d)
+        case .webhook:
+            let h = a.hook ?? WebhookSpec()
+            return "webhook:\(h.method) \(h.body.rawValue) " + a.target.trimmingCharacters(in: .whitespacesAndNewlines)
         case .openWith, .moveTo: return nil
         }
+    }
+
+    /// What a webhook's first run asks.
+    static func webhookQuestion(_ a: ShelfAction) -> String {
+        let h = a.hook ?? WebhookSpec()
+        return String(format: h.body == .file ? L("It sends the files to %@. Cocaine asks again if the address changes.")
+                                              : L("It sends the files' names and sizes to %@. Cocaine asks again if the address changes."), a.target)
     }
 
     static func sha256(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
@@ -162,6 +186,20 @@ enum ShelfActionEngine {
         case .moveTo:
             let r = ShelfFiles.transfer(files, into: URL(fileURLWithPath: a.target), move: true, cancel: cancel)
             return Outcome(ok: r.problem == nil, output: "", errors: r.problem ?? "", movedTo: r.done)
+        case .webhook:
+            var spec = a.hook ?? WebhookSpec()
+            if files.isEmpty { spec.body = .json }                 // a test run: the (empty) list of files, nothing else
+            let headers = (try? secrets.load(ShareWebhook.secretAccount(a.id)))?["headers"] ?? ""
+            do {
+                let out = try ShareWebhook.run(url: a.target, spec: spec, files: files, secretHeaders: headers, timeout: max(1, a.timeout), cancel: cancel, http: http())
+                return Outcome(ok: true, output: out, errors: "")
+            } catch ShareError.cancelled {
+                return Outcome(ok: false, output: "", errors: "", cancelled: true)
+            } catch ShareError.timeout {
+                return Outcome(ok: false, output: "", errors: "", timedOut: true)
+            } catch {
+                return Outcome(ok: false, output: "", errors: ShareError.from(error).localizedDescription)
+            }
         case .shell, .shortcut, .automator, .applescript:
             var outFile: URL?
             if a.kind == .shortcut && a.output != .ignore {
@@ -178,6 +216,10 @@ enum ShelfActionEngine {
                            timedOut: r.timedOut, cancelled: r.cancelled)
         }
     }
+
+    /// Where webhook actions' secret headers are (the Keychain; memory in tests and renders) and the HTTP client (tests: a fake).
+    static var secrets: ShareSecretStore = AppDefaults.isolated ? MemorySecretStore() : KeychainSecretStore()
+    static var http: () -> ShareHTTP = { ShareHTTP() }
 
     static func openWith(_ app: URL, _ files: [URL]) -> Bool {
         let cfg = NSWorkspace.OpenConfiguration()

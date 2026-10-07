@@ -359,6 +359,9 @@ enum ShelfKeys {
         guard shown else { return false }
         let store = center.store
         let cmd = flags.contains(.command), shift = flags.contains(.shift)
+        if center.sheet == nil, !editing, let a = ShelfActionKeys.action(code, flags: flags, in: center.config.config.actions), !store.items.isEmpty {
+            center.perform(a); return true                                                 // ⌥1…⌥9: the user's action keys
+        }
         let others = flags.intersection([.control, .option])
         guard others.isEmpty else { return false }
         if let sheet = center.sheet {

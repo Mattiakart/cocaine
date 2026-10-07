@@ -63,7 +63,10 @@ struct ShelfSettingsBody: View {
             ForEach(config.config.watched) { f in folderRow(f) }
             divider
             section(L("Your actions")) {
-                ValueButton(id: "shelf.addAction", title: L("Add an action"), value: L("Add…"), spec: { addActionSpec }, onPick: { addAction($0) })
+                HStack(spacing: Space.s) {
+                    ShelfActionsIOButtons(config: config)                         // Sources/ShelfActionsIO.swift
+                    ValueButton(id: "shelf.addAction", title: L("Add an action"), value: L("Add…"), spec: { addActionSpec }, onPick: { addAction($0) })
+                }
             }
             if config.config.actions.isEmpty {
                 Text(L("Scripts, Shortcuts, workflows, apps or folders to use on the selected items. Files are passed one by one, never through a shell line."))
@@ -266,6 +269,18 @@ struct ShelfSettingsBody: View {
 
     private func addAction(_ id: String) {
         guard let kind = ShelfAction.Kind(rawValue: id), config.config.actions.count < ShelfConfig.maxActions else { return }
+        if kind == .webhook {
+            let spec = DialogSpec(icon: "paperplane", title: L("Webhook address"), message: L("The files (or their details) are sent there with POST. https only."),
+                                  field: DialogField(placeholder: "https://", validate: { ShareWebhook.problem($0) }),
+                                  buttons: [DialogButton(id: "ok", title: L("Add"), needsValidInput: true), Dialogs.cancel], surface: .panel)
+            DialogCenter.shared.present(spec) { r in
+                guard case .button("ok", let text, _) = r else { return }
+                let u = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = String(format: L("Send to %@"), URL(string: u)?.host ?? u)
+                config.update { $0.actions.append(ShelfAction(name: String(name.prefix(ShelfLimits.nameChars)), kind: .webhook, target: u, hook: WebhookSpec())) }
+            }
+            return
+        }
         if kind == .shortcut {
             let spec = DialogSpec(icon: "square.2.layers.3d", title: L("Which Shortcut?"), message: L("Its name exactly as in the Shortcuts app. The files are its input."),
                                   field: DialogField(placeholder: L("Name"), validate: { t in
@@ -290,7 +305,8 @@ struct ShelfSettingsBody: View {
 
     private func actionRow(_ a: ShelfAction) -> some View {
         let problem = ShelfActionEngine.check(a)
-        let detail = problem?.localizedDescription ?? (a.kindTitle + " · " + (a.kind == .shortcut ? a.target : (a.target as NSString).lastPathComponent))
+        let shown = a.kind == .shortcut ? a.target : a.kind == .webhook ? (URL(string: a.target)?.host ?? a.target) : (a.target as NSString).lastPathComponent
+        let detail = problem?.localizedDescription ?? (a.kindTitle + " · " + shown)
         return VStack(alignment: .leading, spacing: Space.xs) {
             HStack(alignment: .center, spacing: Space.m) {
                 Image(systemName: a.symbol).font(UI.icon).foregroundStyle(Island.accent).frame(width: UI.iconColumn)
@@ -303,7 +319,13 @@ struct ShelfSettingsBody: View {
                 HStack(spacing: 2) {
                     if a.runsCode { icon("play", L("Test")) { pickers.close(); test(a) } }
                     icon("pencil", L("Rename…")) { pickers.close(); renameAction(a) }
-                    icon("trash", L("Remove"), destructive: true) { config.update { $0.actions.removeAll { $0.id == a.id } } }
+                    icon("trash", L("Remove"), destructive: true) {
+                        config.update { c in
+                            c.actions.removeAll { $0.id == a.id }
+                            for i in c.actions.indices where c.actions[i].then == a.id { c.actions[i].then = nil }
+                        }
+                        if a.kind == .webhook { try? ShelfActionEngine.secrets.delete(ShareWebhook.secretAccount(a.id)) }
+                    }
                 }
                 .fixedSize()
             }
@@ -319,6 +341,7 @@ struct ShelfSettingsBody: View {
                 Text(L("Instant")).font(UI.detail).foregroundStyle(UI.secondary)
                 CocaineSwitch(on: a.instant) { config.updateAction(a.id) { $0.instant.toggle() } }.accessibilityLabel(L("Instant"))
             }
+            ShelfActionExtras(action: a, config: config)                       // key, next action, webhook (ShelfActionsIO.swift)
         }
     }
 
@@ -356,7 +379,8 @@ struct ShelfSettingsBody: View {
         if ShelfActionEngine.needsApproval(a) {
             guard let print = ShelfActionEngine.fingerprint(a) else { return }
             let spec = DialogSpec(icon: "exclamationmark.shield", title: String(format: L("Run “%@”?"), a.name),
-                                  message: String(format: L("It runs %@ with your permissions. Cocaine asks again if it changes."), a.kind == .shortcut ? a.target : a.target),
+                                  message: a.kind == .webhook ? ShelfActionEngine.webhookQuestion(a)
+                                      : String(format: L("It runs %@ with your permissions. Cocaine asks again if it changes."), a.target),
                                   buttons: [DialogButton(id: "run", title: L("Run")), Dialogs.cancel], safeDefault: true, surface: .panel)
             DialogCenter.shared.present(spec) { r in
                 guard r.buttonID == "run" else { return }

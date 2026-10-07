@@ -485,7 +485,7 @@ final class ShelfCenter: ObservableObject {
 
     /// Runs a custom action on the selection (or on `files`, e.g. dropped on an instant action). The first time (or after its
     /// script changed) the user is asked, in the island.
-    func perform(_ a: ShelfAction, files given: [URL]? = nil) {
+    func perform(_ a: ShelfAction, files given: [URL]? = nil, depth: Int = 0) {
         sheet = nil
         let files = given ?? selectedURLs
         if let p = ShelfActionEngine.check(a) { fail(p.localizedDescription); return }
@@ -493,20 +493,21 @@ final class ShelfCenter: ObservableObject {
             guard let print = ShelfActionEngine.fingerprint(a) else { fail(String(format: L("Couldn't read %@"), (a.target as NSString).lastPathComponent)); return }
             let what = a.kind == .shortcut ? String(format: L("the Shortcut “%@”"), a.target) : a.target
             let spec = DialogSpec(icon: "exclamationmark.shield", title: String(format: L("Run “%@”?"), a.name),
-                                  message: String(format: L("It runs %@ with your permissions. Cocaine asks again if it changes."), what),
+                                  message: a.kind == .webhook ? ShelfActionEngine.webhookQuestion(a)
+                                      : String(format: L("It runs %@ with your permissions. Cocaine asks again if it changes."), what),
                                   buttons: [DialogButton(id: "run", title: L("Run")), Dialogs.cancel], safeDefault: true, surface: .island)
             DialogCenter.shared.present(spec) { [weak self] r in
                 guard r.buttonID == "run", let self else { return }
                 self.config.updateAction(a.id) { $0.approved = print }
                 var ok = a; ok.approved = print
-                self.execute(ok, files: files)
+                self.execute(ok, files: files, depth: depth)
             }
             return
         }
-        execute(a, files: files)
+        execute(a, files: files, depth: depth)
     }
 
-    private func execute(_ a: ShelfAction, files: [URL]) {
+    private func execute(_ a: ShelfAction, files: [URL], depth: Int = 0) {
         let target = store.library.current
         let started = tasks.start(a.name, work: { t, _ in try ShelfActionEngine.run(a, files: files, cancel: t) }) { [weak self] r in
             guard let self else { return }
@@ -525,6 +526,9 @@ final class ShelfCenter: ObservableObject {
                 }
                 Haptic.tap(.generic)
                 self.say(a.symbol, String(format: L("%@ done"), a.name))
+                if let next = ShelfActionChain.next(after: a, in: self.config.config.actions, depth: depth) {   // A's output → B
+                    self.perform(next, files: ShelfActionChain.files(output: o.output, moved: o.movedTo.map(\.to), fallback: files), depth: depth + 1)
+                }
             case .failure(let e): self.fail(e.localizedDescription)
             }
         }
