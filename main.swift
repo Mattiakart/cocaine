@@ -55,6 +55,8 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--calendar-tes
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--screens-test" { cliScreensTest() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" { cliRenderIsland() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" { cliRenderPanel() }
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-motion" { cliRenderMotion() }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--motion-test" { cliMotionTest() }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-demo-gif" {
     Assets.renderDemoGIF(to: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)

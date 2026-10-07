@@ -93,29 +93,17 @@ enum Feedback {
 
 // MARK: - Alerts ("an AI finished / needs you")
 
-/// Drives the overlay's animation (SwiftUI's @State needs full Xcode's macros, which the command-line tools lack).
+/// Drives the overlay's animation (SwiftUI's @State needs full Xcode's macros, which the command-line tools lack). The model is
+/// two values: the card is shown, and how many times the flashes were asked for (the keyframes run on each new count, so a
+/// second alert restarts them cleanly instead of overlapping delayed steps).
 private final class AlertAnimation: ObservableObject {
-    @Published var tint = 0.0
     @Published var shown = false
+    @Published var flashes = 0
 
     func start() {
-        let reduce = Motion.reduce
-        withAnimation(.easeOut(duration: 0.25)) { shown = true }
-        for (i, value) in Motion.flashes(reduce: reduce).enumerated() {     // two flashes (one soft tint with Reduce Motion)
-            DispatchQueue.main.asyncAfter(deadline: .now() + (reduce ? 0.5 : 0.2) * Double(i)) {
-                withAnimation(.easeInOut(duration: reduce ? 0.45 : 0.18)) { self.tint = value }
-            }
-        }
+        Motion.with(.appear) { shown = true }
+        flashes += 1                                                     // two flashes (one soft tint with Reduce Motion)
     }
-}
-
-/// The system's Reduce Motion setting: no morphing island, no strobing alert.
-enum Motion {
-    static var reduce: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    /// The alert's full-screen tints: two quick white flashes, or one soft tint that fades.
-    static func flashes(reduce: Bool) -> [Double] { reduce ? [0.18, 0] : [0.55, 0, 0.55, 0] }
-    /// The island's open/close and its wings: springs, or no motion at all (it appears and goes at once).
-    static func island(_ a: Animation) -> Animation? { reduce ? nil : a }
 }
 
 /// Full-screen overlay on every screen: two quick flashes, then a card with the message for a few seconds.
@@ -127,7 +115,14 @@ private struct AlertView: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(anim.tint)
+            Color.white.keyframeAnimator(initialValue: 0.0, trigger: anim.flashes) { c, v in c.opacity(Motion.disabled ? 0 : v) } keyframes: { _ in
+                let steps = Motion.flashSteps(reduce: Motion.reduce)
+                let step = { (i: Int) in i < steps.count ? steps[i] : (value: 0.0, duration: 0.001) }
+                CubicKeyframe(step(0).value, duration: step(0).duration)
+                CubicKeyframe(step(1).value, duration: step(1).duration)
+                CubicKeyframe(step(2).value, duration: step(2).duration)
+                CubicKeyframe(step(3).value, duration: step(3).duration)
+            }
             VStack(spacing: 10) {
                 Image(nsImage: Baggie.image(level: 1, size: 64))
                 Text(title).font(.system(size: 28, weight: .bold))
@@ -139,8 +134,7 @@ private struct AlertView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 36).padding(.vertical, 26)
             .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 22))
-            .opacity(anim.shown ? 1 : 0)
-            .scaleEffect(anim.shown ? 1 : 0.92)
+            .modifier(MotionEnter(t: anim.shown ? 0 : 1, edge: nil, anchor: .center, reduce: Motion.reduce))
         }
         .ignoresSafeArea()
     }
@@ -187,7 +181,7 @@ final class Alerter {
         shownAt = nil
         guard animated else { closing.forEach { $0.orderOut(nil) }; return }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.4
+            ctx.duration = Motion.disabled ? 0 : Motion.Duration.slow
             closing.forEach { $0.animator().alphaValue = 0 }
         }, completionHandler: { closing.forEach { $0.orderOut(nil) } })
     }

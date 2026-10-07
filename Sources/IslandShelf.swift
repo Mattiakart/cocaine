@@ -46,7 +46,9 @@ extension IslandView {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Shelf")).font(UI.section).foregroundStyle(UI.secondary)
                 if model.shelf.urls.isEmpty {
-                    RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])).foregroundStyle(.white.opacity(0.25))
+                    RoundedRectangle(cornerRadius: 12).strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+                        .foregroundStyle(model.dropHover ? Island.accent : .white.opacity(0.25))           // files over the island: here
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Island.accent.opacity(model.dropHover ? 0.12 : 0)))
                         .overlay(Text(L("Drag files onto the notch, then drop them here")).font(UI.value).foregroundStyle(UI.hint).multilineTextAlignment(.center).padding(.horizontal, 12))
                         .frame(height: 96)
                 } else {
@@ -74,8 +76,12 @@ extension IslandView {
                                 .offset(x: 6, y: -6)
                             }
                             .onDrag { NSItemProvider(object: u as NSURL) }
+                            .motionAppear(edge: .top, anchor: .center)          // a file lands (and leaves) in place
                         }
-                    }.padding(.top, 6) }
+                    }
+                    .padding(.top, 6)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Island.accent.opacity(model.dropHover ? 0.10 : 0)).padding(-4))
+                    .animation(Motion.animation(.notice), value: model.shelf.urls) }
                 }
                 Text(L("Kept until you remove them; the files aren’t copied")).font(UI.detail).foregroundStyle(UI.hint)
                     .fixedSize(horizontal: false, vertical: true)

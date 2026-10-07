@@ -436,15 +436,4 @@ final class ScreenLayoutStore: ObservableObject {
     var isStandard: Bool { layout == .standard }
 }
 
-/// The motion of screens and of their editor, in small named pieces (the app-wide motion pass tunes them in one place).
-/// Reduce Motion: no movement, a plain cross-fade at most.
-enum ScreensMotion {
-    /// A screen replacing another in the open island.
-    static var change: Animation? { Motion.reduce ? .easeInOut(duration: 0.12) : .spring(response: 0.32, dampingFraction: 0.88) }
-    static var pageTransition: AnyTransition {
-        Motion.reduce ? .opacity : .asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity)
-    }
-    /// Editing: reordering, showing and hiding, resizing (the preview follows with the same curve).
-    static var edit: Animation? { Motion.reduce ? nil : .spring(response: 0.3, dampingFraction: 0.86) }
-    static var rowTransition: AnyTransition { Motion.reduce ? .opacity : .opacity.combined(with: .move(edge: .top)) }
-}
+// The motion of screens and of their editor: ScreensMotion in Sources/Motion.swift.

@@ -23,6 +23,8 @@ Where things are:
   ScreensTests.swift (--screens-test, render fixtures).
 - AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices), Agent*.swift (sessions, approvals, focus, list).
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
+- Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
+  MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).
 - Assets.swift (the baggie glyph, --render-assets), RenderTools.swift (--render-panel, --render-island), SelfTests.swift and
   *Tests.swift (the test flags; UXTests.swift: --ux-test, also part of --selftest).
 - Strings of the shortcuts, keyboard and accessibility work and its fixes: Localization/<lang>.lproj/Keys.strings.

@@ -178,7 +178,7 @@ struct PanelView: View {
         Button(action: { Haptic.tap(.alignment); action() }) {
             Image(systemName: symbol).font(UI.chevron).frame(width: 24, height: 24).contentShape(Rectangle())   // a 24 pt target
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle())
         .accessibilityLabel(label)
     }
 
@@ -189,7 +189,7 @@ struct PanelView: View {
             Divider().frame(height: 12)
             ZStack {
                 Text(durationLabel(1425)).hidden()
-                Text(durationLabel(m.timerMinutes))
+                Text(durationLabel(m.timerMinutes)).motionNumber(m.timerMinutes)     // − / + and scrolling roll the digits
             }
             .font(UI.value.monospacedDigit()).lineLimit(1).padding(.horizontal, Space.m)
             Divider().frame(height: 12)
@@ -376,7 +376,7 @@ struct PanelView: View {
     /// Check, Install (or the Homebrew command / the download page when this copy can't update itself), Cancel, Retry.
     @ViewBuilder private var updateControl: some View {
         switch up.phase {
-        case .checking, .installing: ProgressView().controlSize(.small).frame(height: CTL.h)
+        case .checking, .installing: BusyDots(label: L("Working")).frame(height: CTL.h)
         case .downloading: Button(L("Cancel")) { up.cancel() }.buttonStyle(CocaineButtonStyle())
         case .available:
             if up.eligibility == .homebrew {
@@ -660,8 +660,9 @@ struct PanelView: View {
                         .background(RoundedRectangle(cornerRadius: CTL.radius).fill(on ? Island.accent : CTL.fill))
                         .foregroundStyle(on ? CTL.onAccentInk : Color.primary)        // black on the accent, as every accent fill (8:1)
                         .contentShape(Rectangle())
+                        .motionSelection(on)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                 .accessibilityLabel(cal.standaloneWeekdaySymbols[day - 1])
                 .accessibilityValue(on ? L("On") : L("Off"))
                 .accessibilityAddTraits(on ? [.isToggle, .isSelected] : .isToggle)
@@ -820,13 +821,14 @@ struct PanelView: View {
                              _ action: @escaping () -> Void) -> some View {
         Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
-                RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: s.highlight, height: min(26, height - 2))
+                StripHighlight(selected: selected, width: s.highlight, height: min(26, height - 2))
                 Image(systemName: icon).font(UI.tabIcon).foregroundStyle(selected ? Color.white : UI.hint)
             }
             .frame(width: s.cell, height: height)              // the whole cell around the icon
             .contentShape(Rectangle())
+            .motionSelection(selected)
         }
-        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .buttonStyle(MotionGlyphStyle()).help(title).accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -906,12 +908,20 @@ struct PanelView: View {
                         .frame(maxWidth: .infinity)
                 }
 
-                switch page {
-                case "ai": aiTab
-                case "auto": automationTab
-                case "island": islandTab
-                default: generalTab
+                // A tab change slides the new page in from the side of its tab (Reduce Motion: a cross-fade).
+                ZStack(alignment: .topLeading) {
+                    Group {
+                        switch page {
+                        case "ai": aiTab
+                        case "auto": automationTab
+                        case "island": islandTab
+                        default: generalTab
+                        }
+                    }
+                    .id(page)
+                    .transition(Motion.page(m.pager))
                 }
+                .animation(Motion.animation(.page), value: page)
 
                 if s == nil {
                     HStack(spacing: Space.m) {
@@ -923,6 +933,9 @@ struct PanelView: View {
                 }
             }
         }
+        // A permission granted: its row leaves and the card closes up; a new language: the words cross-fade into the new ones.
+        .animation(Motion.animation(.notice), value: m.permissionProblems.count)
+        .animation(Motion.animation(.crossfade), value: m.language)
         .disabled(asking)                                    // a question is on top (PanelDialogOverlay): nothing under it reacts
         .accessibilityHidden(asking)                         // …and VoiceOver reads only the question
         .padding(.horizontal, Space.frame).padding(.bottom, Space.frame).padding(.top, g == nil ? Space.frame : Layout.overscan)
@@ -943,6 +956,8 @@ struct PanelView: View {
 
 /// The panel's tabs, and which side of the notch each goes on (pure: --layout-test and --selftest check it).
 enum PanelTabs {
+    /// Every tab in the order they are drawn (the pages slide by it).
+    static let order = ["", "ai", "auto", "island"]
     static func list(ai: Bool, island: Bool) -> [String] { [""] + (ai ? ["ai"] : []) + ["auto"] + (island ? ["island"] : []) }
     /// Left of the notch: General and AI alerts (after the back button); right: Automation and Island (before Quit).
     static func split(_ tabs: [String]) -> (left: [String], right: [String]) {
@@ -985,11 +1000,11 @@ struct TimeStepper: View {
     var body: some View {
         HStack(spacing: 0) {
             Button { step(-1) } label: { Image(systemName: "minus").font(UI.chevron).frame(width: 22, height: CTL.h).contentShape(Rectangle()) }
-                .buttonStyle(.plain).accessibilityLabel(L("Earlier"))
+                .buttonStyle(MotionGlyphStyle()).accessibilityLabel(L("Earlier"))
             ValueButton(id: id, title: title, value: Self.label(minutes), maxWidth: 90, spec: { spec }, onPick: { minutes = Int($0) ?? minutes })
                 .padding(.trailing, 6)
             Button { step(1) } label: { Image(systemName: "plus").font(UI.chevron).frame(width: 22, height: CTL.h).contentShape(Rectangle()) }
-                .buttonStyle(.plain).accessibilityLabel(L("Later"))
+                .buttonStyle(MotionGlyphStyle()).accessibilityLabel(L("Later"))
         }
         .frame(height: CTL.h)
         .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
@@ -1015,17 +1030,19 @@ struct PanelDialogOverlay: View {
         let on = dialogs.isShowing(on: .panel)
         ZStack(alignment: .top) {
             if on {
-                Color.black.opacity(0.72).contentShape(Rectangle()).onTapGesture { dialogs.cancel() }   // as dim as the old 0.4 × 0.45 page
+                Color.black.opacity(Motion.reduceTransparency ? 0.8 : 0.72).contentShape(Rectangle()).onTapGesture { dialogs.cancel() }   // as dim as the old 0.4 × 0.45 page
+                    .transition(.opacity)
                 InAppDialogCard(center: dialogs, style: UI.dialog)
                     .background(GeometryReader { r in Color.clear.preference(key: DialogCardHeight.self, value: r.size.height) })
                     .padding(.horizontal, Space.frame)
                     .padding(.top, Self.top(notch: m.island ? NotchGeometry.current() : nil))
-                    .transition(.opacity)
+                    .id(dialogs.current?.id)
+                    .motionAppear(edge: .top)              // from just above, as the dim fades in (Reduce Motion: a fade)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onPreferenceChange(DialogCardHeight.self) { h in if abs(dialogs.cardHeight - h) > 0.5 { dialogs.cardHeight = h } }
-        .animation(.easeOut(duration: 0.15), value: dialogs.current?.id)
+        .animation(Motion.animation(.dialog), value: dialogs.current?.id)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
     }

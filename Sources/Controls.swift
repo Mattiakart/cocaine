@@ -52,6 +52,24 @@ extension View {
 
 final class HoverState: ObservableObject { @Published var on = false }
 
+/// A cell's highlight in the island's and the panel's top strips: white .16 when selected, a faint .08 while the pointer is
+/// over it, fading between them.
+struct StripHighlight: View {
+    let selected: Bool
+    let width: CGFloat
+    let height: CGFloat
+    @StateObject private var hover = HoverState()
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(selected ? 0.16 : hover.on ? 0.08 : 0))
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .onHover { hover.on = $0 }
+            .animation(Motion.animation(.hover), value: hover.on)
+            .animation(Motion.animation(.selection), value: selected)
+    }
+}
+
 // MARK: - Text buttons
 
 enum CocaineButtonKind {
@@ -108,7 +126,7 @@ private struct CocaineButtonBody<Label: View>: View {
     var body: some View {
         let big = height > CTL.h
         HStack(spacing: 6) {
-            if busy { ProgressView().controlSize(.mini).frame(width: 12, height: 12) }
+            if busy { BusyDots(color: ink).transition(.opacity) }
             label.lineLimit(1)
         }
         .font(big || kind == .primary || kind == .destructiveFilled ? CTL.labelStrong : CTL.label)
@@ -118,10 +136,11 @@ private struct CocaineButtonBody<Label: View>: View {
         .frame(height: height)
         .background(Capsule().fill(fill))
         .contentShape(Capsule())
-        .scaleEffect(pressed ? 0.97 : 1)
+        .animation(Motion.animation(.hover), value: hover.on)
+        .motion(.crossfade, value: busy)
+        .pressable(pressed)
         .opacity(enabled || dimmedByContainer ? 1 : CTL.disabled)
         .onHover { hover.on = $0 }
-        .animation(.easeOut(duration: 0.12), value: pressed)
     }
 }
 
@@ -185,15 +204,29 @@ struct Segments<T: Hashable>: View {
     @Environment(\.dimmedByContainer) private var dimmedByContainer
 
     var body: some View {
+        let slide = !Motion.reduce                   // Reduce Motion: no sliding pill, each segment fades its own fill
+        let index = values.firstIndex(of: selection)
         EqualWidthHStack(spacing: 2) {
             ForEach(values, id: \.self) { v in
-                SegmentCell(title: label(v), short: compact?(v), spoken: spoken(v) ?? label(v), on: v == selection) {
+                SegmentCell(title: label(v), short: compact?(v), spoken: spoken(v) ?? label(v), on: v == selection, ownFill: !slide) {
                     guard v != selection else { return }
                     ControlHaptics.tap()
-                    selection = v
+                    Motion.with(.selection) { selection = v }
                 }
             }
         }
+        .background(alignment: .leading) {
+            if slide, let index {                     // the selected segment's pill slides from one segment to the next
+                GeometryReader { r in
+                    let n = CGFloat(values.count), w = (r.size.width - 2 * (n - 1)) / n
+                    RoundedRectangle(cornerRadius: CTL.radius - 2).fill(CTL.accent)
+                        .frame(width: w, height: r.size.height)
+                        .offset(x: CGFloat(index) * (w + 2))
+                }
+                .transition(.opacity)
+            }
+        }
+        .motionSelection(index)
         .padding(2)
         .frame(height: CTL.h)
         .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
@@ -209,6 +242,7 @@ private struct SegmentCell: View {
     var short: String? = nil
     let spoken: String
     let on: Bool
+    var ownFill = true                          // false: the control's sliding pill is the selected fill
     let action: () -> Void
     @StateObject private var hover = HoverState()
 
@@ -229,10 +263,11 @@ private struct SegmentCell: View {
                 .foregroundStyle(on ? CTL.onAccentInk : Color.white.opacity(DisplayOptions.contrast ? 0.95 : 0.78))
                 .padding(.horizontal, 3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: CTL.radius - 2).fill(on ? CTL.accent : hover.on ? Color.white.opacity(0.08) : .clear))
+                .background(RoundedRectangle(cornerRadius: CTL.radius - 2).fill(on ? (ownFill ? CTL.accent : .clear) : hover.on ? Color.white.opacity(0.08) : .clear))
                 .contentShape(Rectangle())
+                .animation(Motion.animation(.hover), value: hover.on)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .onHover { hover.on = $0 }
         .help(spoken == title ? "" : spoken)
         .accessibilityLabel(spoken)
@@ -276,7 +311,8 @@ struct CocaineSlider: View {
                 }
                 .onEnded { g in
                     let v = at(g.location.x - knob / 2, w)
-                    drag.value = nil
+                    // Let go: the knob settles on the value with a spring that starts from where the finger left it.
+                    Motion.with(.dragSettle) { drag.value = nil }
                     set(v)
                 })
         }
@@ -458,7 +494,9 @@ final class PickerCenter: ObservableObject {
     /// The coordinate space value buttons and the dropdown layer share (the panel's whole page).
     static let space = "cocaine.picker"
 
-    @Published private(set) var state: PickerLogic.State?
+    @Published private(set) var state: PickerLogic.State? { didSet { if let state { last = state } } }
+    /// The last dropdown shown: what the card still draws while it leaves (the state is already nil then).
+    private(set) var last: PickerLogic.State?
     @Published private(set) var anchor: CGRect = .zero           // the value button, in `space`
     @Published var cardHeight: CGFloat = 0
     private var onPick: ((String) -> Void)?
@@ -553,11 +591,11 @@ final class PickerCenter: ObservableObject {
         case .pick(let id):
             ControlHaptics.tap()
             let f = onPick
-            close()
-            f?(id)
+            // The dropdown leaves, and what the pick changes (a value, rows appearing) moves with the same curve.
+            Motion.with(.dropdown) { close(); f?(id) }
         case .toggled(let set):
             ControlHaptics.tap()
-            onChange?(set)
+            Motion.with(.selection) { onChange?(set) }
         case .close: close()
         case .none, .pass: break
         }
@@ -595,9 +633,11 @@ struct ValueButton: View {
             .padding(.horizontal, 6)
             .background(Capsule().fill(Color.white.opacity(isOpen ? 0.12 : hover.on ? 0.07 : 0)))
             .contentShape(Capsule())
+            .animation(Motion.animation(.hover), value: hover.on)
+            .motionSelection(isOpen)
             .padding(.trailing, -6)                     // the text ends on the content edge; the hover pill reaches past it
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .onHover { hover.on = $0 }
         .background(GeometryReader { r in
             Color.clear
@@ -626,9 +666,10 @@ struct IslandValueButton: View {
             .frame(height: CTL.h).padding(.horizontal, 6)
             .background(Capsule().fill(Color.white.opacity(hover.on ? 0.07 : 0)))
             .contentShape(Capsule())
+            .animation(Motion.animation(.hover), value: hover.on)
             .padding(.horizontal, -6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .onHover { hover.on = $0 }
         .accessibilityLabel(title)
         .accessibilityValue(value)
@@ -677,13 +718,16 @@ struct ChoiceRow: View {
                 Spacer(minLength: Space.xs)
                 if showsCheckColumn {
                     Image(systemName: "checkmark").font(iconFont).foregroundStyle(CTL.accent).opacity(checked ? 1 : 0)
+                        .scaleEffect(checked || Motion.reduce ? 1 : 0.6)            // the check mark pops in
                 }
             }
             .padding(.horizontal, Space.m).frame(minHeight: 28)
             .background(RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(highlighted ? 0.10 : 0.04)))
             .contentShape(Rectangle())
+            .animation(Motion.animation(.hover), value: highlighted)
+            .motionSelection(checked)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .onHover(perform: hover)
         .accessibilityAddTraits(checked && selectable ? .isSelected : [])
         .accessibilityValue(highlighted && !checked ? L10nControls.highlighted : "")
@@ -699,9 +743,11 @@ struct ChoiceRow: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 4).fill(on ? CTL.accent : Color.clear)
                 RoundedRectangle(cornerRadius: 4).strokeBorder(on ? Color.clear : Color.white.opacity(0.3), lineWidth: 1)
-                if on { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(CTL.onAccentInk) }   // a glyph
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(CTL.onAccentInk)   // a glyph
+                    .opacity(on ? 1 : 0).scaleEffect(on || Motion.reduce ? 1 : 0.5)
             }
             .frame(width: 16, height: 16)
+            .motionSelection(on)
             if let icon { Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit).frame(width: 16, height: 16) }
         }
     }
@@ -714,7 +760,7 @@ struct PickerCard: View {
     @ObservedObject var center: PickerCenter
 
     var body: some View {
-        if let st = center.state { card(st) }
+        if let st = center.state ?? center.last { card(st) }       // (leaving: the last one, as it was)
     }
 
     private func card(_ st: PickerLogic.State) -> some View {
@@ -803,18 +849,24 @@ struct PickerLayer: View {
     static let gap: CGFloat = 4
 
     var body: some View {
-        if center.isOpen(on: surface) {
-            ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { center.close() }
+        let open = center.isOpen(on: surface)
+        // Always there (empty while closed), so the card can arrive and leave: it drops a few points out from under its row and
+        // grows to its size, and goes back the same way (Reduce Motion: it fades). Another dropdown replaces it the same way.
+        ZStack(alignment: .topLeading) {
+            if open { Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { center.close() } }
+            if open {
                 PickerCard(center: center)
                     .frame(width: width)
                     .background(GeometryReader { r in Color.clear.preference(key: PickerCardHeight.self, value: r.size.height) })
                     .padding(.leading, x)
                     .padding(.top, Self.top(center.anchor))
+                    .id(center.state?.spec.id ?? "")
+                    .motionAppear(edge: .top, anchor: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onPreferenceChange(PickerCardHeight.self) { h in center.measured(h) }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onPreferenceChange(PickerCardHeight.self) { h in if open { center.measured(h) } }
+        .animation(Motion.animation(.dropdown), value: center.state?.spec.id)
     }
 
     /// The card's top: under its row, always (never above it, so never up into the notch).

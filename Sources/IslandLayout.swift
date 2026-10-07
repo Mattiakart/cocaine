@@ -25,9 +25,8 @@ enum Island {
     static let openSize = CGSize(width: 640, height: 214)
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     static let slack: CGFloat = 8                              // room around the open island for the spring's overshoot
-    /// Opening: quick off the mark, with a touch of give at the end. Closing: a bit quicker, settling without a bounce.
-    static let openSpring = Animation.spring(response: 0.4, dampingFraction: 0.78)
-    static let closeSpring = Animation.spring(response: 0.32, dampingFraction: 0.9)
+    /// Opening: quick off the mark, with a touch of give at the end (Motion.bouncy). Closing: a bit quicker, settling without
+    /// a visible bounce (Motion.smooth). See Motion.island.
     static var forceExternal = false                           // the render tool: show the Monitors tab
     /// The Monitors tab: an external monitor on a Mac that can talk DDC/CI to it (Apple silicon).
     static var external: Bool { forceExternal || (DDCDisplays.supported && !DDCDisplays.externalNames.isEmpty) }
@@ -287,14 +286,20 @@ struct CellMorph: ViewModifier, Animatable {
 }
 
 /// The open page below the strip: it grows with the island's width (so it is never cut by the sides), fades in a beat after
-/// the island starts to open, and goes first on closing.
+/// the island starts to open, and goes first on closing. It is a function of the morph's progress alone and is in the view
+/// only while that progress is above 0 (`mounted`), so an island reopened half-way through closing keeps the same page, at the
+/// same moment, and carries on (no restart, no second copy), and a closed island holds no page at all.
 struct PageReveal: ViewModifier, Animatable {
     var pose: IslandPose
     let layout: IslandLayout
     var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> { get { pose.data } set { pose.data = newValue } }
-    func body(content: Content) -> some View {
-        let c = Island.smooth((pose.p - 0.35) / 0.55)
-        let scale = min(1, max(0.5, layout.bodyWidth(pose) / IslandLayout.openBody))
-        return content.opacity(c).scaleEffect(scale, anchor: .top).offset(y: -8 * (1 - c))
+    static func mounted(_ p: CGFloat) -> Bool { p > 0.01 }
+    @ViewBuilder func body(content: Content) -> some View {
+        if Self.mounted(pose.p) {
+            let c = Island.smooth((pose.p - 0.35) / 0.55)
+            let scale = min(1, max(0.5, layout.bodyWidth(pose) / IslandLayout.openBody))
+            content.opacity(c).scaleEffect(scale, anchor: .top).offset(y: -8 * (1 - c))
+                .transition(.identity)                   // its fade is the progress itself, not a transition on top
+        }
     }
 }

@@ -76,14 +76,14 @@ extension Island {
     static let hudRoom: CGFloat = 52
     /// Its heights: a bar, or up to two lines of text.
     static func hudHeight(_ item: HUDItem?) -> CGFloat { item?.isLevel ?? true ? 30 : 42 }
-    /// Dropping out of the notch: quick, with a touch of give.
-    static func hudDrop(reduce: Bool) -> Animation { reduce ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.8) }
-    /// Going back up into the notch: smooth, no bounce.
-    static func hudRetract(reduce: Bool) -> Animation { reduce ? .easeIn(duration: 0.15) : .spring(response: 0.28, dampingFraction: 1) }
-    /// The bar running to its new level (never rebuilt: the same bar moves).
-    static func hudBar(reduce: Bool) -> Animation? { reduce ? nil : .spring(response: 0.22, dampingFraction: 0.9) }
+    /// Dropping out of the notch: quick, with a touch of give (Motion's hudDrop role: the bouncy spring).
+    static func hudDrop(reduce: Bool) -> Animation? { Motion.animation(.hudDrop, reduce: reduce) }
+    /// Going back up into the notch: smooth (hudRetract: the smooth spring).
+    static func hudRetract(reduce: Bool) -> Animation? { Motion.animation(.hudRetract, reduce: reduce) }
+    /// The bar running to its new level (never rebuilt: the same bar moves; a new level retargets the running spring).
+    static func hudBar(reduce: Bool) -> Animation? { Motion.animation(.hudBar, reduce: reduce) }
     /// Another kind in the same container: icon and label cross-fade, the height follows.
-    static func hudSwap(reduce: Bool) -> Animation { reduce ? .linear(duration: 0.1) : .easeInOut(duration: 0.18) }
+    static func hudSwap(reduce: Bool) -> Animation? { Motion.animation(.hudSwap, reduce: reduce) }
 }
 
 // MARK: - The outline
@@ -155,23 +155,27 @@ struct IslandHUDView: View {
 
     var body: some View {
         let reduce = display.reduceMotion || Motion.reduce
-        let visible = here && model.hudShown && !islandOpen
+        let frame = model.hudItem == nil ? nil : Motion.frame             // the render aid: one moment of the drop
+        let visible = frame.map { $0 > 0 } ?? (here && model.hudShown && !islandOpen)
+        // One value drives the drop and the content: a new HUD while one is down keeps it down and only swaps what is inside;
+        // a reversal mid-way retargets the spring from where the container is.
+        let reveal = frame ?? (visible ? 1 : 0)
         let item = model.hudItem
         let h = Island.hudHeight(item)
         let join = layout.top + notchH
-        let shape = HUDShape(reveal: visible ? 1 : 0, height: h, left: layout.notchLeft, right: layout.notchRight, join: join,
+        let shape = HUDShape(reveal: reduce ? 1 : reveal, height: h, left: layout.notchLeft, right: layout.notchRight, join: join,
                              filletLeft: pose.leftW > 1, filletRight: pose.rightW > 1)
         ZStack(alignment: .topLeading) {
             if reduce {
-                shape.fill(Color.black).opacity(visible ? 1 : 0)                          // Reduce Motion: fades, never moves
+                shape.fill(Color.black).opacity(Double(reveal))                          // Reduce Motion: fades, never moves
             } else {
                 shape.fill(Color.black)
             }
             content(item, h: h, reduce: reduce)
                 .frame(width: layout.notchRight - layout.notchLeft, height: h)
                 .offset(x: layout.notchLeft, y: join)
-                .modifier(HUDContentReveal(reveal: visible ? 1 : 0, reduce: reduce))
-                .opacity(reduce && !visible ? 0 : 1)
+                .modifier(HUDContentReveal(reveal: reveal, reduce: reduce))
+                .opacity(reduce ? Double(reveal) : 1)
                 .mask(shape)
         }
         .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
@@ -187,7 +191,7 @@ struct IslandHUDView: View {
                 Image(systemName: item.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Island.accent)
                     .frame(width: 18)
                     .contentTransition(.symbolEffect(.replace))
-                    .animation(reduce ? nil : .easeInOut(duration: 0.15), value: item.icon)
+                    .animation(Island.hudSwap(reduce: reduce), value: item.icon)
                 if let level = item.level {
                     HUDBar(level: level, reduce: reduce)
                 } else {

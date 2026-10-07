@@ -11,7 +11,13 @@ import UniformTypeIdentifiers
 final class ScreensEditorState: ObservableObject {
     static let shared = ScreensEditorState()
     @Published var editing: String?
-    var dragging: String?
+    /// The row being dragged, lifted while the drag is over the list (DragLift: it never stays up after a cancelled drag).
+    @Published private(set) var lift = DragLift()
+    var dragging: String? { lift.dragging }
+    func dragBegan(_ id: String) { lift.begin(id) }
+    func dragEntered() { lift.entered() }
+    func dragExited() { Motion.with(.dragSettle) { lift.exited() } }
+    func dragEnded() { Motion.with(.dragSettle) { lift.ended() } }
 }
 
 struct ScreensEditor: View {
@@ -121,8 +127,11 @@ struct ScreensEditor: View {
         }
         .padding(.horizontal, Space.s).padding(.vertical, Space.xs)
         .background(RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(open ? 0.08 : 0.04)))
+        .background(RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.black).opacity(state.lift.lifted(s.id) ? 1 : 0))   // lifted: opaque over the rows
+        .motionLift(state.lift.lifted(s.id))
+        .motionSelection(open)
         .onDrag {
-            state.dragging = s.id
+            state.dragBegan(s.id)
             return NSItemProvider(object: s.id as NSString)
         }
         .onDrop(of: [UTType.text], delegate: ScreenDropDelegate(target: s.id, state: state, store: store))
@@ -150,7 +159,7 @@ struct ScreensEditor: View {
             Image(systemName: symbol).font(UI.chevron).foregroundStyle(on ? Island.accent : UI.secondary)
                 .frame(width: 24, height: 24).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).disabled(disabled).opacity(disabled ? 0.3 : 1)
+        .buttonStyle(MotionGlyphStyle()).disabled(disabled).opacity(disabled ? 0.3 : 1)
         .help(label).accessibilityLabel(label)
     }
 
@@ -265,12 +274,14 @@ struct ScreenDropDelegate: DropDelegate {
     let store: ScreenLayoutStore
 
     func dropEntered(info: DropInfo) {
+        state.dragEntered()
         guard let d = state.dragging, d != target, let to = store.layout.screens.firstIndex(where: { $0.id == target }) else { return }
         withAnimation(ScreensMotion.edit) { store.update { $0.moveScreen(d, to: to) } }
     }
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool { state.dragging = nil; return true }
-    func dropExited(info: DropInfo) {}
+    /// Dropped: the row settles into its place (it is already there: the order followed the pointer).
+    func performDrop(info: DropInfo) -> Bool { state.dragEnded(); return true }
+    func dropExited(info: DropInfo) { state.dragExited() }
 }
 
 /// The island in miniature with the edited layout: its tabs (the shown screens, in order; the edited one highlighted) and the

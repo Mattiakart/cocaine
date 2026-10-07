@@ -60,6 +60,9 @@ app's signature before an atomic swap, but they stay inactive until a release sh
 built into the app; until then use `brew upgrade --cask cocaine` or the DMG. Homebrew installs are never self-replaced. Details:
 [Signature and updates](docs/signing-and-updates.en.md).
 
+**Motion**: the island, the HUD, the panel, its dialogs and dropdowns move with one set of springs and timings that stay smooth
+when an interaction is interrupted or repeated quickly, and follow Reduce Motion (fades only). Details: [Motion](docs/motion.en.md).
+
 ## Alerts when an AI finishes
 
 Leave the Mac working, and Cocaine calls you back when an AI agent finishes or needs you. When you're away, it wakes

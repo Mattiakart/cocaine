@@ -468,12 +468,14 @@ enum CalendarMotion {
 
     static let slideDistance: CGFloat = 26
     static let zoomScale: CGFloat = 0.92
-    static let spring = Spring(response: 0.36, dampingRatio: 0.86)
+    /// The arriving content's spring, and how long its keyframes run: the system's smooth spring (Sources/Motion.swift).
+    static let spring = Spring(response: Motion.smooth.response, dampingRatio: Motion.smooth.damping)
+    static var enterDuration: Double { Motion.smooth.settle }
 
-    /// Moving the selection inside what is shown (a day, an event): quick, no bounce; a plain fade with Reduce Motion.
-    static var select: Animation { Motion.reduce ? .easeInOut(duration: 0.12) : .spring(response: 0.26, dampingFraction: 0.86) }
-    /// The event's details coming in and going.
-    static var details: Animation { Motion.reduce ? .easeInOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.88) }
+    /// Moving the selection inside what is shown (a day, an event): the selection role; a plain fade with Reduce Motion.
+    static var select: Animation? { Motion.animation(.selection) }
+    /// The event's details coming in and going: the arriving role.
+    static var details: Animation? { Motion.animation(.appear) }
 
     /// Where the arriving content starts: slid in from the side it comes from (week/month/day forward = from the right), or
     /// zoomed in or out from the selected day; with Reduce Motion it only fades in.
@@ -500,15 +502,15 @@ extension View {
             let s = CalendarMotion.start(trigger.change)
             KeyframeTrack(\.dx) {
                 MoveKeyframe(s.dx)
-                SpringKeyframe(0, duration: 0.42, spring: CalendarMotion.spring)
+                SpringKeyframe(0, duration: CalendarMotion.enterDuration, spring: CalendarMotion.spring)
             }
             KeyframeTrack(\.scale) {
                 MoveKeyframe(s.scale)
-                SpringKeyframe(1, duration: 0.42, spring: CalendarMotion.spring)
+                SpringKeyframe(1, duration: CalendarMotion.enterDuration, spring: CalendarMotion.spring)
             }
             KeyframeTrack(\.opacity) {
                 MoveKeyframe(s.opacity)
-                LinearKeyframe(1, duration: Motion.reduce ? 0.15 : 0.2)
+                LinearKeyframe(1, duration: Motion.reduce ? Motion.Duration.quick : Motion.Duration.standard)
             }
         }
     }
@@ -599,7 +601,7 @@ struct CalendarPage: View {
                     .accessibilityHidden(watch.details != nil)
                 if let e = watch.details {
                     CalendarDetails(watch: watch, event: e)
-                        .transition(Motion.reduce ? .opacity : .opacity.combined(with: .offset(x: 18)))
+                        .transition(Motion.appear(.trailing))
                         .zIndex(1)
                 }
             }

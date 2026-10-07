@@ -119,7 +119,9 @@ final class DialogCenter: ObservableObject {
         let completion: (DialogResult) -> Void
     }
 
-    @Published private(set) var current: Request?
+    @Published private(set) var current: Request? { didSet { if let current { last = current } } }
+    /// The last dialog shown: what its card still draws while it leaves (current is already nil then).
+    private(set) var last: Request?
     @Published var text = "" { didSet { if text != oldValue { problem = nil } } }
     @Published var choice: String?
     @Published private(set) var problem: String?       // the text field's validation message, after a press
@@ -273,7 +275,7 @@ struct InAppDialogCard: View {
     let style: DialogStyle
 
     var body: some View {
-        if let r = center.current { card(r.spec).id(r.id) }
+        if let r = center.current ?? center.last { card(r.spec).id(r.id) }      // (leaving: the last one, as it was)
     }
 
     private func card(_ s: DialogSpec) -> some View {
@@ -393,12 +395,14 @@ struct DialogHost: ViewModifier {
 
     func body(content: Content) -> some View {
         let on = center.isShowing(on: surface)
+        // The dim fades in under the card while the card arrives from just above (Reduce Motion: both only fade); a dialog that
+        // replaces another one leaves and arrives the same way, and a quick open-close ends where the model is.
         return ZStack(alignment: .top) {
             content.disabled(on).opacity(on ? 0.4 : 1).accessibilityHidden(on)       // the page under the card isn't read
-                .overlay { if on { Color.black.opacity(DisplayOptions.shared.reduceTransparency ? 0.7 : 0.45).contentShape(Rectangle()).onTapGesture { center.cancel() } } }
-            if on { InAppDialogCard(center: center, style: style).frame(maxWidth: maxWidth).padding(inset).transition(.opacity) }
+                .overlay { if on { Color.black.opacity(DisplayOptions.shared.reduceTransparency ? 0.7 : 0.45).contentShape(Rectangle()).onTapGesture { center.cancel() }.transition(.opacity) } }
+            if on { InAppDialogCard(center: center, style: style).frame(maxWidth: maxWidth).padding(inset).id(center.current?.id).motionAppear(edge: .top) }
         }
-        .animation(.easeOut(duration: 0.15), value: center.current?.id)
+        .animation(Motion.animation(.dialog), value: center.current?.id)
     }
 }
 

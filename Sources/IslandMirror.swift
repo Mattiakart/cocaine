@@ -160,7 +160,9 @@ extension IslandView {
                     MirrorPreview(session: mr.session, flip: mr.flip)
                     if !mr.hasFrames {
                         Text(mr.stalled ? L("No picture from the camera. Is another app using it?") : L("Starting the camera…"))
-                            .font(UI.detail).multilineTextAlignment(.center).foregroundStyle(UI.secondary).padding(12)
+                            .font(UI.detail).multilineTextAlignment(.center).foregroundStyle(UI.secondary)
+                            .shimmer(!mr.stalled)                        // starting: a calm light passes over the words
+                            .padding(12)
                     }
                 }
             }

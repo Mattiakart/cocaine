@@ -54,11 +54,9 @@ struct IslandView: View {
                 strip(pose, l)
                 VStack(spacing: 0) {
                     Color.clear.frame(height: l.top + g.height)
-                    if open {
-                        page.modifier(PageReveal(pose: IslandPose(p: model.renderProgress ?? 1, leftW: pose.leftW, rightW: pose.rightW), layout: l))
-                            .transition(.modifier(active: PageReveal(pose: IslandPose(p: 0, leftW: model.leftW, rightW: model.rightW), layout: l),
-                                                  identity: PageReveal(pose: IslandPose(p: 1, leftW: model.leftW, rightW: model.rightW), layout: l)))
-                    }
+                    // The page follows the same sprung progress as the outline, and is in the view only while that progress is
+                    // above 0 (PageReveal): reopening half-way through a close carries on from where it is, never from scratch.
+                    page.modifier(PageReveal(pose: pose, layout: l))
                 }
                 .frame(width: l.size.width, height: l.size.height, alignment: .top)
             }
@@ -69,10 +67,16 @@ struct IslandView: View {
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
         .contentShape(Rectangle())
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { model.dropTargeted($0) })) { providers in
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: Binding(get: { false }, set: { t in
+            if model.dropHover != t { Motion.with(.hover) { model.dropHover = t } }       // the shelf lights up under the files
+            model.dropTargeted(t)
+        })) { providers in
+            Motion.with(.hover) { model.dropHover = false }
             for provider in providers {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) { DispatchQueue.main.async { Haptic.tap(.generic); model.shelf.add(u) } }
+                    if let d = item as? Data, let u = URL(dataRepresentation: d, relativeTo: nil) {
+                        DispatchQueue.main.async { Haptic.tap(.generic); Motion.with(.appear) { model.shelf.add(u) } }   // it lands on the shelf
+                    }
                 }
             }
             return true
@@ -81,9 +85,10 @@ struct IslandView: View {
         // zero minimums this frame takes the canvas's size, 656×228, and the hosting view centres that in the 38 pt closed window:
         // the closed island ended up 95 pt above the window, i.e. invisible. --island-selfcheck guards it.)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
-        .animation(Motion.island(open ? Island.openSpring : Island.closeSpring), value: open)
-        .animation(Motion.island(.spring(response: 0.3, dampingFraction: 0.84)), value: model.leftW)
-        .animation(Motion.island(.spring(response: 0.3, dampingFraction: 0.84)), value: model.rightW)
+        // One spring for the morph: a reversal mid-way retargets it (SwiftUI keeps its velocity), so rapid in/out never restarts it.
+        .animation(Motion.island(open), value: open)
+        .animation(Motion.animation(.wing), value: model.leftW)
+        .animation(Motion.animation(.wing), value: model.rightW)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
         .preferredColorScheme(.dark)
@@ -115,10 +120,13 @@ struct IslandView: View {
                                              width: cell, order: nRight - j, fade: .reveal))
         }
         Button { model.showSettings() } label: {
-            Image(systemName: "gearshape").font(UI.tabIcon).foregroundStyle(UI.hint)
-                .frame(width: cell, height: g.height).contentShape(Rectangle())
+            ZStack {
+                StripHighlight(selected: false, width: Self.highlight(cell), height: 26)
+                Image(systemName: "gearshape").font(UI.tabIcon).foregroundStyle(UI.hint)
+            }
+            .frame(width: cell, height: g.height).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
+        .buttonStyle(MotionGlyphStyle()).help(L("Settings")).accessibilityLabel(L("Settings"))
         .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
         .modifier(StripSlide(pose: s, layout: l, from: .gear, to: right1 - cell / 2, width: cell, order: 0, fade: .gear))
     }
@@ -127,9 +135,9 @@ struct IslandView: View {
     /// or (when the screens were rearranged) the first screen's icon, which the bag melts into.
     private func homeButton(_ t: (id: String, icon: String, title: String), _ s: IslandPose, cell: CGFloat) -> some View {
         let selected = model.tab == t.id
-        return Button { Haptic.tap(.alignment); model.tab = t.id } label: {
+        return Button { Haptic.tap(.alignment); Motion.with(.page) { model.tab = t.id } } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: Self.highlight(cell), height: 26)
+                StripHighlight(selected: selected, width: Self.highlight(cell), height: 26)
                     .modifier(CellMorph(pose: s, kind: .highlight))
                 if t.id == "home" {
                     BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)       // only it redraws while the powder pours
@@ -143,8 +151,9 @@ struct IslandView: View {
             }
             .frame(width: cell, height: g.height)
             .contentShape(Rectangle())
+            .motionSelection(selected)
         }
-        .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
+        .buttonStyle(MotionGlyphStyle()).help(t.title).accessibilityLabel(t.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
     }
@@ -185,7 +194,7 @@ struct IslandView: View {
                 Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
             }
         }
-        else if waiting { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor) }
+        else if waiting { Image(systemName: "hand.raised.fill").foregroundStyle(warningColor).motionPulse(m.approvals.count) }
         else if mic.active { Image(systemName: "mic.fill").foregroundStyle(.orange) }
         else if working { aiAtWork }
         else if model.music.playing { Visualizer(playing: !Motion.reduce) }                     // Reduce Motion: still bars
@@ -199,6 +208,7 @@ struct IslandView: View {
         return HStack(spacing: 3) {
             Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold))     // a glyph, sized to the wing
             Text("\(n)").font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .motionNumber(n)                         // the count rolls to its new value
         }
         .foregroundStyle(Island.accent)
         .accessibilityElement(children: .ignore)
@@ -210,12 +220,17 @@ struct IslandView: View {
     // MARK: open
 
     /// The selected screen's page, below the strip, its modules as the layout places them (ScreenModules.swift). Only there
-    /// while open: it is inserted once and unfolds (see PageReveal); changing screens cross-fades them (ScreensMotion).
+    /// while open: it is inserted once and unfolds (see PageReveal); changing screens slides them from the side of the tab picked (Motion.page).
     private var page: some View {
         ZStack(alignment: .top) {
-            screenPage(model.tab).id(model.tab).transition(ScreensMotion.pageTransition)
+            if let f = Motion.frame, let from = model.renderPageFrom {      // the render aid: one moment of a page change
+                screenPage(from).modifier(PageSlide(t: f, incoming: false, direction: model.pager, reduce: Motion.reduce))
+                screenPage(model.tab).modifier(PageSlide(t: 1 - f, incoming: true, direction: model.pager, reduce: Motion.reduce))
+            } else {
+                screenPage(model.tab).id(model.tab).transition(Motion.page(model.pager))
+            }
         }
-        .animation(ScreensMotion.change, value: model.tab)
+        .animation(Motion.animation(.page), value: model.tab)
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
         .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
         .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))
@@ -229,16 +244,17 @@ struct IslandView: View {
     static func stripStart(_ cx: CGFloat, cell: CGFloat) -> CGFloat { cx - IslandLayout.openBody / 2 + Space.page - (cell - highlight(cell)) / 2 }
 
     private func tabButton(_ t: (id: String, icon: String, title: String), cell: CGFloat) -> some View {
-        Button { Haptic.tap(.alignment); model.tab = t.id } label: {
+        Button { Haptic.tap(.alignment); Motion.with(.page) { model.tab = t.id } } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(model.tab == t.id ? 0.16 : 0)).frame(width: Self.highlight(cell), height: 26)
+                StripHighlight(selected: model.tab == t.id, width: Self.highlight(cell), height: 26)
                 Image(systemName: t.icon).font(UI.tabIcon)
                     .foregroundStyle(model.tab == t.id ? Color.white : UI.hint)
             }
             .frame(width: cell, height: g.height)            // the whole cell, the full height of the strip
             .contentShape(Rectangle())
+            .motionSelection(model.tab == t.id)
         }
-        .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
+        .buttonStyle(MotionGlyphStyle()).help(t.title).accessibilityLabel(t.title)
         .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
         .accessibilityAddTraits(model.tab == t.id ? .isSelected : [])
     }

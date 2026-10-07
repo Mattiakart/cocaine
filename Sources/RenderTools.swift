@@ -57,6 +57,9 @@ enum IslandCheck {
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
         precondition(AppDefaults.isolated, "--island-selfcheck must run with memory-only settings (main.swift)")
+    let savedMotion = Motion.disabled
+    Motion.disabled = true                                     // the states drawn at once, never a frame of a transition
+    defer { Motion.disabled = savedMotion }
         AppDefaults.store.set(false, forKey: "stayActive")     // the states below are the ones named, whatever the user has on
         let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
         let closed = IslandController.windowFrame(g, open: false), opened = IslandController.windowFrame(g, open: true)
@@ -155,6 +158,7 @@ func cliRenderIsland() {
     // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
     _ = NSApplication.shared
     precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
+    Motion.disabled = true                                     // deterministic: the state drawn, never a frame of a transition
     let args = CommandLine.arguments
     let pm = PanelModel()
     pm.persistLanguage = false
@@ -267,6 +271,7 @@ func cliRenderPanel() {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
     precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
+    Motion.disabled = true                                     // deterministic: a dropdown or dialog drawn fully there
     let model = PanelModel()
     model.persistLanguage = false
     let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }

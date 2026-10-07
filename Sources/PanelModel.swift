@@ -39,7 +39,15 @@ final class PanelModel: ObservableObject {
     @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
     @Published var settingAI = false
     /// Which page of the panel is open: "" = the home, else "ai", "timer", "battery", "triggers", "keys" or "remote".
-    @Published var page = "" { didSet { if page != oldValue { pageChanged() } } }
+    @Published var page = "" {
+        didSet {
+            guard page != oldValue else { return }
+            pager.note(from: PanelTabs.order.firstIndex(of: oldValue), to: PanelTabs.order.firstIndex(of: page))   // the pages slide that way
+            pageChanged()
+        }
+    }
+    /// Which way the last tab change went (Motion.page).
+    let pager = PageDirection()
     var pageChanged: () -> Void = {}
     @Published var alertsPausedUntil: Date?
     @Published var history: [AlertRecord] = []       // newest first; kept by the app delegate

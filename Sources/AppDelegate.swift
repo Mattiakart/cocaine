@@ -850,7 +850,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard frame != panel.frame else { return }
         if animated && !Motion.reduce {                                   // Reduce Motion: the panel just takes its new size
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.16
+                ctx.duration = Motion.Duration.quick                      // the panel follows its content's size
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().setFrame(frame, display: true)
             }
         } else {
@@ -1430,12 +1431,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let target: CGFloat = on ? 1 : 0
         iconAnim?.invalidate()
         guard iconLevel >= 0, !Motion.reduce else { setIconLevel(target, pouring: false); return }   // first draw, Reduce Motion: no pour
-        let start = iconLevel, duration = on ? 1.4 : 0.7
+        // A new switch mid-pour starts from the level it reached (never from full or empty): Motion.pour's curve and times.
+        let start = iconLevel, duration = on ? Motion.pourFill : Motion.pourEmpty
         let began = Date()
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             let f = min(1, CGFloat(Date().timeIntervalSince(began) / duration))
-            let eased = on ? 1 - (1 - f) * (1 - f) : f * f                 // ease-out filling, ease-in emptying
+            let eased = Motion.pour(f, filling: on)                          // ease-out filling, ease-in emptying
             self.setIconLevel(start + (target - start) * eased, pouring: on && f < 1)
             if f >= 1 { t.invalidate(); self.iconAnim = nil }
         }
@@ -1460,7 +1462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard target != pinkHeading else { return }
         pinkHeading = target
         pinkTimer?.invalidate()
-        let start = model.pinkLevel, filling = target > start, duration = filling ? 1.4 : 0.6, began = Date()
+        let start = model.pinkLevel, filling = target > start, duration = filling ? Motion.pourFill : Motion.pourEmpty, began = Date()
         if Motion.reduce {                                                  // Reduce Motion: no pour
             model.pinkLevel = target; model.pinkPouring = false; redrawStatusItem(); pinkTimer = nil
             return
@@ -1468,7 +1470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             let f = min(1, CGFloat(Date().timeIntervalSince(began) / duration))
-            let eased = filling ? 1 - (1 - f) * (1 - f) : f * f                        // ease-out filling, ease-in emptying
+            let eased = Motion.pour(f, filling: filling)                               // ease-out filling, ease-in emptying
             self.model.pinkLevel = start + (target - start) * eased
             let pouring = filling && f < 1
             if self.model.pinkPouring != pouring { self.model.pinkPouring = pouring }

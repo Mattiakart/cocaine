@@ -136,7 +136,7 @@ extension IslandView {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text("Codex").font(UI.groupTitle)
                 if usage.codex.isEmpty {
-                    Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint)
+                    Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint).shimmer(!usage.loaded)
                 }
                 ForEach(usage.codex) { l in
                     VStack(alignment: .leading, spacing: 3) {
@@ -159,6 +159,7 @@ extension IslandView {
                 tokenRow(L("Last 7 days"), usage.claudeWeek)
                 Text(usage.partial ? L("Still counting: the totals grow as the rest is read") : L("Tokens in your conversations on this Mac"))
                     .font(UI.detail).foregroundStyle(usage.partial ? warningColor : UI.hint)
+                    .shimmer(usage.partial)                              // still reading: a calm light passes over it
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

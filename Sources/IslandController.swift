@@ -51,6 +51,7 @@ final class IslandController {
         var covered = false                   // a full-screen app on this screen
         var missed = 0                        // checks in a row it should have been on screen and wasn't
         var closingUntil = Date.distantPast   // its closing morph runs until then: the window isn't shrunk under it
+        var settle = MotionGeneration()       // the shrink after a close: only the latest close's, and none after a reopen
         init(id: CGDirectDisplayID, g: NotchGeometry, panel: IslandPanel, host: NSHostingView<IslandView>) {
             self.id = id; self.g = g; self.panel = panel; self.host = host
         }
@@ -280,6 +281,8 @@ final class IslandController {
         NotchGeometry.focus = spots.count > 1 ? id : nil       // the settings panel and its dialogs hang from this notch now
         if model.geometry != s.g { model.geometry = s.g }
         if model.openScreen != id { model.openScreen = id }
+        s.settle.cancel()                                     // reopened mid-close: the pending shrink is void (the morph just turns back)
+        s.closingUntil = .distantPast
         model.open = true
         place(s)
     }
@@ -291,9 +294,10 @@ final class IslandController {
         model.open = false
         guard let s = spots[id] else { return }
         s.panel.ignoresMouseEvents = true
-        s.closingUntil = Date().addingTimeInterval(0.5)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak s] in     // after the morph (and not under a later one)
-            guard let self, let s, self.state.open != s.id, Date() >= s.closingUntil.addingTimeInterval(-0.02) else { return }
+        s.closingUntil = Date().addingTimeInterval(Motion.islandSettle)
+        let gen = s.settle.begin()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.islandSettle) { [weak self, weak s] in   // after the morph
+            guard let self, let s, s.settle.isCurrent(gen), self.state.open != s.id else { return }     // not under a later one
             self.place(s)
         }
     }

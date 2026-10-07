@@ -598,6 +598,7 @@ func cliSelfTest() {
     designSelfTest(check)                                  // language in dates and durations, scroll steps, the panel strip
     uxSelfTest(check)                                      // shortcuts, focus timer, usage reader, island keys, contrast (Sources/UXTests.swift)
     screenLayoutSelfTest(check)                            // the island's screens and modules (Sources/ScreensTests.swift)
+    MotionTests.run(check)                                 // the motion system: tokens, Reduce Motion, rapid sequences (--motion-test)
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }

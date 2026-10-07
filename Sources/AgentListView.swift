@@ -32,9 +32,13 @@ struct AgentListView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, Self.inset)
                 }
-                ForEach(approvals) { r in approvalRow(r) }
-                ForEach(rows) { e in sessionRow(e) }
+                // A request arrives from the top and goes when answered; sessions come, go and change state in place.
+                ForEach(approvals) { r in approvalRow(r).motionAppear(edge: .top) }
+                ForEach(rows) { e in sessionRow(e).motionAppear(edge: nil) }
             }
+            .animation(Motion.animation(.notice), value: approvals.map(\.id))
+            .animation(Motion.animation(.notice), value: rows.map(\.id))
+            .animation(Motion.animation(.crossfade), value: rows.map(\.state))
         }
     }
 
@@ -51,6 +55,7 @@ struct AgentListView: View {
         Button { focus(e.origin, e.from) } label: {
             HStack(spacing: Space.m) {
                 Image(systemName: Self.icon(e.state)).font(UI.icon).foregroundStyle(color(e.state)).frame(width: UI.iconColumn)
+                    .contentTransition(.symbolEffect(.replace))          // working → done: the symbol changes into the next
                 VStack(alignment: .leading, spacing: 1) {
                     Text(e.from).font(UI.itemTitle).lineLimit(1)
                     Text([Self.name(e.state), e.project].compactMap { $0 }.joined(separator: " · "))

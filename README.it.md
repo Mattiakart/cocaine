@@ -61,6 +61,10 @@ una sostituzione atomica, ma restano inattivi finché una versione non include u
 incorporata nell'app: fino ad allora usa `brew upgrade --cask cocaine` o il DMG. Le installazioni Homebrew non vengono mai
 sostituite dall'app. Dettagli: [Firma e aggiornamenti](docs/signing-and-updates.it.md).
 
+**Movimento**: isola, HUD, pannello, dialoghi e menu a tendina si muovono con un unico insieme di molle e tempi, fluidi anche
+quando un'interazione viene interrotta o ripetuta in fretta, e rispettano Riduci movimento (solo dissolvenze). Dettagli:
+[Movimento](docs/motion.it.md).
+
 ## Avvisi quando un'AI finisce
 
 Lasci il Mac a lavorare, e Cocaine ti richiama quando un'AI finisce o ha bisogno di te. Se non sei al Mac riaccende gli

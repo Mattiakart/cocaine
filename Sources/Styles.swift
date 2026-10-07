@@ -51,7 +51,8 @@ struct CocaineSwitch: View {
 
     var body: some View {
         let w = UI.switchSize.width, h = UI.switchSize.height
-        Button(action: { Haptic.tap(.alignment); action() }) {
+        // What the switch turns on or off (rows appearing, a card changing) moves with the knob's curve.
+        Button(action: { Haptic.tap(.alignment); Motion.with(.expand) { action() } }) {
             ZStack {
                 Capsule().fill(on ? Island.accent : Color.white.opacity(DisplayOptions.contrast ? 0.3 : 0.18))
                 if !on { Capsule().strokeBorder(UI.boundary, lineWidth: 1) }              // the off track's edge: 3:1 on the card
@@ -63,7 +64,7 @@ struct CocaineSwitch: View {
                     .offset(x: on ? (w - h) / 2 : -(w - h) / 2)
             }
             .frame(width: w, height: h)
-            .animation(Motion.reduce ? nil : .spring(response: 0.3, dampingFraction: 0.78), value: on)   // Reduce Motion: it just flips
+            .animation(Motion.animation(.toggle), value: on)   // a quick spring that retargets on a fast double click; Reduce Motion: it just flips
             .contentShape(Capsule())
         }
         .buttonStyle(PressScale())
@@ -75,8 +76,7 @@ struct CocaineSwitch: View {
 
 private struct PressScale: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        configuration.label.pressable(configuration.isPressed, scale: Motion.Distance.pressScaleSmall)
     }
 }
 

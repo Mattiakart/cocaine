@@ -26,8 +26,13 @@ final class IslandModel: ObservableObject {
     /// The screen shown (a ScreenLayout screen id). Asked for one that isn't shown (a hidden screen, or "shelf" while a file is
     /// dragged in when the shelf was moved into another screen), it shows the screen that holds that module, else the start one.
     @Published var tab = "home" {
-        didSet { if let t = shownScreen(for: tab), t != tab { tab = t } }
+        didSet {
+            if let t = shownScreen(for: tab), t != tab { tab = t; return }
+            pager.note(from: tabs.firstIndex { $0.id == oldValue }, to: tabs.firstIndex { $0.id == tab })    // the pages slide that way
+        }
     }
+    /// Which way the last screen change went (by the tabs' order): the pages slide from that side (Motion.page).
+    let pager = PageDirection()
     @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
     /// Opened from the keyboard (⌃⌥⌘I): kept open, with the keys of IslandKeys.
     @Published var keyboard = false
@@ -42,6 +47,8 @@ final class IslandModel: ObservableObject {
     @Published private(set) var tabs: [(id: String, icon: String, title: String)]
     /// The render tool only: draw this moment of the open/close morph (0…1) instead of following `open`.
     var renderProgress: CGFloat?
+    /// The render tool only (--render-motion page): the screen the drawn page change comes from.
+    var renderPageFrom: String?
     weak var pm: PanelModel?
     let focus = FocusTimer()
     let batteries = BatteryWatch()
@@ -52,6 +59,8 @@ final class IslandModel: ObservableObject {
     let shelf = ShelfStore()
     var airDrop: ([URL]) -> Void = { _ in }
     var dropTargeted: (Bool) -> Void = { _ in }
+    /// Files are being dragged over the island: the shelf shows where they will land.
+    @Published var dropHover = false
     let calendar = CalendarWatch()
     let music = MusicWatch()
     let mirror = MirrorController()
@@ -115,7 +124,7 @@ final class IslandModel: ObservableObject {
             if s != self.tab { self.tab = s }
         }
         startWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)          // after the closing morph
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.islandSettle, execute: w)          // after the closing morph
     }
 
     /// The tabs again (a screen came or went, the language or the layout changed). The screen shown, if it is no longer
@@ -127,7 +136,7 @@ final class IslandModel: ObservableObject {
         let t = Island.tabs(external: external, layout: l)
         if t.map({ $0.id }) != tabs.map({ $0.id }) || t.map({ $0.title }) != tabs.map({ $0.title }) { tabs = t }
         if !t.contains(where: { $0.id == tab }), let next = l.screenShowing(tab, external: external) ?? l.startScreen(current: nil, external: external) {
-            withAnimation(ScreensMotion.change) { tab = next }
+            Motion.with(.page) { tab = next }
         }
     }
 
