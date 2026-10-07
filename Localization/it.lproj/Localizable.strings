@@ -11,10 +11,8 @@
 "After" = "Dopo";
 "Open at login" = "Apri al login";
 "Quit" = "Esci";
-"Turns Cocaine off and quits" = "Disattiva Cocaine ed esce";
 "Cocaine is on" = "Cocaine è attivo";
 "Cocaine is off" = "Cocaine è spento";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine ha bisogno della password di amministratore, una sola volta, per poter impedire lo stop del Mac.";
 "Can't change Open at Login" = "Non riesco a cambiare l’apertura al login";
 "You can add Cocaine manually in System Settings → General → Login Items." = "Puoi aggiungere Cocaine a mano in Impostazioni di Sistema → Generali → Elementi login.";
 "Same as Mac" = "Come il Mac";
@@ -25,12 +23,10 @@
 "needs your input" = "ha bisogno di te";
 "AI alerts" = "Avvisi AI";
 "Can't change AI alerts" = "Non riesco a cambiare gli avvisi AI";
-"Choose" = "Scegli";
 "until %@" = "fino alle %@";
 "How" = "Come";
 "Sound" = "Suono";
 "No sound" = "Nessun suono";
-"Other apps and scripts…" = "Altre app e script…";
 "Feedback or help" = "Feedback o assistenza";
 "Feedback" = "Feedback";
 "This is a test" = "Questa è una prova";
@@ -57,7 +53,6 @@
 "Never" = "Mai";
 "Until you're back" = "Finché non torni";
 "%d s" = "%d s";
-"Every %d min" = "Ogni %d min";
 "%d min" = "%d min";
 "When an AI completes its work" = "Quando un’AI completa il lavoro";
 "When it asks for a permission or an answer" = "Quando chiede un permesso o una risposta";
@@ -92,9 +87,7 @@
 "Command" = "Comando";
 "Done" = "Finito";
 "Error" = "Errore";
-"Global shortcuts" = "Scorciatoie globali";
 "Not set up" = "Non impostate";
-"Not set up: see the guide" = "Non impostate: vedi la guida";
 "Off" = "Spento";
 "On battery only" = "Solo a batteria";
 "On battery only. Now %@" = "Solo a batteria. Ora %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "Metti in pausa o riprendi gli avvisi";
 "Phone alerts" = "Avvisi sul telefono";
 "Remote work" = "Lavoro da remoto";
-"Remote work guide…" = "Guida al lavoro da remoto…";
 "Shortcut" = "Comando Rapido";
-"Shortcuts" = "Scorciatoie";
 "Smart Triggers" = "Attivazione automatica";
 "Stay on for" = "Tieni sveglio per";
 "Then" = "Poi";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "Attiva o spegni Cocaine";
 "What Cocaine does at that level" = "Cosa fa Cocaine a quel livello";
 "When the battery reaches" = "Quando la batteria arriva a";
-"Work from any app" = "Funzionano da qualsiasi app";
 "Working" = "Al lavoro";
 "now" = "ora";
 "stopped with an error" = "si è fermato con un errore";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "Non risultare assente";
 "The chat apps to keep available" = "Le app di chat da tenere disponibili";
 "While these apps are open" = "Mentre queste app sono aperte";
-"on/off" = "on/off";
-"panel" = "pannello";
-"pause alerts" = "pausa avvisi";
 "Drag files onto the notch, then drop them here" = "Trascina i file sul notch, poi rilasciali qui";
 "Microphone in use" = "Microfono in uso";
 "Volume and brightness bars appear in the island, not on screen." = "Le barre di volume e luminosità compaiono nell’isola, non sullo schermo.";

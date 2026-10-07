@@ -1,9 +1,6 @@
 /* The island's clipboard history (Sources/Clipboard.swift and its views in main.swift). */
 
-"%d days" = "%d日";
 "%d items" = "%d件";
-"1 day" = "1日";
-"1 week" = "1週間";
 "A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept." = "正規表現(例: ^IBAN や \\b社外秘\\b)。一致するテキストは保持されません。";
 "Add to favorites" = "お気に入りに追加";
 "Add" = "追加";

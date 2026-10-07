@@ -11,10 +11,8 @@
 "After" = "Tras";
 "Open at login" = "Abrir al iniciar sesión";
 "Quit" = "Salir";
-"Turns Cocaine off and quits" = "Desactiva Cocaine y sale";
 "Cocaine is on" = "Cocaine está activado";
 "Cocaine is off" = "Cocaine está desactivado";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine necesita tu contraseña de administrador una sola vez para poder evitar que el Mac entre en reposo.";
 "Can't change Open at Login" = "No se puede cambiar «Abrir al iniciar sesión»";
 "You can add Cocaine manually in System Settings → General → Login Items." = "Puedes añadir Cocaine manualmente en Ajustes del Sistema → General → Ítems de inicio de sesión.";
 "Same as Mac" = "Como el Mac";
@@ -25,12 +23,10 @@
 "needs your input" = "necesita tu respuesta";
 "AI alerts" = "Avisos de IA";
 "Can't change AI alerts" = "No se pueden cambiar los avisos de IA";
-"Choose" = "Elegir";
 "until %@" = "hasta las %@";
 "How" = "Cómo";
 "Sound" = "Sonido";
 "No sound" = "Sin sonido";
-"Other apps and scripts…" = "Otras apps y scripts…";
 "Feedback or help" = "Comentarios o ayuda";
 "Feedback" = "Comentarios";
 "This is a test" = "Esto es una prueba";
@@ -57,7 +53,6 @@
 "Never" = "Nunca";
 "Until you're back" = "Hasta que vuelvas";
 "%d s" = "%d s";
-"Every %d min" = "Cada %d min";
 "%d min" = "%d min";
 "When an AI completes its work" = "Cuando una IA termina su trabajo";
 "When it asks for a permission or an answer" = "Cuando pide un permiso o una respuesta";
@@ -92,9 +87,7 @@
 "Command" = "Comando";
 "Done" = "Terminado";
 "Error" = "Error";
-"Global shortcuts" = "Atajos globales";
 "Not set up" = "Sin configurar";
-"Not set up: see the guide" = "Sin configurar: mira la guía";
 "Off" = "Desactivado";
 "On battery only" = "Solo con batería";
 "On battery only. Now %@" = "Solo con batería. Ahora %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "Pausar o reanudar avisos";
 "Phone alerts" = "Avisos en el móvil";
 "Remote work" = "Trabajo remoto";
-"Remote work guide…" = "Guía de trabajo remoto…";
 "Shortcut" = "Atajo";
-"Shortcuts" = "Atajos";
 "Smart Triggers" = "Activadores inteligentes";
 "Stay on for" = "Mantener despierto";
 "Then" = "Después";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "Activar o apagar Cocaine";
 "What Cocaine does at that level" = "Qué hace Cocaine a ese nivel";
 "When the battery reaches" = "Cuando la batería llegue a";
-"Work from any app" = "Funcionan desde cualquier app";
 "Working" = "Trabajando";
 "now" = "ahora";
 "stopped with an error" = "se detuvo con un error";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "No aparecer ausente";
 "The chat apps to keep available" = "Las apps de chat que mantener disponibles";
 "While these apps are open" = "Mientras estas apps estén abiertas";
-"on/off" = "on/off";
-"panel" = "panel";
-"pause alerts" = "pausar avisos";
 "Drag files onto the notch, then drop them here" = "Arrastra los archivos al notch y suéltalos aquí";
 "Microphone in use" = "Micrófono en uso";
 "Volume and brightness bars appear in the island, not on screen." = "Las barras de volumen y brillo aparecen en la isla, no en pantalla.";

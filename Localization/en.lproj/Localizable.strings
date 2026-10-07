@@ -11,10 +11,8 @@
 "After" = "After";
 "Open at login" = "Open at login";
 "Quit" = "Quit";
-"Turns Cocaine off and quits" = "Turns Cocaine off and quits";
 "Cocaine is on" = "Cocaine is on";
 "Cocaine is off" = "Cocaine is off";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping.";
 "Can't change Open at Login" = "Can't change Open at Login";
 "You can add Cocaine manually in System Settings → General → Login Items." = "You can add Cocaine manually in System Settings → General → Login Items.";
 "Same as Mac" = "Same as Mac";
@@ -25,12 +23,10 @@
 "needs your input" = "needs your input";
 "AI alerts" = "AI alerts";
 "Can't change AI alerts" = "Can't change AI alerts";
-"Choose" = "Choose";
 "until %@" = "until %@";
 "How" = "How";
 "Sound" = "Sound";
 "No sound" = "No sound";
-"Other apps and scripts…" = "Other apps and scripts…";
 "Feedback or help" = "Feedback or help";
 "Feedback" = "Feedback";
 "This is a test" = "This is a test";
@@ -57,7 +53,6 @@
 "Never" = "Never";
 "Until you're back" = "Until you're back";
 "%d s" = "%d s";
-"Every %d min" = "Every %d min";
 "%d min" = "%d min";
 "When an AI completes its work" = "When an AI completes its work";
 "When it asks for a permission or an answer" = "When it asks for a permission or an answer";
@@ -92,9 +87,7 @@
 "Command" = "Command";
 "Done" = "Done";
 "Error" = "Error";
-"Global shortcuts" = "Global shortcuts";
 "Not set up" = "Not set up";
-"Not set up: see the guide" = "Not set up: see the guide";
 "Off" = "Off";
 "On battery only" = "On battery only";
 "On battery only. Now %@" = "On battery only. Now %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "Pause or resume alerts";
 "Phone alerts" = "Phone alerts";
 "Remote work" = "Remote work";
-"Remote work guide…" = "Remote work guide…";
 "Shortcut" = "Shortcut";
-"Shortcuts" = "Shortcuts";
 "Smart Triggers" = "Smart Triggers";
 "Stay on for" = "Keep awake for";
 "Then" = "Then";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "Turn Cocaine on or off";
 "What Cocaine does at that level" = "What Cocaine does at that level";
 "When the battery reaches" = "When the battery reaches";
-"Work from any app" = "Work from any app";
 "Working" = "Working";
 "now" = "now";
 "stopped with an error" = "stopped with an error";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "Don’t show me as away";
 "The chat apps to keep available" = "The chat apps to keep available";
 "While these apps are open" = "While these apps are open";
-"on/off" = "on/off";
-"panel" = "panel";
-"pause alerts" = "pause alerts";
 "Drag files onto the notch, then drop them here" = "Drag files onto the notch, then drop them here";
 "Microphone in use" = "Microphone in use";
 "Volume and brightness bars appear in the island, not on screen." = "Volume and brightness bars appear in the island, not on screen.";

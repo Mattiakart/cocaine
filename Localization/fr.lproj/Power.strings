@@ -3,13 +3,10 @@
 "Turn the screen off instead" = "Éteindre l’écran à la place";
 "The Mac keeps working with the screen off." = "Le Mac continue de travailler écran éteint.";
 "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Tant que Cocaine est activé. Une touche ou un clic rallume l’écran. Le Mac se verrouille selon les réglages Écran verrouillé.";
-"Now" = "Maintenant";
 "Turn the screens off now" = "Éteindre les écrans maintenant";
 "Power" = "Alimentation";
 "On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Activé quand le Mac est sur secteur, ou sur batterie au-dessus d’un niveau ; désactivé 30 secondes après";
 "On the charger" = "Sur secteur";
-"Down to" = "Jusqu’à";
-"Below this level the battery trigger lets go" = "En dessous de ce niveau, le déclencheur batterie s’arrête";
 "External display" = "Écran externe";
 "On while a display is connected (or while none is); off 30 seconds after" = "Activé quand un écran est branché (ou quand aucun ne l’est) ; désactivé 30 secondes après";
 "Not connected" = "Non branché";

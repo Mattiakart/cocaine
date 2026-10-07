@@ -613,7 +613,7 @@ final class ClipboardHistory: ObservableObject {
     }
 
     var visible: [ClipItem] { core.filtered(query, favoritesOnly: favoritesOnly, describe: describe) }
-    var running: Bool { timer != nil }
+    var running: Bool { wanted }
 
     // MARK: watching
 
@@ -621,15 +621,33 @@ final class ClipboardHistory: ObservableObject {
         guard timer == nil else { return }
         seen = board.changeCount
         if settings.persist && !saving { openStore(atLaunch: true) }
+        schedule()
+        if powerToken == nil {
+            // Screens asleep, the Mac asleep, another user on screen: nobody copies anything, the timer rests (a change made
+            // meanwhile is read at once on the way back).
+            powerToken = PowerAwareness.shared.subscribe { [weak self] paused in
+                guard let self, self.wanted else { return }
+                if paused { self.timer?.invalidate(); self.timer = nil } else { self.schedule(); self.poll() }
+            }
+        }
+        refreshMissing()
+    }
+
+    private var wanted = false
+    private var powerToken: UUID?
+
+    private func schedule() {
+        wanted = true
+        guard timer == nil, !PowerAwareness.shared.paused else { return }
         let t = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in self?.poll() }   // changeCount is cheap; the tolerance lets macOS batch wake-ups
         t.tolerance = 0.3
         RunLoop.main.add(t, forMode: .common)
         timer = t
-        refreshMissing()
     }
 
     /// With the island off: a memory-only history is forgotten, a saved one stays on disk.
     func stop() {
+        wanted = false
         timer?.invalidate(); timer = nil
         if saving { flush() } else { replace([]) }
     }

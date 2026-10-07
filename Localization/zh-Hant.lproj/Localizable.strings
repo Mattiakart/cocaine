@@ -11,10 +11,8 @@
 "After" = "閒置";
 "Open at login" = "登入時開啟";
 "Quit" = "結束";
-"Turns Cocaine off and quits" = "關閉 Cocaine 並結束";
 "Cocaine is on" = "Cocaine 已開啟";
 "Cocaine is off" = "Cocaine 已關閉";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine 需要管理者密碼（僅需一次），才能防止 Mac 進入睡眠。";
 "Can't change Open at Login" = "無法更改「登入時開啟」";
 "You can add Cocaine manually in System Settings → General → Login Items." = "你可以在「系統設定」→「一般」→「登入項目」中手動加入 Cocaine。";
 "Same as Mac" = "跟隨系統";
@@ -25,12 +23,10 @@
 "needs your input" = "需要你的輸入";
 "AI alerts" = "AI 提醒";
 "Can't change AI alerts" = "無法更改 AI 提醒";
-"Choose" = "選擇";
 "until %@" = "直到 %@";
 "How" = "提醒方式";
 "Sound" = "聲音";
 "No sound" = "無";
-"Other apps and scripts…" = "其他 App 和指令碼…";
 "Feedback or help" = "意見回饋或協助";
 "Feedback" = "意見回饋";
 "This is a test" = "這是一次測試";
@@ -57,7 +53,6 @@
 "Never" = "從不";
 "Until you're back" = "直到我回來";
 "%d s" = "%d 秒";
-"Every %d min" = "每 %d 分鐘";
 "%d min" = "%d 分鐘";
 "When an AI completes its work" = "AI 完成工作時";
 "When it asks for a permission or an answer" = "請求權限或回答時";
@@ -92,9 +87,7 @@
 "Command" = "指令";
 "Done" = "已完成";
 "Error" = "錯誤";
-"Global shortcuts" = "全域快速鍵";
 "Not set up" = "未設定";
-"Not set up: see the guide" = "未設定：見指南";
 "Off" = "關";
 "On battery only" = "僅使用電池時";
 "On battery only. Now %@" = "僅使用電池時。目前 %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "暫停或恢復提醒";
 "Phone alerts" = "手機提醒";
 "Remote work" = "遠端工作";
-"Remote work guide…" = "遠端工作指南…";
 "Shortcut" = "捷徑";
-"Shortcuts" = "快速鍵";
 "Smart Triggers" = "智慧觸發";
 "Stay on for" = "保持喚醒時間";
 "Then" = "然後";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "開啟或關閉 Cocaine";
 "What Cocaine does at that level" = "到該電量時 Cocaine 的動作";
 "When the battery reaches" = "電量降到";
-"Work from any app" = "在任何 App 中都可用";
 "Working" = "工作中";
 "now" = "剛剛";
 "stopped with an error" = "因錯誤而停止";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "不顯示為離開";
 "The chat apps to keep available" = "要保持上線的聊天 App";
 "While these apps are open" = "這些 App 開啟時";
-"on/off" = "開/關";
-"panel" = "面板";
-"pause alerts" = "暫停提醒";
 "Drag files onto the notch, then drop them here" = "把檔案拖到瀏海上，再放到這裡";
 "Microphone in use" = "麥克風使用中";
 "Volume and brightness bars appear in the island, not on screen." = "音量和亮度條顯示在動態島中，而不是螢幕上。";

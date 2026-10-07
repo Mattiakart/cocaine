@@ -11,10 +11,8 @@
 "After" = "待ち時間";
 "Open at login" = "ログイン時に開く";
 "Quit" = "終了";
-"Turns Cocaine off and quits" = "Cocaine をオフにして終了します";
 "Cocaine is on" = "Cocaine はオンです";
 "Cocaine is off" = "Cocaine はオフです";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Mac のスリープを防ぐため、Cocaine は管理者パスワードを一度だけ必要とします。";
 "Can't change Open at Login" = "「ログイン時に開く」を変更できません";
 "You can add Cocaine manually in System Settings → General → Login Items." = "「システム設定」→「一般」→「ログイン項目」で Cocaine を手動で追加できます。";
 "Same as Mac" = "Mac と同じ";
@@ -25,12 +23,10 @@
 "needs your input" = "入力が必要です";
 "AI alerts" = "AI 通知";
 "Can't change AI alerts" = "AI 通知を変更できません";
-"Choose" = "選択";
 "until %@" = "%@まで";
 "How" = "通知方法";
 "Sound" = "サウンド";
 "No sound" = "なし";
-"Other apps and scripts…" = "ほかのアプリとスクリプト…";
 "Feedback or help" = "フィードバック・サポート";
 "Feedback" = "フィードバック";
 "This is a test" = "これはテストです";
@@ -57,7 +53,6 @@
 "Never" = "しない";
 "Until you're back" = "戻るまで";
 "%d s" = "%d 秒";
-"Every %d min" = "%d 分ごと";
 "%d min" = "%d 分";
 "When an AI completes its work" = "AI が作業を完了したとき";
 "When it asks for a permission or an answer" = "許可や返答を求めたとき";
@@ -92,9 +87,7 @@
 "Command" = "コマンド";
 "Done" = "完了";
 "Error" = "エラー";
-"Global shortcuts" = "グローバルショートカット";
 "Not set up" = "未設定";
-"Not set up: see the guide" = "未設定：ガイドを参照";
 "Off" = "オフ";
 "On battery only" = "バッテリー駆動時のみ";
 "On battery only. Now %@" = "バッテリー駆動時のみ。現在 %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "通知の一時停止/再開";
 "Phone alerts" = "スマートフォンへの通知";
 "Remote work" = "リモートワーク";
-"Remote work guide…" = "リモートワークのガイド…";
 "Shortcut" = "ショートカット";
-"Shortcuts" = "キーボードショートカット";
 "Smart Triggers" = "スマートトリガー";
 "Stay on for" = "スリープしない時間";
 "Then" = "そのとき";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "Cocaine のオン/オフ";
 "What Cocaine does at that level" = "その残量で Cocaine が行うこと";
 "When the battery reaches" = "バッテリー残量が次になったら";
-"Work from any app" = "どのアプリからでも使えます";
 "Working" = "作業中";
 "now" = "たった今";
 "stopped with an error" = "エラーで停止しました";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "退席中と表示させない";
 "The chat apps to keep available" = "在席を維持するチャットアプリ";
 "While these apps are open" = "これらのアプリが開いている間";
-"on/off" = "オン/オフ";
-"panel" = "パネル";
-"pause alerts" = "通知を停止";
 "Drag files onto the notch, then drop them here" = "ファイルをノッチにドラッグし、ここにドロップ";
 "Microphone in use" = "マイク使用中";
 "Volume and brightness bars appear in the island, not on screen." = "音量と輝度のバーは画面ではなくアイランドに表示されます。";

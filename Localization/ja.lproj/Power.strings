@@ -3,13 +3,10 @@
 "Turn the screen off instead" = "代わりに画面をオフ";
 "The Mac keeps working with the screen off." = "画面がオフでもMacは動き続けます。";
 "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "Cocaineがオンの間。キーかクリックで画面が戻ります。ロックは「ロック画面」設定に従います。";
-"Now" = "今すぐ";
 "Turn the screens off now" = "今すぐ画面をオフ";
 "Power" = "電源";
 "On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Macが充電中、またはバッテリーが一定以上の間オン。30秒後にオフ";
 "On the charger" = "充電中";
-"Down to" = "下限";
-"Below this level the battery trigger lets go" = "この残量を下回るとバッテリーのトリガーは解除されます";
 "External display" = "外部ディスプレイ";
 "On while a display is connected (or while none is); off 30 seconds after" = "ディスプレイ接続中（または未接続の間）オン。30秒後にオフ";
 "Not connected" = "未接続";

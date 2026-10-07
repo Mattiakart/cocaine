@@ -10,6 +10,40 @@ func uxSelfTest(_ check: (String, Bool) -> Void) {
     UsageTests.run(check)
     MusicTests.run(check)
     a11ySelfTest(check)
+    healthSelfTest(check)
+}
+
+/// The shared helpers (Proc, SafeFile, ProcessList), the pause point, and constants that must agree across files.
+func healthSelfTest(_ check: (String, Bool) -> Void) {
+    // Proc: a timeout, output past the pipe's 64 KB read while it runs, a bounded capture, a grandchild holding the pipe.
+    let t0 = Date()
+    let slow = Proc.run("/bin/sleep", ["5"], timeout: 0.5)
+    check("proc: a program past its timeout is stopped (\(String(format: "%.1f", Date().timeIntervalSince(t0))) s)", slow.timedOut && slow.status == -1 && Date().timeIntervalSince(t0) < 3)
+    let big = Proc.run("/bin/sh", ["-c", "head -c 300000 /dev/zero"], timeout: 10, capture: true)
+    check("proc: 300 KB of output never blocks (\(big.output.count) bytes)", big.status == 0 && big.output.count == 300_000)
+    let capped = Proc.run("/bin/sh", ["-c", "head -c 300000 /dev/zero"], timeout: 10, capture: true, limit: 1000)
+    check("proc: the capture is bounded", capped.status == 0 && capped.output.count == 1000)
+    let t1 = Date()
+    let held = Proc.run("/bin/sh", ["-c", "echo hi; (sleep 5 &) ; exit 0"], timeout: 10, capture: true)
+    check("proc: a child left holding the pipe doesn't hold the answer back", held.text.hasPrefix("hi") && Date().timeIntervalSince(t1) < 3)
+    check("proc: a program that can't start says so", Proc.run("/nonexistent", []).status == -1)
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cocaine-safe-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let f = dir.appendingPathComponent("x.json")
+    let wrote = SafeFile.writePrivate(Data("one".utf8), to: f) && SafeFile.writePrivate(Data("two".utf8), to: f)
+    check("safefile: written over atomically, 0600, nothing left behind",
+          wrote && (try? String(contentsOf: f, encoding: .utf8)) == "two"
+          && (try? FileManager.default.attributesOfItem(atPath: f.path)[.posixPermissions] as? Int) == 0o600
+          && (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.count == 1)
+    check("processes: this one is listed", ProcessList.all().contains { $0.pid == getpid() })
+    check("wake: the app and crash recovery write the scheduled wake's date the same way (else recovery can't cancel it)",
+          [1_790_000_000.0, 1_800_000_123.0].allSatisfy { WakeSchedule.format(Date(timeIntervalSince1970: $0)) == Recovery.wakeString($0) })
+    var seen: [Bool] = []
+    let token = PowerAwareness.shared.subscribe { seen.append($0) }
+    PowerAwareness.shared.set("screens", true); PowerAwareness.shared.set("session", true); PowerAwareness.shared.set("screens", false)
+    PowerAwareness.shared.set("session", false)
+    PowerAwareness.shared.unsubscribe(token)
+    check("energy: the pollers pause while the screens sleep or another user is on, once each way", seen == [true, false])
 }
 
 /// Announcements, the island's keys, contrast.

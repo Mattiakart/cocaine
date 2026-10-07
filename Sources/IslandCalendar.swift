@@ -33,7 +33,8 @@ final class CalendarWatch: ObservableObject {
     func refresh() {
         let a = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         if access != a { access = a }
-        asked = EKEventStore.authorizationStatus(for: .event) != .notDetermined
+        let ak = EKEventStore.authorizationStatus(for: .event) != .notDetermined
+        if asked != ak { asked = ak }
         guard access, !busy else { return }
         if !storeHasAccess { store = EKEventStore(); storeHasAccess = true }     // a store made before the permission sees no events
         busy = true

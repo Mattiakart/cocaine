@@ -1,9 +1,6 @@
 /* The island's clipboard history (Sources/Clipboard.swift and its views in main.swift). */
 
-"%d days" = "%d jours";
 "%d items" = "%d éléments";
-"1 day" = "1 jour";
-"1 week" = "1 semaine";
 "A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept." = "Une expression régulière, p. ex. ^IBAN ou \\bconfidentiel\\b. Le texte correspondant n’est pas gardé.";
 "Add to favorites" = "Ajouter aux favoris";
 "Add" = "Ajouter";
