@@ -176,7 +176,11 @@ func cliRenderIsland() {
     im.pm = pm
     // --notch-width 210: another Mac's notch (a 14" is 185 pt; scaled resolutions change it).
     let notchW = args.firstIndex(of: "--notch-width").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }.map { CGFloat($0) } ?? 185
-    im.geometry = NotchGeometry(frame: .zero, notchWidth: notchW, height: 32, centerX: 0, hasNotch: true)
+    // --notch-height 38: a taller menu bar (the open page gets shorter); --tab calendar draws the fixture events (never the
+    // user's calendar), with --calendar-view day|week|month, --calendar-details, --calendar-select YYYY-MM-DD, --calendar-access denied|notasked.
+    let notchH = args.firstIndex(of: "--notch-height").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }.map { CGFloat($0) } ?? 32
+    im.geometry = NotchGeometry(frame: .zero, notchWidth: notchW, height: notchH, centerX: 0, hasNotch: true)
+    im.calendar.renderSample(args)
     im.open = args.contains("--open")
     if let i = args.firstIndex(of: "--tab"), i + 1 < args.count { im.tab = args[i + 1] }
     if args.contains("--focus") { im.focus.start() }
@@ -220,7 +224,7 @@ func cliRenderIsland() {
     let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
     func frame(_ p: CGFloat?) -> NSBitmapImageRep {
         if let p { im.renderProgress = p; im.open = p > 0 }
-        let l = IslandLayout(notch: notchW, notchH: 32)
+        let l = IslandLayout(notch: notchW, notchH: notchH)
         let view = ZStack(alignment: .top) {
             LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
             IslandView(model: im, m: pm, focus: im.focus, batteries: im.batteries, mic: im.mic, usage: im.usage)
