@@ -18,6 +18,8 @@ struct AgentOrigin: Codable, Equatable {
     var cwd: String?           // the folder the agent runs in (absolute)
     var pid: Int32?            // the agent's own process (the hook's parent)
     var pidStart: Double?      // its start time: tells a reused pid apart
+    var url: String?           // a web chat's tab (https, a known chat site only): going back selects that tab
+    var browser: String?       // the browser holding that tab (bundle id)
 
     var isEmpty: Bool { self == AgentOrigin() }
 
@@ -43,6 +45,8 @@ struct AgentOrigin: Codable, Equatable {
         }
         if let p = pid, p > 1, p < 1_000_000 { o.pid = p }
         if let s = pidStart, s > 0, s.isFinite { o.pidStart = s }
+        o.url = url.flatMap(AIEnvironments.safeChatURL)
+        o.browser = Self.matches(browser, #"^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$"#).flatMap { AIEnvironments.browsers.contains($0) ? $0 : nil }
         return o
     }
 
@@ -54,6 +58,7 @@ struct AgentOrigin: Codable, Equatable {
         o.app = n.app ?? app; o.term = n.term ?? term; o.tty = n.tty ?? tty; o.termSession = n.termSession ?? termSession
         o.tmuxPane = n.tmuxPane ?? tmuxPane; o.tmuxSocket = n.tmuxSocket ?? tmuxSocket; o.weztermPane = n.weztermPane ?? weztermPane
         o.cwd = n.cwd ?? cwd; o.pid = n.pid ?? o.pid; o.pidStart = n.pidStart ?? o.pidStart
+        o.url = n.url ?? url; o.browser = n.browser ?? browser
         return o
     }
 }
@@ -64,15 +69,21 @@ struct AgentEntry: Codable, Identifiable, Equatable {
     var id: String
     var from: String
     var project: String?
-    var state: String            // working | waiting | done | error
+    var state: String            // working | waiting | done | error | idle (open, nothing going on)
     var since: Double
     var origin: AgentOrigin?
     var restored: Bool?          // read back from disk at launch, not heard from since
+    // Where the row's knowledge comes from (Sources/AgentIngest.swift): the environment (AIEnvironments id), the most
+    // trusted source that set its state (AgentSignal.Source) and when, and the last time a detector saw the session.
+    var env: String? = nil
+    var src: Int? = nil
+    var srcAt: Double? = nil
+    var seen: Double? = nil
     var isLive: Bool { state == "working" || state == "waiting" }
     var needsYou: Bool { state == "waiting" || state == "error" }
 
-    /// Waiting for you first, then failed, then at work, then finished; newest first within each.
-    var rank: Int { ["waiting": 0, "error": 1, "working": 2, "done": 3][state] ?? 4 }
+    /// Waiting for you first, then failed, then at work, then finished, then merely open; newest first within each.
+    var rank: Int { ["waiting": 0, "error": 1, "working": 2, "done": 3, "idle": 4][state] ?? 5 }
 }
 
 /// Process facts from the kernel (no permission needed for the user's own processes).
@@ -132,7 +143,7 @@ final class AgentBoard {
     static let defaultFile = directory.appendingPathComponent("state.json")
     static let maxEntries = 100                       // anything can open cocaine://alert: the board can't grow without end
     let file: URL
-    private(set) var entries: [AgentEntry] = []
+    var entries: [AgentEntry] = []                    // changed through set, ingest (AgentIngest.swift), prune
 
     init(file: URL = AgentBoard.defaultFile) { self.file = file }
 
@@ -155,17 +166,31 @@ final class AgentBoard {
         prune(now, alive: alive)
     }
 
-    /// Finished and failed ones fade after 30 minutes. A live one whose process is known to be gone is dropped; one nobody
-    /// has updated for 2 hours (working) or 6 hours (waiting) is stale unless its process is known to be running (24 hours).
+    /// Finished and failed ones fade after 30 minutes (a finished one whose process still runs becomes "open" instead). A live
+    /// one whose process is known to be gone is dropped; one nobody has updated for 2 hours (working) or 6 hours (waiting) is
+    /// stale unless its process is known to be running (24 hours). An open (idle) one stays while its process runs, and goes
+    /// with it; when its process can't be checked, 30 minutes after a detector last saw it.
     func prune(_ now: Date = Date(), alive: (AgentEntry) -> Bool? = AgentBoard.liveness) {
         let t = now.timeIntervalSince1970
-        entries.removeAll { e in
+        entries = entries.compactMap { e in
+            var e = e
             let age = t - e.since
-            if !e.isLive { return age > 1800 }
+            if e.state == "idle" {
+                switch alive(e) {
+                case false?: return nil
+                case true?: return e
+                case nil: return t - (e.seen ?? e.since) > 1800 ? nil : e
+                }
+            }
+            if !e.isLive {
+                guard age > 1800 else { return e }
+                if e.state == "done", alive(e) == true { e.state = "idle"; return e }     // finished, but the session is still open
+                return nil
+            }
             switch alive(e) {
-            case false?: return true
-            case true?: return age > 24 * 3600
-            case nil: return age > (e.state == "working" ? 7200 : 6 * 3600)
+            case false?: return nil
+            case true?: return age > 24 * 3600 ? nil : e
+            case nil: return age > (e.state == "working" ? 7200 : 6 * 3600) ? nil : e
             }
         }
         if entries.count > Self.maxEntries {                            // the oldest finished ones go first, then the oldest

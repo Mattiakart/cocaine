@@ -39,13 +39,13 @@ struct AgentListView: View {
     }
 
     static func icon(_ s: String) -> String {
-        ["working": "sparkles", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill"][s] ?? "circle"
+        ["working": "sparkles", "waiting": "hand.raised.fill", "done": "checkmark.circle.fill", "error": "exclamationmark.triangle.fill", "idle": "circle.dashed"][s] ?? "circle"
     }
     static func name(_ s: String) -> String {
-        ["working": agentsL("Working"), "waiting": agentsL("Waiting for you"), "done": agentsL("Done"), "error": agentsL("Error")][s] ?? s
+        ["working": agentsL("Working"), "waiting": agentsL("Waiting for you"), "done": agentsL("Done"), "error": agentsL("Error"), "idle": agentsL("Session open")][s] ?? s
     }
     static func age(_ since: Double, now: Date = Date()) -> String { Dur.ago(seconds: Int(now.timeIntervalSince1970 - since)) }
-    private func color(_ s: String) -> Color { s == "error" || s == "waiting" ? warning : s == "done" ? .green : accent }
+    private func color(_ s: String) -> Color { s == "error" || s == "waiting" ? warning : s == "done" ? .green : s == "idle" ? UI.secondary : accent }
 
     private func sessionRow(_ e: AgentEntry) -> some View {
         Button { focus(e.origin, e.from) } label: {
@@ -124,5 +124,36 @@ struct AgentListView: View {
         .padding(Self.inset)
         .background(RoundedRectangle(cornerRadius: CTL.innerRadius).fill(Color.white.opacity(0.08)))
 
+    }
+}
+
+/// What Cocaine can detect in an environment, as six small symbols (session open, processing, completed, needs you, ended, go
+/// back): full where an official mechanism gives it, dimmer for a heuristic, faint where it's unverified or impossible. Each
+/// says its meaning on hover and to VoiceOver.
+struct CapabilityStrip: View {
+    let env: AIEnvironment
+    let accent: Color
+
+    static func word(_ s: AISupport) -> String { agentsL(s.word) }
+    static func opacity(_ s: AISupport) -> Double {
+        switch s { case .supported: return 1; case .partial: return 0.7; case .unverified: return 0.4; case .none: return 0.18 }
+    }
+    static func spoken(_ env: AIEnvironment) -> String {
+        AICap.allCases.map { "\(agentsL($0.title)): \(word(env.support($0)))" }.joined(separator: ", ")
+    }
+
+    var body: some View {
+        HStack(spacing: Space.s) {
+            ForEach(AICap.allCases, id: \.rawValue) { c in
+                let s = env.support(c)
+                Image(systemName: c.symbol)
+                    .font(UI.detail)
+                    .foregroundStyle(s == .supported ? accent : UI.secondary)
+                    .opacity(Self.opacity(s))
+                    .help("\(agentsL(c.title)): \(Self.word(s))")
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(env))
     }
 }

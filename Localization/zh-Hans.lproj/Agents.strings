@@ -20,3 +20,23 @@
 "Wants to use %@" = "想要使用 %@";
 "In the terminal" = "在终端中";
 "Hands the request back to the terminal and goes there" = "将请求交还给终端并前往";
+
+/* AI environments (Sources/AIEnvironments.swift, the Detected environments card) */
+"Session open" = "会话已打开";
+"Processing" = "处理中";
+"Response completed" = "回复完成";
+"Activity ended" = "活动结束";
+"Open the session" = "打开会话";
+"Supported" = "支持";
+"Partial" = "部分支持";
+"Not possible" = "无法实现";
+"Unverified" = "未验证";
+"Detected environments" = "检测到的环境";
+"Running" = "运行中";
+"Installed" = "已安装";
+"Also: %@" = "另含: %@";
+"Only whether it's open: it reports nothing else" = "仅能知道是否打开: 不报告其他内容";
+"Web chats" = "网页聊天";
+"Chat tabs in your browser: open, closed, and going back to the tab. Their replies can't be seen." = "浏览器中的聊天标签页: 打开、关闭以及回到该标签页。看不到其回复。";
+"Asks to control each open browser (Privacy & Security → Automation) when you turn it on" = "开启时请求控制每个已打开的浏览器(隐私与安全性 → 自动化)";
+"Brought %@ forward: it can't be told from outside which conversation to show." = "已将 %@ 置于前台: 无法从外部指定要显示哪个对话。";

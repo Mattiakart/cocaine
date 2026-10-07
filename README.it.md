@@ -69,7 +69,7 @@ nella barra si ricarica e basta.
 
 La scheda **Avvisi AI** del pannello compare quando Cocaine trova sul Mac uno strumento AI supportato. In alto, **Agent** elenca le
 sessioni al lavoro (oppure, se non ce n'è, gli **Ultimi avvisi**: i tre più recenti, con il progetto da cui arrivano). Poi tre
-schede: **AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando sei
+schede: **Ambienti rilevati** (ogni strumento, app e chat web AI trovato sul Mac, un interruttore dove c'è, e sei piccoli simboli per ciò che Cocaine riesce a vedere), **Quando** (finisce, ha bisogno di te, anche quando sei
 al Mac, una volta sola per sessione quando non resta niente in corso, **Rispondi dall’isola**, spento di default, e **Pausa**: 30
 minuti, un'ora o fino a domani) e **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni
 2, 5 o 10 minuti mentre sei via, e una prova). Con VoiceOver ogni avviso viene anche letto.
@@ -89,10 +89,17 @@ viene mai approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in ese
 nel terminale come sempre. L'`AskUserQuestion` di Claude Code non ha un hook per le risposte, quindi viene solo annunciata. Gli
 altri strumenti della tabella avvisano soltanto. Dettagli: [Sessioni AI](docs/ai-sessions.it.md).
 
+**Oltre gli hook.** I file di sessione di Claude Code e le CLI avviate in un terminale mostrano le sessioni aperte (anche senza
+hook), le sessioni finiscono quando il loro processo termina o la loro app si chiude (niente più righe ferme su "al lavoro"), e la
+stessa sessione vista in più modi è una sola riga. Un thread Codex dell'app ChatGPT si apre con il suo link `codex://threads/<id>`.
+**Chat sul web** (spento di default) elenca le schede dei siti di chat aperte in Safari o in un browser Chromium e torna alla
+scheda; vede solo gli indirizzi, mai le risposte. Le chat di Claude Desktop, Cowork e le altre app senza hook si vedono solo aperte
+o chiuse. Cosa funziona dove, con le prove e ciò che resta limitato: [Integrazioni AI](docs/ai-integrations.it.md).
+
 | AI | Finisce | Ha bisogno di te | Dove va l'hook di Cocaine |
 |---|---|---|---|
-| Claude Code | ✓ | ✓ permesso o domanda | `~/.claude/settings.json` |
-| Codex (CLI e app ChatGPT) | ✓ | ✓ approvazione | `~/.codex/hooks.json` |
+| Claude Code (CLI, IDE, scheda Code di Claude Desktop) | ✓ | ✓ permesso o domanda | `~/.claude/settings.json` |
+| Codex (CLI, app ChatGPT, estensione IDE) | ✓ | ✓ approvazione | `~/.codex/hooks.json` |
 | Cursor | ✓ | – | `~/.cursor/hooks.json` |
 | GitHub Copilot (CLI e VS Code) | ✓ | ✓ nella CLI | `~/.copilot/hooks/cocaine.json` |
 | Gemini CLI | ✓ | ✓ permesso | `~/.gemini/settings.json` |

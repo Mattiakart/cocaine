@@ -20,3 +20,23 @@
 "Wants to use %@" = "%@ を使おうとしています";
 "In the terminal" = "ターミナルで";
 "Hands the request back to the terminal and goes there" = "リクエストをターミナルに戻して移動します";
+
+/* AI environments (Sources/AIEnvironments.swift, the Detected environments card) */
+"Session open" = "セッション開始";
+"Processing" = "処理中";
+"Response completed" = "応答完了";
+"Activity ended" = "活動終了";
+"Open the session" = "セッションを開く";
+"Supported" = "対応";
+"Partial" = "一部対応";
+"Not possible" = "不可";
+"Unverified" = "未確認";
+"Detected environments" = "検出された環境";
+"Running" = "起動中";
+"Installed" = "インストール済み";
+"Also: %@" = "ほかに: %@";
+"Only whether it's open: it reports nothing else" = "開いているかどうかのみ: ほかは通知されません";
+"Web chats" = "Webチャット";
+"Chat tabs in your browser: open, closed, and going back to the tab. Their replies can't be seen." = "ブラウザのチャットタブ: 開いた、閉じた、タブに戻る。返答の内容は見えません。";
+"Asks to control each open browser (Privacy & Security → Automation) when you turn it on" = "オンにすると、開いている各ブラウザの制御を求めます(プライバシーとセキュリティ → オートメーション)";
+"Brought %@ forward: it can't be told from outside which conversation to show." = "%@ を前面に表示しました: どの会話を表示するかを外部から指定できません。";

@@ -68,7 +68,7 @@ the baggie in the menu bar just refills.
 
 The **AI alerts** tab of the panel appears once Cocaine finds a supported AI tool on the Mac. At its top, **Agents** lists the
 sessions at work (or, when none is, **Recent alerts**: the three latest, with the project each came from). Then three cards:
-**Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at the Mac,
+**Detected environments** (each AI tool, app and web chat found on the Mac, a switch where there is one, and six small symbols for what Cocaine can see there), **When** (it finishes, it needs you, also while you're at the Mac,
 just once per session when nothing is left running, **Answer from the island**, off by default, and **Pause**: 30 minutes, an
 hour, or until tomorrow) and **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5
 or 10 minutes while you're away, and a test). With VoiceOver, every alert is also read out.
@@ -88,10 +88,17 @@ its own: no answer within 2 minutes, Cocaine not running, or any error, and the 
 `AskUserQuestion` has no hook for answers, so it is only announced. Other tools in the table only alert. Details:
 [AI sessions](docs/ai-sessions.en.md).
 
+**Beyond the hooks.** Claude Code's own session files and CLIs started in a terminal show open sessions (also without hooks),
+sessions end when their process exits or their app quits (no more rows stuck on "working"), and the same session seen several
+ways is one row. A ChatGPT-app Codex thread opens by its `codex://threads/<id>` link. **Web chats** (off by default) lists the
+chat-site tabs open in Safari or a Chromium browser and goes back to the tab; it sees only their addresses, never their replies.
+Claude Desktop's chats, Cowork and other apps without hooks can only be seen open or quit. What works where, with the evidence
+and what stays limited: [AI integrations](docs/ai-integrations.en.md).
+
 | AI | Finishes | Needs you | Cocaine's hook goes in |
 |---|---|---|---|
-| Claude Code | ✓ | ✓ permission or question | `~/.claude/settings.json` |
-| Codex (CLI and ChatGPT app) | ✓ | ✓ approval | `~/.codex/hooks.json` |
+| Claude Code (CLI, IDEs, Claude Desktop's Code tab) | ✓ | ✓ permission or question | `~/.claude/settings.json` |
+| Codex (CLI, ChatGPT app, IDE extension) | ✓ | ✓ approval | `~/.codex/hooks.json` |
 | Cursor | ✓ | – | `~/.cursor/hooks.json` |
 | GitHub Copilot (CLI and VS Code) | ✓ | ✓ in the CLI | `~/.copilot/hooks/cocaine.json` |
 | Gemini CLI | ✓ | ✓ tool permission | `~/.gemini/settings.json` |

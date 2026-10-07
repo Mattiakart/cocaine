@@ -20,3 +20,23 @@
 "Wants to use %@" = "想要使用 %@";
 "In the terminal" = "在終端機中";
 "Hands the request back to the terminal and goes there" = "將請求交還給終端機並前往";
+
+/* AI environments (Sources/AIEnvironments.swift, the Detected environments card) */
+"Session open" = "工作階段已開啟";
+"Processing" = "處理中";
+"Response completed" = "回覆完成";
+"Activity ended" = "活動結束";
+"Open the session" = "開啟工作階段";
+"Supported" = "支援";
+"Partial" = "部分支援";
+"Not possible" = "無法實現";
+"Unverified" = "未驗證";
+"Detected environments" = "偵測到的環境";
+"Running" = "執行中";
+"Installed" = "已安裝";
+"Also: %@" = "另含: %@";
+"Only whether it's open: it reports nothing else" = "僅能知道是否開啟: 不回報其他內容";
+"Web chats" = "網頁聊天";
+"Chat tabs in your browser: open, closed, and going back to the tab. Their replies can't be seen." = "瀏覽器中的聊天分頁: 開啟、關閉以及回到該分頁。看不到其回覆。";
+"Asks to control each open browser (Privacy & Security → Automation) when you turn it on" = "開啟時請求控制每個已開啟的瀏覽器(隱私權與安全性 → 自動化)";
+"Brought %@ forward: it can't be told from outside which conversation to show." = "已將 %@ 移到前景: 無法從外部指定要顯示哪個對話。";

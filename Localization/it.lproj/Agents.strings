@@ -20,3 +20,23 @@
 "Wants to use %@" = "Vuole usare %@";
 "In the terminal" = "Nel terminale";
 "Hands the request back to the terminal and goes there" = "Restituisce la richiesta al terminale e ci va";
+
+/* AI environments (Sources/AIEnvironments.swift, the Detected environments card) */
+"Session open" = "Sessione aperta";
+"Processing" = "Elaborazione";
+"Response completed" = "Risposta completata";
+"Activity ended" = "Fine attività";
+"Open the session" = "Apri la sessione";
+"Supported" = "Supportato";
+"Partial" = "Parziale";
+"Not possible" = "Non possibile";
+"Unverified" = "Non verificato";
+"Detected environments" = "Ambienti rilevati";
+"Running" = "Aperta";
+"Installed" = "Installata";
+"Also: %@" = "Anche: %@";
+"Only whether it's open: it reports nothing else" = "Solo se è aperta: non segnala altro";
+"Web chats" = "Chat sul web";
+"Chat tabs in your browser: open, closed, and going back to the tab. Their replies can't be seen." = "Le schede delle chat nel browser: aperte, chiuse e il ritorno alla scheda. Le risposte non si possono vedere.";
+"Asks to control each open browser (Privacy & Security → Automation) when you turn it on" = "Chiede di controllare ogni browser aperto (Privacy e sicurezza → Automazione) quando lo attivi";
+"Brought %@ forward: it can't be told from outside which conversation to show." = "%@ è in primo piano: non gli si può dire dall'esterno quale conversazione mostrare.";
