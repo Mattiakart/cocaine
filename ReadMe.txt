@@ -38,7 +38,8 @@ GOOD TO KNOW
 - "Stay available" (Automation) also keeps the screen from dimming, sleeping and locking by itself while it runs.
 
 UNINSTALL
-1. In the panel, AI alerts: untick your AIs (this removes Cocaine's hooks from their settings).
+1. In the panel, AI alerts: untick your AIs (this removes Cocaine's hooks from their settings); under AI context (MCP),
+   Disconnect any connected tool.
 2. Quit Cocaine (this also turns it off).
 3. Move Cocaine to the Trash.
 4. In Terminal: sudo rm /etc/sudoers.d/cocaine

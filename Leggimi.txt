@@ -39,7 +39,8 @@ ATTENZIONE
   Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre (o esegui: cocaine off).
 
 DISINSTALLAZIONE
-1. Nel pannello, Avvisi AI: togli le spunte alle tue AI (così gli hook di Cocaine escono dalle loro impostazioni).
+1. Nel pannello, Avvisi AI: togli le spunte alle tue AI (così gli hook di Cocaine escono dalle loro impostazioni); in Contesto AI
+   (MCP), Scollega gli strumenti collegati.
 2. Esci da Cocaine (così si disattiva).
 3. Sposta Cocaine nel Cestino.
 4. Nel Terminale: sudo rm /etc/sudoers.d/cocaine

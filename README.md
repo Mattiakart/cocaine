@@ -177,6 +177,10 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   always saved, encrypted; the rest is kept in memory only unless you turn on *Save on this Mac* (encrypted, with retention
   limits, exclusions and *Delete everything*); never from password managers. [Details and limits](docs/clipboard.en.md),
   [pinboards](docs/pinboards.en.md).
+- **AI context (MCP)** (off by default): put clipboard items, shelf files and notes in the *AI context* and let Claude Code,
+  Claude Desktop, Codex, Cursor or Gemini CLI read **only those**, after you allow each tool in the notch; one click connects a
+  tool (shown first, reversible), an activity log records every read without its content. A local stdio MCP server, no network
+  port. [Details, tools, consent and limits](docs/mcp.en.md).
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices (refreshed at most once a minute), and the usage of
   Codex (its limits, from the newest sessions that report them) and Claude Code (tokens in the last 5 hours and 7 days), read from
   their own local files. Claude Code's files are read once, then only what was added; a first count over a large history says
@@ -364,7 +368,7 @@ app, its sudo rule and the AI alerts hooks, without asking. (`--zap` also delete
 recovery rules ([notes](docs/maintainers/cask-changes.md)); Homebrew runs the uninstall step of the version that is installed, so
 the first upgrade *to* 2.3.0 still uses the previous one, and the hand-over during upgrades works from the next update on.
 
-Without Homebrew: untick your AIs under AI alerts, quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
+Without Homebrew: untick your AIs under AI alerts, *Disconnect* the tools under AI context (MCP), quit Cocaine (that turns it off), move it to the Trash, then run this in Terminal:
 
 ```
 sudo rm /etc/sudoers.d/cocaine
