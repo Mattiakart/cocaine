@@ -63,7 +63,7 @@ extension IslandView {
                                 .frame(width: 80)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                             .accessibilityLabel(u.lastPathComponent)
                             .accessibilityHint(L("Shows it in Finder"))
                             .accessibilityAction(named: L("Remove")) { model.shelf.remove(u) }
@@ -72,7 +72,7 @@ extension IslandView {
                                     Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(UI.secondary)
                                         .frame(width: 24, height: 24).contentShape(Rectangle())                   // a 24 pt target
                                 }
-                                .buttonStyle(.plain).help(L("Remove")).accessibilityHidden(true)       // (the item's own Remove action)
+                                .buttonStyle(MotionGlyphStyle()).help(L("Remove")).accessibilityHidden(true)       // (the item's own Remove action)
                                 .offset(x: 6, y: -6)
                             }
                             .onDrag { NSItemProvider(object: u as NSURL) }

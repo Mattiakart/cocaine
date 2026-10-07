@@ -186,20 +186,15 @@ private struct MinuteRuler: View {
     var body: some View {
         GeometryReader { r in
             let mid = r.size.width / 2
-            Canvas { g, size in
-                for v in max(0, minutes - 60)...(minutes + 60) where v >= 5 && v <= 120 {
-                    let x = mid + CGFloat(v - minutes) * step
-                    guard x > 0, x < size.width else { continue }
-                    let big = v % 10 == 0, mid5 = v % 5 == 0
-                    let h: CGFloat = big ? 20 : mid5 ? 14 : 8
-                    g.fill(Path(CGRect(x: x - 0.5, y: size.height - h - 14, width: 1, height: h)), with: .color(.white.opacity(big ? 0.7 : 0.3)))
-                    if big { g.draw(Text("\(v)").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)), at: CGPoint(x: x, y: size.height - 5)) }
-                }
-            }
-            .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))   // the ticks fade at the ends
+            // The ticks glide to a new length (a scroll step, VoiceOver, each minute of a drag) with the value spring, which the
+            // next step retargets; Reduce Motion: they jump.
+            RulerTicks(position: Double(minutes), step: step, mid: mid)
+                .animation(Motion.animation(.value), value: minutes)
+                .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))   // the ticks fade at the ends
             RoundedRectangle(cornerRadius: 1.5).fill(Island.accent).frame(width: 3, height: 26).position(x: mid, y: 27)
             // The length, inside the frame and outside the fade (it used to sit above the frame and was masked away).
-            Text("\(minutes)").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(Island.accent).position(x: mid, y: 6)
+            Text("\(minutes)").font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(Island.accent)
+                .motionNumber(minutes).position(x: mid, y: 6)
         }
         .frame(height: 52)
         .contentShape(Rectangle())
@@ -219,6 +214,34 @@ private struct MinuteRuler: View {
             case .increment: minutes = Self.adjusted(minutes, up: true)
             case .decrement: minutes = Self.adjusted(minutes, up: false)
             @unknown default: break
+            }
+        }
+    }
+}
+
+/// The ruler's ticks around `position` (minutes; fractional while gliding), that length under the middle mark.
+struct RulerTicks: View, Animatable {
+    var position: Double
+    let step: CGFloat
+    let mid: CGFloat
+    var animatableData: Double { get { position } set { position = newValue } }
+
+    /// The minutes drawn around a position (the ruler shows an hour each side), within 5…120.
+    static func range(_ position: Double) -> ClosedRange<Int>? {
+        let lo = max(5, Int((position - 60).rounded(.down))), hi = min(120, Int((position + 60).rounded(.up)))
+        return lo <= hi ? lo...hi : nil
+    }
+
+    var body: some View {
+        Canvas { g, size in
+            guard let r = Self.range(position) else { return }
+            for v in r {
+                let x = mid + CGFloat(Double(v) - position) * step
+                guard x > 0, x < size.width else { continue }
+                let big = v % 10 == 0, mid5 = v % 5 == 0
+                let h: CGFloat = big ? 20 : mid5 ? 14 : 8
+                g.fill(Path(CGRect(x: x - 0.5, y: size.height - h - 14, width: 1, height: h)), with: .color(.white.opacity(big ? 0.7 : 0.3)))
+                if big { g.draw(Text("\(v)").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)), at: CGPoint(x: x, y: size.height - 5)) }
             }
         }
     }

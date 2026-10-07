@@ -142,6 +142,65 @@ enum MotionTests {
         lift.begin("music"); lift.entered(); lift.ended()
         check("drag: dropped: ended", lift.dragging == nil && !lift.lifted("music"))
 
+        // The island's screens through the model (what the strip's buttons do): 20 rapid changes end on the last, and the
+        // slide follows the tabs' order (a reordered layout's order, since it is the strip's).
+        let im = IslandModel()
+        let ids = im.tabs.map(\.id)
+        if ids.count >= 3 {
+            var picks: [String] = []
+            for i in 0..<20 { picks.append(ids[(i * 7 + 3) % ids.count]) }
+            if picks.last == ids[0] { picks.append(ids[1]) }
+            for p in picks { Motion.with(.page) { im.tab = p } }
+            check("island screens: 20 rapid changes end on the last one picked", im.tab == picks.last)
+            Motion.with(.page) { im.tab = ids[0] }
+            check("island screens: back to the first tab slides backward", !im.pager.forward)
+            Motion.with(.page) { im.tab = ids[ids.count - 1] }
+            check("island screens: to the last tab slides forward", im.pager.forward)
+        } else {
+            check("island screens: the model has at least three screens to test with", false)
+        }
+
+        // The panel's tabs: the same through PanelModel.page.
+        let pm = PanelModel()
+        pm.persistLanguage = false
+        for p in ["ai", "", "island", "auto", "", "island", "ai", "auto", "island", "", "auto", "ai", "", "island", "auto", "ai", "island", "", "ai", "auto"] {
+            Motion.with(.page) { pm.page = p }
+        }
+        check("panel tabs: 20 rapid changes end on the last (Automation), which came after AI: forward", pm.page == "auto" && pm.pager.forward)
+        pm.page = ""
+        check("panel tabs: back to General slides backward", !pm.pager.forward)
+
+        // Dialogs in quick succession (they queue behind the one shown): each is answered once, in order, and when the last
+        // goes none is left showing, nothing waits, and the card leaving is the newest.
+        let spam = DialogCenter()
+        spam.show = { _ in .panel }
+        var answered: [String] = []
+        for i in 0..<30 {
+            spam.present(DialogSpec(icon: "info.circle", title: "D\(i)", message: "", buttons: [DialogButton(id: "ok", title: "OK", role: .cancel)])) { _ in answered.append("D\(i)") }
+            if i % 3 != 0 { spam.cancel() }
+        }
+        var guardN = 0
+        while spam.current != nil && guardN < 100 { spam.cancel(); guardN += 1 }
+        check("dialog: 30 rapid opens and closes: each answered once in order, none left showing or waiting, the card leaving is the newest",
+              answered == (0..<30).map { "D\($0)" } && spam.current == nil && spam.queue.isEmpty && spam.last?.spec.title == "D29")
+
+        // The HUD: gone up, a new change drops it again (one drop per appearance, never a half-way state).
+        var h2 = HUDTimeline()
+        h2.post(HUDItem(icon: "speaker.wave.2.fill", text: "Volume", level: 0.3), now: 0)
+        _ = h2.tick(now: HUDTimeline.levelQuiet + 0.1)
+        check("HUD: after it went up, the next change drops it again", !h2.shown
+              && h2.post(HUDItem(icon: "speaker.wave.2.fill", text: "Volume", level: 0.4), now: 5) == .appear && h2.shown)
+
+        // The focus ruler: the ticks are drawn around a fractional position while they glide, inside 5…120.
+        check("focus ruler: gliding between lengths draws the ticks around the fractional position, never outside 5…120",
+              RulerTicks.range(25) == 5...85 && RulerTicks.range(25.4) == 5...86 && RulerTicks.range(119.6) == 59...120
+              && RulerTicks.range(5) == 5...65)
+
+        // Press: rows shrink by about as many points as a button does (a gentler ratio for wider things).
+        check("press: glyph < button < row < 1",
+              Motion.Distance.pressScaleSmall < Motion.Distance.pressScale && Motion.Distance.pressScale < Motion.Distance.pressScaleRow
+              && Motion.Distance.pressScaleRow < 1)
+
         // Loading: the dots brighten one at a time.
         check("loading: one dot bright per phase", (0..<3).allSatisfy { p in (0..<3).filter { BusyDots.opacity(dot: $0, phase: p) == 1 }.count == 1 })
     }

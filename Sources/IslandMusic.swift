@@ -372,6 +372,9 @@ extension IslandView {
                 else { ZStack { Color.white.opacity(0.08); Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(.white.opacity(0.35)) } }
             }
             .frame(width: 128, height: 128).clipShape(RoundedRectangle(cornerRadius: 12))
+            .id(mu.track?.id ?? "")                                              // another track: the artwork cross-fades
+            .transition(.opacity)
+            .animation(Motion.animation(.crossfade), value: mu.track?.id)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Space.xs) {
                 if let t = mu.track {
@@ -395,8 +398,13 @@ extension IslandView {
                         transport("quote.bubble", mu.lyricsOn ? L("Hide lyrics") : L("Show lyrics (looks up the title and artist on lrclib.net)"), on: mu.lyricsOn) { mu.setLyrics(!mu.lyricsOn) }
                     }
                     TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                        Text(mu.currentLine ?? (mu.lyricsOn ? mu.lyricsNote : ""))
+                        let line = mu.currentLine ?? (mu.lyricsOn ? mu.lyricsNote : "")
+                        // Each new line cross-fades into the next; looking the lyrics up: a calm light passes over the note.
+                        Text(line)
                             .font(UI.groupTitle).foregroundStyle(mu.lyricsState == .failed && mu.currentLine == nil ? warningColor : Island.accent).lineLimit(1)
+                            .contentTransition(.opacity)
+                            .animation(Motion.animation(.crossfade), value: line)
+                            .shimmer(mu.lyricsOn && mu.lyricsState == .loading && mu.currentLine == nil)
                     }
                 } else {
                     Text(mu.denied ? L("Allow Cocaine to control Music and Spotify in System Settings → Privacy & Security → Automation") : L("Play something in Music or Spotify"))
@@ -421,9 +429,12 @@ extension IslandView {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: size))
                 .foregroundStyle(on.map { $0 ? Island.accent : UI.hint } ?? UI.primary)
+                .contentTransition(.symbolEffect(.replace))                      // play ↔ pause: one glyph turns into the other
+                .animation(Motion.animation(.hudSwap), value: symbol)
+                .animation(Motion.animation(.hover), value: on)
                 .frame(minWidth: 24, minHeight: 24).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .buttonStyle(MotionGlyphStyle()).help(title).accessibilityLabel(title)
         .accessibilityAddTraits(on == true ? .isSelected : [])
     }
 

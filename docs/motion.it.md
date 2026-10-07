@@ -16,7 +16,7 @@ di cambiamento (un *ruolo*) una curva, e piccoli helper di vista costruiti sopra
 | molla `gentle` | risposta 0,42, smorzamento 0,92 | dialoghi, notifiche, schede di richiesta, ciò che arriva |
 | molla `bouncy` | risposta 0,36, smorzamento 0,80 | apertura dell'isola, discesa dell'HUD, il pomello dell'interruttore |
 | `stagger` | 0,035 s per elemento, al massimo 0,2 s | elementi che arrivano insieme |
-| Distanze | pressione 0,97 (glifi 0,92), entrata 8 pt + scala 0,97, pagina 16 pt, sollevamento 1,02 + ombra 8 pt, impulso 1,12 | |
+| Distanze | pressione 0,97 (glifi 0,92, righe di elenco e celle dei giorni 0,985), entrata 8 pt + scala 0,97, pagina 16 pt, sollevamento 1,02 + ombra 8 pt, impulso 1,12 | |
 | `islandSettle` | 0,5 s | quando la finestra dell'isola si rimpicciolisce dopo la chiusura (dopo che la molla si è fermata) |
 | Versamento | 1,4 s riempimento (ease-out), 0,7 s svuotamento (ease-in) | la bustina nella barra dei menu |
 
@@ -41,14 +41,14 @@ di cambiamento (un *ruolo*) una curva, e piccoli helper di vista costruiti sopra
 
 ## Helper
 
-- `.pressable(pressed)`: feedback di pressione (`CocaineButtonStyle`, l'interruttore, `MotionGlyphStyle` per pulsanti a glifo, stepper, righe).
+- `.pressable(pressed)`: feedback di pressione (`CocaineButtonStyle`, l'interruttore, `MotionGlyphStyle` per ogni pulsante semplice: glifi, stepper, righe, celle dei giorni, file sullo scaffale, controlli della musica).
 - `.motionAppear(edge:)` / `Motion.appear`: arriva da un bordo, un po' più piccolo, diventando opaco presto (dialoghi, menu a
   tendina, schede di richiesta, file sullo scaffale, righe dell'editor delle schermate).
 - `Motion.page(direction)`: la nuova pagina entra dal lato della scheda scelta, la vecchia esce dall'altro, con dissolvenza
   (schermate dell'isola, schede del pannello). `PageDirection` è aggiornata dal modello quando cambia la scheda.
 - `.motionSelection(value)`, `.motionNumber(value)` (cifre che scorrono), `.motionPulse(trigger)`, `.motionLift(lifted)`.
 - `.shimmer(active)` e `BusyDots`: caricamento, calmo, solo opacità (fotocamera che parte, utilizzo ancora in conteggio,
-  aggiornamenti, pulsanti occupati).
+  testi delle canzoni in ricerca, aggiornamenti, pulsanti occupati). Le tacche del righello del focus scivolano alla nuova durata con la molla `value`.
 - `StripHighlight`: l'evidenziazione delle schede nelle strisce, con il suo hover.
 
 ## Regole per una nuova animazione

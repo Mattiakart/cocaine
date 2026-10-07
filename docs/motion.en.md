@@ -16,7 +16,7 @@ Every animation in Cocaine comes from one system in `Sources/Motion.swift`: a fe
 | `gentle` spring | response 0.42, damping 0.92 | dialogs, notices, request cards, things arriving |
 | `bouncy` spring | response 0.36, damping 0.80 | the island opening, the HUD dropping, the switch's knob |
 | `stagger` | 0.035 s per item, at most 0.2 s | items arriving together |
-| Distances | press 0.97 (glyphs 0.92), enter 8 pt + 0.97 scale, page 16 pt, lift 1.02 + 8 pt shadow, pulse 1.12 | |
+| Distances | press 0.97 (glyphs 0.92, list rows and day cells 0.985), enter 8 pt + 0.97 scale, page 16 pt, lift 1.02 + 8 pt shadow, pulse 1.12 | |
 | `islandSettle` | 0.5 s | when the island's window shrinks after a close (longer than the close spring takes to settle) |
 | Pour | 1.4 s filling (ease-out), 0.7 s emptying (ease-in) | the menu-bar bag |
 
@@ -41,13 +41,13 @@ Every animation in Cocaine comes from one system in `Sources/Motion.swift`: a fe
 
 ## Helpers
 
-- `.pressable(pressed)`: press feedback (`CocaineButtonStyle`, the switch, `MotionGlyphStyle` for glyph buttons, steppers, rows).
+- `.pressable(pressed)`: press feedback (`CocaineButtonStyle`, the switch, `MotionGlyphStyle` for every plain button: glyphs, steppers, rows, day cells, shelf items, music controls).
 - `.motionAppear(edge:)` / `Motion.appear`: arrives from an edge, a little smaller, becoming opaque early (dialogs, dropdowns,
   request cards, shelf items, the screens editor's rows).
 - `Motion.page(direction)`: the new page slides in from the side of the tab picked, the old one leaves the other way, fading
   through (the island's screens, the panel's tabs). `PageDirection` is updated by the model when the tab changes.
 - `.motionSelection(value)`, `.motionNumber(value)` (rolling digits), `.motionPulse(trigger)`, `.motionLift(lifted)`.
-- `.shimmer(active)` and `BusyDots`: loading, calm, opacity only (camera starting, usage still counting, the updater, busy buttons).
+- `.shimmer(active)` and `BusyDots`: loading, calm, opacity only (camera starting, usage still counting, lyrics being looked up, the updater, busy buttons). The focus ruler's ticks glide to a new length with the `value` spring.
 - `StripHighlight`: the strips' tab highlight with its hover.
 
 ## Rules for a new animation

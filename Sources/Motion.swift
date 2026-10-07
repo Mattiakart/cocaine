@@ -64,6 +64,7 @@ enum Motion {
     enum Distance {
         static let pressScale: CGFloat = 0.97          // a pressed button
         static let pressScaleSmall: CGFloat = 0.92     // a pressed glyph, the switch
+        static let pressScaleRow: CGFloat = 0.985      // a pressed list row or day cell (wide: a smaller ratio, the same few points)
         static let pressOpacity: Double = 0.75         // a pressed control under Reduce Motion (it doesn't shrink)
         static let enter: CGFloat = 8                  // a card or row arriving from its edge
         static let enterScale: CGFloat = 0.97          // …and growing to its size

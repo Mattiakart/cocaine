@@ -92,7 +92,7 @@ extension IslandView {
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                     .help(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))
                     .accessibilityLabel(app.name)
                     .accessibilityHint(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))

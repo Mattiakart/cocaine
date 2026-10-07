@@ -158,7 +158,7 @@ struct LinkButton: View {
             .font(CTL.link).foregroundStyle(CTL.accent)
             .frame(minHeight: CTL.h).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .accessibilityAddTraits(.isLink)
     }
 }

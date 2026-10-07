@@ -523,11 +523,11 @@ extension View {
             } keyframes: { _ in
                 KeyframeTrack(\.scale) {
                     MoveKeyframe(1)
-                    LinearKeyframe(Motion.reduce ? 1 : 1.35, duration: 0.5)
+                    LinearKeyframe(Motion.reduce ? 1 : 1.35, duration: Motion.Duration.slow)
                 }
                 KeyframeTrack(\.opacity) {
                     MoveKeyframe(Motion.reduce ? 0 : 0.9)
-                    LinearKeyframe(0, duration: 0.5)
+                    LinearKeyframe(0, duration: Motion.Duration.slow)
                 }
             }
             .allowsHitTesting(false)
@@ -751,7 +751,7 @@ struct CalendarEventRow: View {
             .opacity(declined ? 0.55 : 1)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .onHover { hover.on = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(event.title)
@@ -808,7 +808,7 @@ struct CalendarWeekView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .accessibilityLabel(watch.dayLabel(d))
         .accessibilityHint(L("Opens the day"))
     }
@@ -828,7 +828,7 @@ struct CalendarWeekView: View {
             .opacity(e.declined ? 0.5 : 1)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .help(e.title)
         .accessibilityLabel(e.title)
         .accessibilityValue(CalendarFormat.time(e, on: nil, watch.cal, loc) + (e.declined ? ", " + L("Declined") : ""))
@@ -916,7 +916,7 @@ struct CalendarMonthView: View {
             .frame(width: width, height: height)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .accessibilityLabel(watch.dayLabel(d))
         .accessibilityValue(isToday ? L("Today") : "")
         .accessibilityHint(selected ? L("Opens the day") : "")
@@ -994,7 +994,7 @@ struct CalendarDetails: View {
                             }
                             .foregroundStyle(CTL.accent).contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                         .help(u.absoluteString)
                         .accessibilityLabel(L("Video call") + ", " + CalendarText.display(u))
                         .accessibilityAddTraits(.isLink)

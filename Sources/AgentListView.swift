@@ -69,7 +69,7 @@ struct AgentListView: View {
             .padding(.horizontal, Self.inset)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .help(agentsL("Go to this session"))
         .accessibilityLabel("\(e.from), \(Self.name(e.state))" + (e.project.map { ", \($0)" } ?? ""))
     }
@@ -107,7 +107,7 @@ struct AgentListView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain).help(agentsL("Go to this session"))
+            .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow)).help(agentsL("Go to this session"))
             HStack(spacing: Space.s) {
                 ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
                     Button(choiceLabel(c)) { answer(r.id, i) }

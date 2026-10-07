@@ -169,7 +169,7 @@ extension IslandView {
     /// A label and a count, on one baseline: "Last 7 days … 8,6 Mln" in the app's language.
     private func tokenRow(_ label: String, _ n: Int) -> some View {
         HStack(alignment: .firstTextBaseline) { Text(label).font(UI.detail).foregroundStyle(UI.secondary); Spacer()
-            Text((usage.partial ? "≥ " : "") + Dur.count(n, locale: Language.locale)).font(UI.metric) }
+            Text((usage.partial ? "≥ " : "") + Dur.count(n, locale: Language.locale)).font(UI.metric).motionNumber(n) }   // still counting: it rolls up
             .accessibilityElement(children: .combine)
     }
 }

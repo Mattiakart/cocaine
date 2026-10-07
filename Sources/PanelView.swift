@@ -301,7 +301,7 @@ struct PanelView: View {
                         Button { m.focusAgent(r.origin, r.from) } label: {
                             activityRow("bell.fill", UI.secondary, r.from, r.message, r.project, Self.time.string(from: r.at)).contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain).help(L("Go to this session"))
+                        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow)).help(L("Go to this session"))
                     }
                 }
             }
@@ -347,6 +347,7 @@ struct PanelView: View {
                 }
             }
             row(L("Updates"), detail: up.statusText, warning: { if case .failed = up.phase { return true }; return false }()) { updateControl }
+                .animation(Motion.animation(.crossfade), value: up.statusText)    // checking → available → downloading…: the words and the button cross-fade
             row(L("Check for updates automatically"), tip: L("Once a day. Nothing is downloaded until you press Install.")) {
                 toggle(L("Check for updates automatically"), $up.autoCheck)
             }

@@ -200,7 +200,7 @@ extension IslandView {
                         }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
                     .accessibilityLabel(it.name)
                     .accessibilityValue(it.size.formatted(.byteCount(style: .file).locale(Language.locale)))
                     .accessibilityHint(L("Shows it in Finder"))
@@ -218,7 +218,7 @@ extension IslandView {
                 ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: Space.m) {
                     ForEach(files.shots) { it in
                         Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: { FileThumb(url: it.url, side: 62) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                             .onDrag { NSItemProvider(object: it.url as NSURL) }
                             .help(it.name)
                             .accessibilityLabel(it.name)

@@ -479,7 +479,7 @@ struct ShortcutRecorderButton: View {
                 .overlay(Capsule().strokeBorder(recording ? CTL.accent : UI.boundary, lineWidth: 1))
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
         .onHover { hover.on = $0 }
         .help(L("Press, then type the new shortcut; Escape cancels"))
         .accessibilityLabel(String(format: L("Shortcut for %@"), action.title))

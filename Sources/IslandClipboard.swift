@@ -43,7 +43,7 @@ private struct ClipboardPage: View {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(UI.hint)
                                 .frame(width: 24, height: 24).contentShape(Rectangle())                         // a 24 pt target
                         }
-                        .buttonStyle(.plain).help(L("Clear search")).accessibilityLabel(L("Clear search"))
+                        .buttonStyle(MotionGlyphStyle()).help(L("Clear search")).accessibilityLabel(L("Clear search"))
                         .padding(.trailing, -Space.m)                    // the target may reach into the field's padding
                     }
                 }
@@ -81,7 +81,7 @@ private struct ClipboardPage: View {
                 .background(RoundedRectangle(cornerRadius: CTL.radius).fill(Color.white.opacity(on ? 0.16 : 0)))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(title).accessibilityLabel(title)
+        .buttonStyle(MotionGlyphStyle()).help(title).accessibilityLabel(title)
     }
 
     private func row(_ c: ClipItem) -> some View {
@@ -97,7 +97,7 @@ private struct ClipboardPage: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
             // VoiceOver: the row is "copy it"; delete and the star are its actions (the × only shows under the pointer).
             .accessibilityLabel(title(c))
             .accessibilityValue(c.pinned ? L("Favorite") : "")
@@ -109,13 +109,13 @@ private struct ClipboardPage: View {
                 Button { h.remove(c.id) } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(UI.hint).frame(width: 24, height: 24).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).help(L("Delete")).accessibilityLabel(L("Delete"))
+                .buttonStyle(MotionGlyphStyle()).help(L("Delete")).accessibilityLabel(L("Delete"))
             }
             Button { Haptic.tap(.alignment); h.togglePin(c.id) } label: {
                 Image(systemName: c.pinned ? "star.fill" : "star").font(.system(size: 10))
                     .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.65 : 0.4)).frame(width: 24, height: 24).contentShape(Rectangle())   // 3:1 on the row
             }
-            .buttonStyle(.plain).help(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
+            .buttonStyle(MotionGlyphStyle()).help(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
             .accessibilityLabel(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
         }
         .padding(.leading, Space.l).padding(.trailing, 1).frame(height: 28)
