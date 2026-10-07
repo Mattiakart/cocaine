@@ -34,6 +34,7 @@ enum AgentTests {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let t = now.timeIntervalSince1970
         let unknown: (AgentEntry) -> Bool? = { _ in nil }
+        AIEnvironmentTests.run(check)          // environments, detectors, the one ingestion path, every hook installer
 
         // Order and the full list.
         let b = AgentBoard(file: tempDir().appendingPathComponent("state.json"))

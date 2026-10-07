@@ -87,7 +87,7 @@ enum AIEnvironments {
         .init(id: "cowork", name: "Claude Cowork", kind: .desktop, bundleIDs: [claudeDesktop], methods: [.app], matrix: "PNNNPP"),
         .init(id: "claude-desktop", name: "Claude Desktop (chat)", kind: .desktop, bundleIDs: [claudeDesktop], methods: [.app], matrix: "PNNNPP"),
         .init(id: "codex-cli", name: "Codex CLI", kind: .cli, hookTool: "codex", executables: ["codex"], methods: [.hook, .process],
-              matrix: "SSSSSS", liveVerified: true),
+              matrix: "SSSSSS"),
         .init(id: "codex-app", name: "ChatGPT · Codex", kind: .desktop, hookTool: "codex", bundleIDs: [codexApp], methods: [.hook, .app],
               matrix: "SSSSPS"),
         .init(id: "codex-ide", name: "Codex IDE extension", kind: .ide, hookTool: "codex", methods: [.hook], matrix: "SSSSPP"),
@@ -325,10 +325,21 @@ enum AIEnvironments {
 }
 
 /// `--ai-environments matrix [--it]`, run from main.swift: the capability matrix as Markdown, for the docs.
+/// `--ai-environments scan`: what the detectors see on this Mac right now (environment, state, source, process; never any
+/// content), read-only; for checking a live session by hand.
 func cliAIEnvironments() {
     let args = CommandLine.arguments
+    if args.count >= 3, args[2] == "scan" {
+        let dir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/sessions")
+        let signals = ClaudeSessionFiles.scan(dir) + ProcessDetector.facts().compactMap(ProcessDetector.signal)
+        for s in signals {
+            print("\(s.env)\t\(s.state.rawValue)\t\(s.source)\tsession \(s.session.map { String($0.prefix(8)) } ?? "-")\tpid \(s.origin?.pid.map(String.init) ?? "-")\tapp \(s.origin?.app ?? "-")\ttty \(s.origin?.tty ?? "-")")
+        }
+        print("\(signals.count) session(s)")
+        exit(0)
+    }
     guard args.count >= 3, args[2] == "matrix" else {
-        FileHandle.standardError.write(Data("usage: --ai-environments matrix [--it]\n".utf8)); exit(64)
+        FileHandle.standardError.write(Data("usage: --ai-environments matrix [--it] | scan\n".utf8)); exit(64)
     }
     print(AIEnvironments.markdownMatrix(italian: args.contains("--it")), terminator: "")
     exit(0)
