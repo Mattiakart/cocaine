@@ -31,7 +31,7 @@ struct IslandView: View {
     /// The screen this island is on (one island per screen, IslandController); nil = the model's own geometry (render tools).
     var place: IslandPlace? = nil
 
-    private var g: NotchGeometry { place?.geometry ?? model.geometry }
+    var g: NotchGeometry { place?.geometry ?? model.geometry }
     /// This island is the open one (only one is open at a time: the pointer is on one screen).
     private var isOpen: Bool { model.open && (place == nil || model.openScreen == place!.display) }
     /// The HUD was sent to this island.
@@ -123,15 +123,23 @@ struct IslandView: View {
         .modifier(StripSlide(pose: s, layout: l, from: .gear, to: right1 - cell / 2, width: cell, order: 0, fade: .gear))
     }
 
-    /// The Home tab is the bag itself: closed it sits left of the notch (or a flash icon does), open it is the first tab.
+    /// The first tab is the bag itself: closed it sits left of the notch (or a flash icon does), open it is the first tab: Home,
+    /// or (when the screens were rearranged) the first screen's icon, which the bag melts into.
     private func homeButton(_ t: (id: String, icon: String, title: String), _ s: IslandPose, cell: CGFloat) -> some View {
         let selected = model.tab == t.id
         return Button { Haptic.tap(.alignment); model.tab = t.id } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(selected ? 0.16 : 0)).frame(width: Self.highlight(cell), height: 26)
                     .modifier(CellMorph(pose: s, kind: .highlight))
-                BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)       // only it redraws while the powder pours
-                    .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
+                if t.id == "home" {
+                    BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)       // only it redraws while the powder pours
+                        .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
+                } else {
+                    BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)
+                        .modifier(CellMorph(pose: s, kind: .bag(dim: 1))).modifier(FirstCellMorph(pose: s, out: true))
+                    Image(systemName: t.icon).font(UI.tabIcon).foregroundStyle(selected ? Color.white : UI.hint)
+                        .modifier(FirstCellMorph(pose: s, out: false))
+                }
             }
             .frame(width: cell, height: g.height)
             .contentShape(Rectangle())
@@ -201,23 +209,13 @@ struct IslandView: View {
 
     // MARK: open
 
-    /// The selected tab's page, below the strip. Only there while open: it is inserted once and unfolds (see PageReveal).
+    /// The selected screen's page, below the strip, its modules as the layout places them (ScreenModules.swift). Only there
+    /// while open: it is inserted once and unfolds (see PageReveal); changing screens cross-fades them (ScreensMotion).
     private var page: some View {
-        Group {
-            switch model.tab {
-            case "focus": focusTab
-            case "calendar": calendarTab
-            case "music": musicTab
-            case "media": mediaTab
-            case "mirror": mirrorTab
-            case "display": displayTab
-            case "files": filesTab
-            case "shelf": shelfTab
-            case "clipboard": clipboardTab
-            case "status": statusTab
-            default: homeTab
-            }
+        ZStack(alignment: .top) {
+            screenPage(model.tab).id(model.tab).transition(ScreensMotion.pageTransition)
         }
+        .animation(ScreensMotion.change, value: model.tab)
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 16)
         .frame(width: IslandLayout.openBody, height: Island.openSize.height - g.height, alignment: .top)
         .dialogHost(dialogs, .island, UI.dialog, maxWidth: Layout.width - 28, inset: EdgeInsets(top: 4, leading: 18, bottom: 8, trailing: 18))

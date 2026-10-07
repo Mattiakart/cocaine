@@ -448,6 +448,7 @@ struct PanelView: View {
                     toggle(L("Show on all screens"), $m.islandAllScreens)
                 }
             }
+            card("rectangle.3.group", L("Screens")) { ScreensEditor() }        // Sources/ScreensEditor.swift
             clipboardCard
         }
     }

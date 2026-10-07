@@ -18,7 +18,9 @@ Where things are:
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
   IslandStatus (batteries; usage in Usage.swift), IslandCalendar (logic in CalendarGrid.swift, --calendar-test in CalendarTests.swift), IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
-  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift).
+  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The pages are drawn as modules: ScreenLayout.swift (the
+  user's screens, pure rules), ScreenModules.swift (module views, the screen grid), ScreensEditor.swift (the Settings card),
+  ScreensTests.swift (--screens-test, render fixtures).
 - AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices), Agent*.swift (sessions, approvals, focus, list).
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
 - Assets.swift (the baggie glyph, --render-assets), RenderTools.swift (--render-panel, --render-island), SelfTests.swift and

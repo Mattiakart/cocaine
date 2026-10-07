@@ -39,8 +39,10 @@ final class ShelfStore: ObservableObject {
 }
 
 extension IslandView {
-    var shelfTab: some View {
-        HStack(alignment: .top, spacing: Space.page) {
+    /// The shelf: as many 80 pt columns of files as its width holds beside the two buttons (5 on the whole page).
+    func shelfModule(_ b: ModuleBox) -> some View {
+        let columns = max(1, min(5, Int((b.width - 110 - Space.page + Space.m) / (80 + Space.m))))
+        return HStack(alignment: .top, spacing: Space.page) {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Shelf")).font(UI.section).foregroundStyle(UI.secondary)
                 if model.shelf.urls.isEmpty {
@@ -49,7 +51,7 @@ extension IslandView {
                         .frame(height: 96)
                 } else {
                     // 5 × 80 + 4 × 8 = 432 pt: inside the 448 pt this column has (the old 5 × 84 + 4 × 10 spilled 6 pt left).
-                    FadingScroll(cap: 118) { LazyVGrid(columns: Array(repeating: GridItem(.fixed(80), spacing: Space.m), count: 5), alignment: .leading, spacing: Space.m) {
+                    FadingScroll(cap: 118) { LazyVGrid(columns: Array(repeating: GridItem(.fixed(80), spacing: Space.m), count: columns), alignment: .leading, spacing: Space.m) {
                         ForEach(model.shelf.urls, id: \.self) { u in
                             Button { NSWorkspace.shared.activateFileViewerSelecting([u]) } label: {
                                 VStack(spacing: 3) {

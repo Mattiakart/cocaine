@@ -79,14 +79,15 @@ final class BatteryWatch: ObservableObject {
 extension IslandView {
     // MARK: batteries
 
-    private var batteryTab: some View {
+    /// The batteries: four devices at L, two at M, one at S.
+    func batteriesModule(_ b: ModuleBox) -> some View {
         VStack(alignment: .leading, spacing: Space.m) {
             if batteries.items.isEmpty {
                 Text(L("No devices")).font(UI.value).foregroundStyle(UI.hint)
             }
             let cols = [GridItem(.flexible())]
             LazyVGrid(columns: cols, alignment: .leading, spacing: Space.l) {
-                ForEach(batteries.items.prefix(4)) { item in
+                ForEach(batteries.items.prefix(b.size == .l ? 4 : b.size == .m ? 2 : 1)) { item in
                     HStack(spacing: Space.m) {
                         Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(UI.secondary).frame(width: 20)   // a device glyph
                         VStack(alignment: .leading, spacing: Space.xs) {
@@ -129,15 +130,8 @@ extension IslandView {
 
     // MARK: usage
 
-    /// Batteries on the left, the AI tools' usage on the right.
-    var statusTab: some View {
-        HStack(alignment: .top, spacing: Space.gutter) {
-            batteryTab.frame(width: 250, alignment: .topLeading)
-            usageTab.frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-    }
-
-    private var usageTab: some View {
+    /// The AI tools' usage: Codex's limits and Claude Code's tokens.
+    func usageModule(_ b: ModuleBox) -> some View {
         VStack(alignment: .leading, spacing: Space.l) {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text("Codex").font(UI.groupTitle)
