@@ -819,6 +819,26 @@ enum MCPTests {
         let id = MCPClientIdentity(name: "claude-code", program: "/Users/x/.local/bin/claude")
         check("consent: a client's label (its name and program)", id.label == "claude-code (claude)" && MCPClientIdentity(name: "unknown", program: "").label == "An AI tool")
         check("text: control and bidi characters are removed", AIContextText.clean("a\u{202E}b\u{0000}c\nd", 50) == "abc d")
+        check("picker: half clipboard, half shelf, the rest from whichever has more",
+              AIContextCenter.balanced([1, 2, 3, 4, 5], [10, 11, 12], max: 4) == [1, 2, 10, 11] && AIContextCenter.balanced([1], [10, 11, 12, 13, 14], max: 4) == [1, 10, 11, 12]
+              && AIContextCenter.balanced([1, 2, 3, 4, 5], [Int](), max: 4) == [1, 2, 3, 4])
+        let cands = (0..<9).map { AIContextCenter.Candidate(id: "\($0)", kind: "clip", ref: "", title: "t\($0)", symbol: "doc") }
+        let pick = AIContextCenter.pickSpec("Codex", reason: "why\u{202E}\n" + String(repeating: "r", count: 400), options: cands, picked: [])
+        check("picker: at most 4 items, Decline and Share; the reason cleaned and bounded",
+              pick.choices.count == AIContextCenter.maxOptions + 2 && pick.choices.last?.id == "send" && (pick.message ?? "").count <= 125 && !(pick.message ?? "").contains("\u{202E}"))
+        let consentSpec = AIContextCenter.consentSpec("claude-code", count: 2)
+        check("consent question: Allow / Allow once / Deny / Not now; Return does nothing, Esc is “not now”",
+              consentSpec.choices.map(\.id) == ["allow", "once", "deny", "later"] && DialogLogic.key(consentSpec, .returnKey, text: "", choice: nil) == .ignored
+              && DialogLogic.key(consentSpec, .escape, text: "", choice: nil) == .finish(.cancelled))
+        let dc = DialogCenter()
+        dc.show = { $0 }
+        var results: [String: DialogResult] = [:]
+        let first = dc.present(consentSpec) { results["first"] = $0 }
+        let second = dc.present(consentSpec) { results["second"] = $0 }
+        dc.withdraw(second)
+        check("dialogs: a waiting question can be withdrawn (it answers cancelled, never shows)", results["second"] == .cancelled && dc.current?.id == first)
+        dc.withdraw(first)
+        check("dialogs: the question on screen can be withdrawn", results["first"] == .cancelled && dc.current == nil)
         let (cut, next) = AIContextText.cut("abcdefgh", from: 2, budget: 1)
         check("text: a cut continues where it stopped", cut == "cdef" && next == 6)
     }
