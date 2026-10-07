@@ -425,3 +425,17 @@ enum SyncShortcuts {
         }
     }
 }
+
+/// `--make-sync-shortcut send|get|clip <path>`, run from main.swift (maintainers): builds and signs one of them (Clip with a
+/// throwaway pairing) and copies it to `path`. Never opened, never added to Shortcuts.
+func cliMakeSyncShortcut() {
+    let a = CommandLine.arguments
+    let kind: SyncShortcuts.Kind = a[2] == "get" ? .getFromMac : a[2] == "clip" ? .clip : .sendToMac
+    let pairing = kind == .clip ? Pairing.make(tier: "basic", relay: "https://relay.test") : nil
+    guard let f = SyncShortcuts.signedFile(kind, subpath: ICloudPaths.defaultName, pairing: pairing, labels: SyncShortcutLabels()) else { print("could not sign"); exit(1) }
+    try? FileManager.default.removeItem(atPath: a[3])
+    try? FileManager.default.copyItem(at: f, to: URL(fileURLWithPath: a[3]))
+    try? FileManager.default.removeItem(at: f.deletingLastPathComponent())
+    print("ok")
+    exit(0)
+}
