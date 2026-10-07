@@ -8,17 +8,41 @@ running: downloads, builds and AI agents go on. **Now** turns them off at once. 
   password after screen saver begins or display is turned off"). In this mode Cocaine's engine no longer holds the display
   awake (`caffeinate -i` instead of `-d`), so macOS's own display-sleep timer also applies and may turn the screens off sooner.
   In the normal mode the display is held awake and macOS doesn't auto-lock on idle (unchanged).
-- **Lid:** with the lid closed and no external display, the built-in screen is already off; the Mac stays awake as usual
-  with Cocaine on. Lid closed with an external display (clamshell): the external display is turned off like any other.
+- **Lid:** see *Lid closed* below (it works the same in this mode). Lid closed with an external display (clamshell): the
+  external display is turned off after the idle time like any other.
 - **Heat and battery:** with the lid closed, on battery, if macOS reports a *serious* or *critical* thermal state (a Mac in a
   bag), Cocaine turns itself off so the Mac can sleep, and tells you. The Battery Guard works as before and also stops every
-  Smart Trigger from turning Cocaine back on until the battery recovers or the charger is connected.
+  Smart Trigger from turning Cocaine back on until the battery recovers or the charger is connected. Below it there is a
+  fixed floor: at **5 %** on battery Cocaine turns itself off even with Battery Guard off or already used, and again if it is
+  turned back on down there; triggers wait until the battery is above 8 % or on the charger.
 - **Stay available:** in this mode it no longer holds the display awake and never sends its invisible mouse event to a sleeping
   display (that would light it up), so chat apps may show you as away while the screens are off. Dimming and screen-off now
   count from your last real input, ignoring Stay available’s own events (before, with it on, a 1-minute dim never fired).
 - **Alerts** (AI alerts with *Flash* on) still wake the displays on purpose.
 - **Limits:** AirPlay, Sidecar and some DisplayLink displays may not honour display sleep. Some monitors show "no signal"
   before going to standby.
+
+### Lid closed, dimming and several displays
+
+- **Lid closed** (Cocaine on): the built-in display goes to its lowest backlight (1 %) at once, whatever *When idle* says, and
+  gets back the level it had just before the close when the lid opens. Cocaine hears the lid the moment it moves (the power
+  manager's clamshell message, with a poll every 0.5 s as a fallback) and reads the level then; a reading that is already
+  dropping (the panel powering down) is not trusted. With no external display the Mac stays awake with a dark built-in. External
+  displays are never touched by the lid: in clamshell they stay as they are and follow only the idle dimming. Turning Cocaine
+  off with the lid closed gives the built-in its level back. Launched or turned on with the lid already closed works the same.
+- **Idle dimming** lowers every display that is on: Apple displays through their backlight, others through their own colour
+  table (saved and put back exactly, other displays untouched; it saves no power, the monitor's backlight stays on). A display
+  already darker than the chosen level is left alone. Any input brings everything back; automatic brightness creeping up on a
+  dimmed screen is put back, but a big change someone makes (a slider, a script) is kept until the next idle stretch.
+- **Every case ends back where it started:** a quick close-open-close, an alert, switching to *Screen off*, unplugging a
+  display (the others stay dimmed; one plugged back still dimmed is put back), quitting in the middle of a fade, or a crash
+  (the watchdog restores backlights that still show Cocaine's level).
+- **Fast user switching:** while another user's session is in front nothing is dimmed or forced, Stay available doesn't nudge
+  and the volume/brightness keys are left to macOS.
+- **Battery floor:** see *Heat and battery* above.
+- **Limits:** tested with simulated displays (`--display-test`); the lid and clamshell timing, Apple displays in clamshell and
+  DDC were not tried on real hardware here. The wake for the iPhone holds a lid-closed "dark wake" with a system-activity
+  assertion for the reply window; how long macOS allows it on battery was not measured (the log says how long each was held).
 
 ### Smart Triggers: power, external display, schedule
 

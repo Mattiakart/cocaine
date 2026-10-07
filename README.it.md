@@ -16,10 +16,13 @@ Una piccola app gratuita e open source per la barra dei menu di macOS.</p>
   sottile striscia di polvere.
 - **Parla la tua lingua:** italiano, inglese, cinese (semplificato e tradizionale), spagnolo, francese, tedesco e giapponese.
   Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.
-- **Luminosità.** Mentre è attivo, può abbassare lo schermo integrato al livello che scegli dopo qualche minuto di
+- **Luminosità.** Mentre è attivo, può abbassare tutti gli schermi al livello che scegli dopo qualche minuto di
   inattività. Lo schermo non si spegne mai del tutto, e torna com'era appena tocchi tastiera o trackpad.
-- **Anche con monitor esterni.** I monitor Apple abbassano la retroilluminazione, gli altri si scuriscono via software, e col
-  coperchio chiuso si abbassano solo gli schermi esterni. Il pannello si apre sotto l'icona che clicchi, su qualunque schermo.
+- **Coperchio chiuso.** Con Cocaine attivo, chiudendo il coperchio lo schermo integrato va subito alla luminosità minima
+  (qualunque sia l'impostazione di inattività) e riaprendolo torna al livello che aveva. I monitor esterni non vengono mai toccati
+  dal coperchio: in modalità clamshell restano come sono e si abbassano solo per inattività, come sempre. I monitor Apple
+  abbassano la retroilluminazione, gli altri si scuriscono via software. Il pannello si apre sotto l'icona che clicchi, su
+  qualunque schermo.
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Il pannello di Cocaine"></p>
 
@@ -149,18 +152,23 @@ o ci clicchi e si apre, con queste pagine:
 - **Specchio**: la fotocamera dal vivo, accesa solo mentre quella pagina è aperta; un interruttore la specchia (o ti mostra come ti vedono gli
   altri) e puoi scegliere la fotocamera.
 - **Monitor** (solo con un monitor esterno): luminosità, contrasto, volume e ingresso del monitor stesso via DDC/CI, solo Apple
-  silicon; non tutti i monitor lo supportano e non si possono rileggere i valori.
+  silicon (su Intel la scheda non compare); non tutti i monitor lo supportano. I valori attuali vengono letti dal monitor quando
+  risponde (altrimenti compare –), e un monitor che non accetta una modifica lo segnala.
 
 Anche il caricatore collegato o scollegato viene annunciato. L'isola sostituisce l'icona nella barra dei menu: la busta di Cocaine, sempre a sinistra, si riempie e si svuota come faceva l'icona (polvere
 bianca: Cocaine è attivo; polvere rosa: Cocaine è spento ma *Resta disponibile* è acceso, con o senza app di chat aperte). Se disattivi l'isola, l'icona torna. Si apre e si chiude
 seguendo le linee del notch, con un leggero tocco sul trackpad dove serve (timer, interruttori, pagine; Generale → *Feedback aptico* lo disattiva; con Riduci
 movimento attivo nelle impostazioni Accessibilità di macOS compare e scompare senza animazione, e gli avvisi tingono lo schermo una volta invece di
 lampeggiare). L'ingranaggio apre il pannello delle impostazioni; Generale → *Mostra nel notch* la disattiva. Si nasconde durante video a schermo intero e
-giochi. Con Isola → *Sostituisci l'HUD di sistema* attivo, volume e luminosità compaiono solo nell'isola: l'HUD di macOS viene zittito (il suo processo di supporto resta
-congelato) e torna appena disattivi l'opzione o chiudi Cocaine; se Cocaine va in crash o viene terminato, un piccolo watchdog lo
-restituisce in un paio di secondi ([dettagli](docs/recovery.it.md)). Zittirlo non richiede permessi, ma perché Cocaine gestisca da
-sé i *tasti* di volume e luminosità (passi fini con ⌥⇧) serve il permesso **Accessibilità**, che chiede quando attivi l'opzione.
-Senza, macOS cambia comunque volume e luminosità e l'isola li mostra.
+giochi sul suo schermo (una finestra grande su un altro monitor non conta). Resta su uno schermo solo: quello col notch, altrimenti
+lo schermo integrato, altrimenti lo schermo principale; non segue l'app in uso. Con Isola → *Sostituisci l'HUD di sistema* attivo,
+Cocaine gestisce da sé i tasti di volume e luminosità (passi fini con ⌥⇧; ⌥ da solo apre ancora le impostazioni Suono o Monitor) e
+la loro barra compare nell'isola invece di quella di macOS. Serve il permesso **Accessibilità**, che chiede quando attivi
+l'opzione. Quando l'isola non si vede (un'app a schermo intero, il pannello delle impostazioni aperto, la sessione di un altro
+utente) i tasti vanno a macOS e macOS mostra il suo indicatore. Prima di macOS 26 il processo di supporto del suo indicatore resta
+anche congelato mentre l'isola mostra le barre, e torna quando disattivi l'opzione o chiudi Cocaine; se Cocaine va in crash o viene
+terminato, un piccolo watchdog lo restituisce in un paio di secondi ([dettagli](docs/recovery.it.md)). Da macOS 26 l'indicatore lo
+disegna Centro di Controllo, che Cocaine non tocca. Senza il permesso, macOS cambia comunque volume e luminosità e l'isola li mostra.
 
 ## Lavoro da remoto
 
@@ -255,8 +263,10 @@ aprire un link. Vedi [Alimentazione e trigger](docs/power-and-triggers.it.md).
 ### Automazioni
 
 **Resta disponibile** (scheda Automazioni): Teams, Slack, Zoom e app simili ti segnano "Assente" in base all'inattività del Mac. Mentre
-sei inattivo, con una delle app scelte aperta (o sempre), Cocaine invia ogni tanto un evento di mouse invisibile, che riavvia
-quell'orologio, e tiene lo schermo acceso. Serve il permesso Accessibilità; verifica che nel tuo lavoro sia consentito.
+sei inattivo, con una delle app scelte aperta (o sempre), Cocaine invia un evento di mouse invisibile poco prima che ti segnino
+assente (dopo circa 4 minuti e mezzo, o prima del salvaschermo se parte prima), che riavvia quell'orologio, e tiene lo schermo
+acceso. Quindi, mentre è attivo, non partono nemmeno il salvaschermo, il blocco e lo spegnimento dello schermo. Serve il permesso
+Accessibilità; verifica che nel tuo lavoro sia consentito.
 
 Le schede del pannello stanno a sinistra e a destra del notch: *Generale* (il **Timer**: ∞, da 30 minuti a 8 ore, o qualsiasi
 durata a passi di 15 minuti fino a 24 ore, poi si spegne; se scegli una durata a Cocaine spento, si accende per quel tempo;
@@ -282,7 +292,8 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
 ## Da sapere
 
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.
-- A batteria e col coperchio chiuso il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
+- A batteria e col coperchio chiuso il Mac continua a consumare. Al 5 % Cocaine si spegne da solo per lasciare andare in stop
+  il Mac, anche con la Protezione batteria spenta; impostala più in alto per fermarti prima.
 - Quando apri l'app, Cocaine si attiva, e quando la chiudi rimette le cose com'erano. Vale per **Esci**, ⌘Q, la disconnessione, lo
   spegnimento, `kill` e i crash (un piccolo watchdog si accorge che Cocaine non c'è più). Se lo stop era già disattivato prima che
   Cocaine lo attivasse, o lo hai cambiato nel frattempo, viene rispettato. Limiti: dopo un'interruzione di corrente o un riavvio

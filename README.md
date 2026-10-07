@@ -13,10 +13,12 @@ A tiny, free, open-source menu bar app for macOS.</p>
 - **Empty baggie = off.** Normal sleep behaviour.
 - **One switch.** The switch at the top of the panel turns Cocaine on or off; a thin line of powder pours into it as
   it turns on.
-- **Screen dimming.** While Cocaine is on, it can dim the built-in display to a level you choose after a few idle minutes.
+- **Screen dimming.** While Cocaine is on, it can dim every display to a level you choose after a few idle minutes.
   The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
-- **External monitors too.** Apple displays dim their backlight, any other monitor dims in software, and with the lid
-  closed only the external screens dim. The panel opens under the icon you click, on whichever screen.
+- **Lid closed.** With Cocaine on, closing the lid puts the built-in display straight to its lowest brightness (whatever the
+  idle setting) and opening it gives back the level it had. External monitors are never touched by the lid: in clamshell they
+  stay as they are and only dim when idle, like any time. Apple displays dim their backlight, any other monitor dims in
+  software. The panel opens under the icon you click, on whichever screen.
 - Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
 - **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
@@ -148,17 +150,23 @@ opens, with these pages:
 - **Mirror**: the camera live, on only while that page is open; a switch flips it like a mirror (or shows you as others see you), and
   you can pick the camera.
 - **Monitors** (only with an external monitor): brightness, contrast, volume and input of the monitor itself over DDC/CI,
-  Apple silicon only; not every monitor supports it, and it can't read values back.
+  Apple silicon only (the tab isn't shown on Intel); not every monitor supports it. The current values are read from the monitor
+  when it answers (otherwise they show –), and a monitor that doesn't take a change says so.
 
 Plugging the charger in or out is announced too. The island replaces the menu-bar icon: the bag of Cocaine, always on its left, fills and empties as the icon did (white powder: Cocaine is on;
 pink powder: Cocaine is off but *Stay available* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
 lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; General → *Haptic feedback* turns it off; with Reduce Motion on in
 macOS's Accessibility settings it appears and goes without the morph, and alerts tint the screen once instead of flashing). The gear opens the settings panel;
-General → *Show in the notch* turns it off. It hides during full-screen video and games. With Island → *Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
-returns as soon as you turn the option off or quit Cocaine; if Cocaine crashes or is killed, a small watchdog gives it back within a
-couple of seconds ([details](docs/recovery.en.md)). Silencing it needs no permission, but for Cocaine to handle the volume and
-brightness *keys* itself (fine steps with ⌥⇧) it needs the **Accessibility** permission, which it asks for when you turn the option
-on. Without it, macOS still changes the volume and brightness and the island shows them.
+General → *Show in the notch* turns it off. It hides during full-screen video and games on its screen (a big window on another
+monitor doesn't count). It stays on one screen: the one with the notch, else the built-in display, else the main display; it
+doesn't follow the app you are in. With Island → *Replace system HUD* on, Cocaine handles the volume and brightness keys itself
+(fine steps with ⌥⇧; ⌥ alone still opens Sound or Displays settings) and their bar appears in the island instead of macOS's.
+This needs the **Accessibility** permission, which it asks for when you turn the option on. Whenever the island can't be seen
+(a full-screen app, the settings panel open, another user's session) the keys go to macOS and macOS shows its own indicator.
+Before macOS 26 its indicator's helper is also kept frozen while the island shows the bars, and given back when you turn the option
+off or quit; if Cocaine crashes or is killed, a small watchdog gives it back within a couple of seconds ([details](docs/recovery.en.md)).
+From macOS 26 the indicator is drawn by Control Center, which Cocaine leaves alone. Without the permission, macOS still changes
+the volume and brightness and the island shows them.
 
 ## Remote work
 
@@ -249,8 +257,10 @@ General → *Shortcuts app and links*), because any app or web page can open a l
 ### Automation
 
 **Stay available** (Automation tab): Teams, Slack, Zoom and similar apps mark you "Away" from the Mac's idle time. While you are
-idle, with one of the chosen apps open (or always), Cocaine sends an invisible mouse event now and then, which restarts that
-clock, and keeps the display awake. It needs the Accessibility permission; check that your workplace allows it.
+idle, with one of the chosen apps open (or always), Cocaine sends an invisible mouse event just before they would show you away
+(after about 4½ minutes, or before your screen saver if it starts earlier), which restarts that clock, and keeps the display awake.
+So while it is on, the screen saver, the lock and display sleep don't start either. It needs the Accessibility permission; check
+that your workplace allows it.
 
 The panel's tabs sit left and right of the notch: *General* (the **Timer**: ∞, 30 minutes … 8 hours, or any length you set in
 steps of 15 minutes up to 24 hours, then it turns off; picking a length while Cocaine is off turns it on for that long; **When idle**:
@@ -274,7 +284,8 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
 ## Good to know
 
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.
-- On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
+- On battery with the lid closed the Mac keeps running. At 5 % Cocaine turns itself off so the Mac can sleep, even with
+  Battery Guard off; set Battery Guard higher to stop earlier.
 - Opening the app turns Cocaine on, and quitting it puts things back as they were. That covers **Quit**, ⌘Q, logging out,
   shutting down, `kill` and crashes (a small watchdog notices when Cocaine is gone). If sleep was already disabled before Cocaine
   turned it on, or you changed it meanwhile, that is respected. Limits: after a power cut or forced restart sleep stays disabled

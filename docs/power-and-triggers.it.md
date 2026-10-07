@@ -10,11 +10,13 @@ tasto, un clic o un tocco sul trackpad li riaccende.
   modalità il motore di Cocaine non tiene più acceso lo schermo (`caffeinate -i` invece di `-d`), quindi vale anche il timer di
   spegnimento dello schermo di macOS, che può spegnerlo prima. In modalità normale lo schermo resta acceso e macOS non si
   blocca per inattività (come prima).
-- **Coperchio:** a coperchio chiuso senza monitor esterno lo schermo integrato è già spento; il Mac resta sveglio come sempre
-  con Cocaine attivo. Coperchio chiuso con monitor esterno: il monitor esterno si spegne come gli altri.
+- **Coperchio:** vedi *Coperchio chiuso* più sotto (funziona allo stesso modo in questa modalità). Coperchio chiuso con monitor
+  esterno: il monitor esterno si spegne dopo il tempo di inattività come gli altri.
 - **Calore e batteria:** a coperchio chiuso, a batteria, se macOS segnala uno stato termico *serio* o *critico* (Mac in
   borsa), Cocaine si disattiva per lasciare dormire il Mac e te lo dice. La Protezione batteria funziona come prima e impedisce
-  anche all'Attivazione automatica di riattivare Cocaine finché la batteria non si riprende o non colleghi il caricatore.
+  anche all'Attivazione automatica di riattivare Cocaine finché la batteria non si riprende o non colleghi il caricatore. Sotto
+  c'è un limite fisso: al **5 %** a batteria Cocaine si spegne anche con la Protezione batteria spenta o già scattata, e di nuovo
+  se viene riacceso lì sotto; l'Attivazione automatica aspetta che la batteria superi l'8 % o il caricatore.
 - **Resta disponibile:** in questa modalità non tiene più acceso lo schermo e non manda mai il suo evento di mouse invisibile a uno
   schermo spento (lo riaccenderebbe), quindi le app di chat possono mostrarti assente a schermi spenti. Abbassamento e
   spegnimento contano dall'ultimo input reale, ignorando gli eventi di Resta disponibile (prima, con Resta disponibile acceso, un
@@ -22,6 +24,31 @@ tasto, un clic o un tocco sul trackpad li riaccende.
 - **Avvisi** (Avvisi AI con *Lampeggio*) riaccendono comunque gli schermi, di proposito.
 - **Limiti:** schermi AirPlay, Sidecar e alcuni DisplayLink possono non rispettare lo spegnimento. Alcuni monitor mostrano
   "nessun segnale" prima di andare in standby.
+
+### Coperchio chiuso, abbassamento e più schermi
+
+- **Coperchio chiuso** (Cocaine attivo): lo schermo integrato va subito alla retroilluminazione minima (1 %), qualunque cosa dica
+  *Quando sei inattivo*, e riaprendo il coperchio torna al livello che aveva appena prima della chiusura. Cocaine sente il coperchio
+  nell'istante in cui si muove (il messaggio di chiusura del gestore di alimentazione, con un controllo ogni 0,5 s come riserva)
+  e legge il livello in quel momento; una lettura che sta già calando (il pannello che si spegne) non viene presa per buona.
+  Senza monitor esterno il Mac resta sveglio con lo schermo integrato buio. I monitor esterni non vengono mai toccati dal
+  coperchio: in modalità clamshell restano come sono e seguono solo l'abbassamento per inattività. Spegnendo Cocaine a coperchio
+  chiuso lo schermo integrato torna al suo livello. Aperto o attivato a coperchio già chiuso funziona allo stesso modo.
+- **L'abbassamento per inattività** riguarda tutti gli schermi accesi: i monitor Apple tramite la retroilluminazione, gli altri
+  tramite la propria tabella colori (salvata e rimessa esattamente, senza toccare gli altri schermi; non fa risparmiare
+  energia, la retroilluminazione del monitor resta accesa). Uno schermo già più scuro del livello scelto non viene toccato.
+  Qualsiasi input riporta tutto com'era; la luminosità automatica che risale su uno schermo abbassato viene rimessa giù, ma un
+  cambio grande fatto da qualcuno (un cursore, uno script) resta fino al periodo di inattività successivo.
+- **Ogni caso finisce dove era cominciato:** chiudi-apri-chiudi veloce, un avviso, il passaggio a *Spegni lo schermo*, un
+  monitor scollegato (gli altri restano abbassati; uno ricollegato ancora abbassato torna com'era), l'uscita nel mezzo di una
+  dissolvenza o un crash (il watchdog rimette le retroilluminazioni che mostrano ancora il livello di Cocaine).
+- **Cambio rapido utente:** mentre è in primo piano la sessione di un altro utente nulla viene abbassato o forzato, Resta
+  disponibile non manda eventi e i tasti volume/luminosità restano a macOS.
+- **Limite batteria:** vedi *Calore e batteria* sopra.
+- **Limiti:** provato con schermi simulati (`--display-test`); i tempi di coperchio e clamshell, i monitor Apple in clamshell e
+  il DDC non sono stati provati su hardware reale qui. Il risveglio per l'iPhone tiene un "dark wake" a coperchio chiuso con
+  un'asserzione di attività di sistema per il tempo della risposta; quanto macOS lo conceda a batteria non è stato misurato (il
+  log dice per quanto è stato tenuto).
 
 ### Attivazione automatica: alimentazione, monitor esterno, orari
 

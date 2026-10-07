@@ -28,7 +28,10 @@ USE
 GOOD TO KNOW
 - While Cocaine is on your Mac doesn't lock by itself, even with the lid closed. Lock it with Control-Command-Q
   before you walk away.
-- On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
+- On battery with the lid closed the Mac keeps running. At 5 % Cocaine turns itself off so the Mac can sleep,
+  even with Battery Guard off.
+- With the lid closed the built-in screen goes to its lowest brightness and gets its level back when you open it;
+  external monitors are never dimmed by the lid.
 
 UNINSTALL
 1. Quit Cocaine (this also turns it off).

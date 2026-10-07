@@ -7,8 +7,9 @@ Aprire Cocaine lo accende; chiuderlo rimette le cose come stavano. Ora vale anch
   a meno che nel frattempo qualcuno l'abbia cambiato (allora resta quella modifica). Spegnere Cocaine con il suo
   interruttore, dall'iPhone o con `cocaine off` resta uno spegnimento esplicito. L'helper che tiene acceso lo schermo si
   chiude insieme a lui. Comandi dati nello stesso istante dall'app, dall'iPhone e dal Terminale non si intralciano più.
-- **Indicatori di sistema.** Con *Sostituisci HUD di sistema* attivo, l'indicatore di volume/luminosità di macOS resta
-  congelato finché Cocaine è aperto. Se Cocaine va in crash o viene terminato, l'indicatore torna entro un paio di secondi;
+- **Indicatori di sistema.** Prima di macOS 26, con *Sostituisci HUD di sistema* attivo, l'indicatore di volume/luminosità
+  di macOS resta congelato mentre l'isola mostra le barre (da macOS 26 nulla viene congelato: quell'indicatore lo disegna
+  Centro di Controllo). Se Cocaine va in crash o viene terminato, l'indicatore torna entro un paio di secondi;
   se Cocaine si blocca, dopo 30 secondi.
 - **Schermi abbassati** tornano alla loro luminosità anche dopo un crash, ma solo se mostrano ancora l'abbassamento di
   Cocaine: una luminosità che hai scelto tu dopo viene mantenuta.

@@ -7,8 +7,8 @@ Opening Cocaine turns it on; quitting it puts things back. That now also holds w
   unless someone changed it in the meantime (then that change is kept). Turning Cocaine **off** with its switch, the iPhone
   or `cocaine off` is still an explicit off. The display-hold helper ends with it. Changes from the app, the iPhone and
   Terminal at the same moment no longer get in each other's way.
-- **System indicators.** With *Replace system HUD* on, macOS's volume/brightness indicator is kept frozen while Cocaine
-  runs. If Cocaine crashes or is killed, the indicator is given back within a couple of seconds; if Cocaine hangs, after
+- **System indicators.** Before macOS 26, with *Replace system HUD* on, macOS's volume/brightness indicator is kept frozen
+  while the island shows the bars (from macOS 26 nothing is frozen: Control Center draws that indicator). If Cocaine crashes or is killed, the indicator is given back within a couple of seconds; if Cocaine hangs, after
   30 seconds.
 - **Dimmed screens** go back to their brightness after a crash too — but only while they still show Cocaine's dimming: a
   brightness you set yourself afterwards is kept.

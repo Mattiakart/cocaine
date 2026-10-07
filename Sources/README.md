@@ -6,8 +6,9 @@ Strings: add them to Localization/<lang>.lproj/<Feature>.strings (tables listed 
 Where things are:
 - Core.swift: logging, the UI language and L(), running the engine, system state, haptics, Settings. Automation.swift: timer,
   Battery Guard, Smart Triggers state, power/lid readings, hotkeys. Power.swift: the triggers' pure logic.
-- Authorization.swift (the sudo rule), Screens.swift (dimming), Permissions.swift, Presence.swift (Stay active), HUD.swift
-  (volume/brightness HUD and media keys), Recovery*.swift (watchdog and recovery).
+- Authorization.swift (the sudo rule), DimController.swift (idle dimming and the lid rule, over a display provider),
+  Screens.swift (the real displays for it), Permissions.swift, Presence.swift (Stay active), HUD.swift
+  (volume/brightness HUD and media keys), Recovery*.swift (watchdog and recovery). DisplayTests.swift: --display-test.
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
 - The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
   Controls.swift, Tokens.swift, InAppDialog.swift and Dialogs.swift (the app's dialogs).
