@@ -19,6 +19,7 @@ struct ShelfModuleView: View {
     @ObservedObject var center: ShelfCenter
     @ObservedObject var store: ShelfStore
     @ObservedObject var tasks: ShelfTasks
+    @ObservedObject var cloud = CloudShareCenter.shared          // the link just made (Sources/CloudShareSettings.swift)
     let box: ModuleBox
     let hover: Bool
     @StateObject private var band = ShelfBand()
@@ -307,6 +308,8 @@ struct ShelfModuleView: View {
             }
             .accessibilityElement(children: .combine)
             .transition(.opacity)
+        } else if cloud.recent != nil {
+            CloudToast(center: cloud, compact: box.size != .l)
         } else if let s = center.status {
             HStack(spacing: Space.xs) {
                 Image(systemName: s.icon).font(UI.detail).foregroundStyle(Island.accent)
