@@ -17,12 +17,14 @@ final class CloudEditor: ObservableObject {
     @Published var saved: Set<String> = []         // the secret names the Keychain has for it
     @Published var problem: String?
     @Published var warning: String?
+    /// The warning is about privacy (a public third-party host): drawn in the warning colour.
+    @Published var alert = false
 
     /// Renders: a provider shown open in the editor (CloudShareFixtures).
     static var fixture: (ShareProviderConfig, Set<String>, String?)?
     static func make() -> CloudEditor {
         let e = CloudEditor()
-        if let (c, saved, w) = fixture { e.draft = c; e.saved = saved; e.warning = w; e.editing = c.id }
+        if let (c, saved, w) = fixture { e.draft = c; e.saved = saved; e.warning = w; e.editing = c.id; e.alert = w != nil && w == ShareUploader.presets.first { $0.id == "litterbox" }?.warning }
         return e
     }
 }
@@ -124,7 +126,7 @@ struct CloudShareSettingsBody: View {
             }
         } else { return }
         Motion.with(.expand) {
-            ed.draft = c; ed.secrets = [:]; ed.saved = []; ed.problem = nil; ed.warning = warning
+            ed.draft = c; ed.secrets = [:]; ed.saved = []; ed.problem = nil; ed.warning = warning; ed.alert = id == "uploader:litterbox"
             ed.isNew = true; ed.editing = c.id
         }
     }
@@ -161,7 +163,7 @@ struct CloudShareSettingsBody: View {
     private func edit(_ p: ShareProviderConfig) {
         let have = center.secrets(p.id)
         Motion.with(.expand) {
-            ed.draft = p; ed.secrets = [:]; ed.saved = Set(have.filter { !$0.value.isEmpty }.keys); ed.problem = nil; ed.warning = nil
+            ed.draft = p; ed.secrets = [:]; ed.saved = Set(have.filter { !$0.value.isEmpty }.keys); ed.problem = nil; ed.warning = nil; ed.alert = false
             ed.isNew = false; ed.editing = p.id
         }
     }
@@ -207,8 +209,8 @@ struct CloudShareSettingsBody: View {
         let k = ed.draft.kind
         VStack(alignment: .leading, spacing: Space.s) {
             if let w = ed.warning {
-                Label { Text(w).font(UI.detail).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: k == .uploader ? "exclamationmark.triangle" : "info.circle") }
-                    .foregroundStyle(k == .uploader && w.contains("public") ? warningColor : UI.secondary)
+                Label { Text(w).font(UI.detail).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: ed.alert ? "exclamationmark.triangle" : "info.circle") }
+                    .foregroundStyle(ed.alert ? warningColor : UI.secondary)
             }
             field(L("Name"), Binding(get: { ed.draft.title }, set: { ed.draft.title = $0 }))
             switch k {
