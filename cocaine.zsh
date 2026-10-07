@@ -153,7 +153,10 @@ hold() {  # the helper itself; started by start_hold
   zsystem flock -t 2 "$HLOCK" 2>/dev/null || exit 0   # another helper already holds it; the lock dies with its holder
   print -r -- $$ >| "$HPID" 2>/dev/null
   local flag kid n=0 want orphan=0
-  hold_end() { [[ -n $kid ]] && kill -TERM $kid 2>/dev/null; [[ -r $HPID && "$(<$HPID)" == $$ ]] && /bin/rm -f "$HPID"; exit 0; }
+  hold_end() {
+    if [[ -n ${COCAINE_TEST_HOLD_EXIT:-} ]]; then : > "$COCAINE_TEST_HOLD_EXIT"; nap 150; fi   # tests: widen the exit window
+    [[ -n $kid ]] && kill -TERM $kid 2>/dev/null; [[ -r $HPID && "$(<$HPID)" == $$ ]] && /bin/rm -f "$HPID"; exit 0
+  }
   trap hold_end TERM INT
   [[ -e $DARK ]] && flag=-i || flag=-d
   $CAFFEINATE $flag -w $$ & kid=$!
@@ -166,7 +169,9 @@ hold() {  # the helper itself; started by start_hold
     fi
     kill -0 $kid 2>/dev/null || { $CAFFEINATE $flag -w $$ & kid=$!; }   # our caffeinate died: restart it
     (( ++n % POLL )) && continue
-    is_off && forget_if_off && hold_end            # turned OFF from anywhere => release at once (re-checked under the lock)
+    # Turned OFF from anywhere => release at once, re-checked under the state lock, and ended while still holding it (the
+    # kernel drops it as this process exits): an `on` waiting for that lock then finds no helper and starts a new one.
+    if is_off; then lock; is_off && { /bin/rm -f "$CLAIM"; hold_end; }; unlock; fi
     deadline_check
     orphan_check
   done

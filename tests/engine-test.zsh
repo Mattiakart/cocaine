@@ -89,6 +89,12 @@ check "OFF from elsewhere ends the helper by itself" '$E on && helper_up && prin
 check "not authorized: exit 2, nothing changed" 'COCAINE_SUDO=/usr/bin/false $E on 2>/dev/null; [[ $? == 2 && $(<$T/state) == 0 ]]'
 check "bad status option refused" '$E status --xml 2>/dev/null; [[ $? == 64 ]]'
 
+# An ON that arrives while the helper is ending after an OFF from elsewhere must get a new helper, not the dying one: the
+# helper ends while still holding the state lock, so that ON waits for it (before, Cocaine stayed ON with no display hold).
+$E off >/dev/null 2>&1
+check "ON during the helper's exit after an OFF from elsewhere ends ON with a live helper" 'ok=1; for n in 1 2; do $E off >/dev/null; /bin/rm -f $T/exiting; COCAINE_TEST_HOLD_EXIT=$T/exiting $E on && helper_up && print 0 > $T/state && waitfor "[[ -e $T/exiting ]]" 40 && $E on && /bin/sleep 2.5 && [[ $(<$T/state) == 1 ]] && helper_up || ok=0; done; (( ok ))'
+$E off >/dev/null 2>&1
+
 # The helper is found through hold.pid + hold.lock, not its path: another copy of the engine (another Cocaine.app, the copy
 # in Application Support) sees it, reuses it and stops it. Before, copy B said "not held", waited 6 s and failed with 3.
 mkdir -p $T/b; cp $T/cocaine $T/b/cocaine; B=(/bin/zsh $T/b/cocaine)
