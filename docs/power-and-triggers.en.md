@@ -2,7 +2,7 @@
 
 General → *When idle* → **Screen off**: while Cocaine is on, after the chosen idle time the
 displays (built-in and external) are turned off instead of dimmed (`pmset displaysleepnow`, no admin rights). The Mac keeps
-running: downloads, builds and AI agents go on. **Now** turns them off at once. Any key, click or trackpad touch lights them again.
+running: downloads, builds and AI agents go on. **Screens off now** (in the same card) turns them off at once. Any key, click or trackpad touch lights them again.
 
 - **Lock:** nothing is bypassed. When the displays go off macOS locks as set in *System Settings → Lock Screen* ("Require
   password after screen saver begins or display is turned off"). In this mode Cocaine's engine no longer holds the display
@@ -58,7 +58,7 @@ Automation → Smart Triggers, next to *An AI is at work* and *These programs ar
 
 Cocaine turns on when the triggers say so and off again after a grace period: 3 minutes for AI and programs, 30 seconds for
 power and display (a wiggling cable doesn't flip it), none for the schedule. Precedence: turning Cocaine off yourself (switch,
-hotkey, `cocaine://off`, `cocaine off`, `cocaine remote off`, the timer or the Battery Guard) is respected until the triggers
+keyboard shortcut, `cocaine://off`, `cocaine off`, `cocaine remote off`, the timer or the Battery Guard) is respected until the triggers
 let go; turning it on yourself is never undone by a trigger. Triggers are checked every 5 seconds and at once after a wake, a
 clock or time-zone change, or a display change.
 

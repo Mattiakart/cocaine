@@ -48,8 +48,8 @@ Touch ID per sudo, basta l'impronta. Nient'altro: nessuna finestra, niente "Apri
 3. Cocaine chiede **una volta** la password. macOS la mostra con un avviso perché l'app non è verificata da Apple: è normale.
 
 In entrambi i casi quell'autorizzazione installa una regola sudo che permette solo `pmset -a disablesleep 1`,
-`pmset -a disablesleep 0` e la cancellazione della regola stessa (più `pmset schedule wake`/`cancel wake`, marcati `cocaine`,
-se attivi *Sveglia per iPhone*). Nient'altro.
+`pmset -a disablesleep 0`, `pmset schedule wake`/`schedule cancel wake` marcati `cocaine` (usati solo da *Sveglia per iPhone*) e la
+cancellazione della regola stessa. Nient'altro.
 
 **Firma.** Le versioni attuali sono firmate con un certificato autofirmato di Cocaine (livello "locale"): gratuito, ma non
 verificato da Apple e non notarizzato, da qui "Apri comunque". Il pannello mostra il livello della tua copia in *Permessi*. macOS
@@ -67,12 +67,12 @@ Lasci il Mac a lavorare, e Cocaine ti richiama quando un'AI finisce o ha bisogno
 schermi, riporta la luminosità, li fa lampeggiare e mostra chi ti cerca e in quale progetto. Se sei al Mac, la bustina
 nella barra si ricarica e basta.
 
-Apri **Avvisi AI** nel pannello. I suoi quattro gruppi mostrano un riassunto in una riga e si aprono uno alla volta:
-**AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando
-sei al Mac, oppure una volta sola per sessione, quando non resta niente in corso, invece che per ogni agent o task che finisce; e
-**Rispondi dall’isola**, spento di default), **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni 2, 5 o 10 minuti
-mentre sei via, e una prova) e **Pausa** (30 minuti, un'ora o fino a domani). Sotto, separati dalle impostazioni,
-gli **Ultimi avvisi**, con il progetto da cui arrivano.
+La scheda **Avvisi AI** del pannello compare quando Cocaine trova sul Mac uno strumento AI supportato. In alto, **Agent** elenca le
+sessioni al lavoro (oppure, se non ce n'è, gli **Ultimi avvisi**: i tre più recenti, con il progetto da cui arrivano). Poi tre
+schede: **AI collegate** (un interruttore per ciascuna, con cosa segnala), **Quando** (finisce, ha bisogno di te, anche quando sei
+al Mac, una volta sola per sessione quando non resta niente in corso, **Rispondi dall’isola**, spento di default, e **Pausa**: 30
+minuti, un'ora o fino a domani) e **Come** (lampeggio, suono, voce e quale, quanto resta l'avviso sullo schermo, promemoria ogni
+2, 5 o 10 minuti mentre sei via, e una prova). Con VoiceOver ogni avviso viene anche letto.
 
 **Ogni sessione, nel notch.** La pagina Home dell'isola e il pannello elencano tutte le tue sessioni AI (con scorrimento quando
 sono tante; fino a 100), prima quelle che hanno bisogno di te. L'elenco viene salvato e ricompare dopo un riavvio (con ↺ e l'età);
@@ -83,7 +83,7 @@ e dice sempre cosa ha fatto. Il terminale integrato di un IDE, JetBrains, Ghostt
 piano come app, e le sessioni avviate prima di questa versione non dicono dove girano.
 
 **Consenti o nega dall’isola** (spento di default; Claude Code 2.0.45+ e Codex): le richieste di permesso, e le domande MCP di
-Claude Code con risposte semplici, compaiono con **Consenti** / **Nega** / **Nel terminale**. Usa solo gli hook documentati degli
+Claude Code con risposte semplici (Claude Code 2.1.78+), compaiono con **Consenti** / **Nega** / **Nel terminale**. Usa solo gli hook documentati degli
 strumenti (`PermissionRequest`, `Elicitation`) su un socket privato, con risposte firmate e legate a una sola richiesta. Niente
 viene mai approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in esecuzione o qualsiasi errore, e lo strumento chiede
 nel terminale come sempre. L'`AskUserQuestion` di Claude Code non ha un hook per le risposte, quindi viene solo annunciata. Gli
@@ -121,8 +121,9 @@ open -g "cocaine://alert?from=Il%20mio%20script&event=done"     # event=done o i
 - **App di automazione:** Comandi Rapidi ("Apri URL"), Keyboard Maestro, Hammerspoon, BetterTouchTool, `WatchPaths` di
   launchd, regole di Mail.
 
-Gli hook di Cocaine iniziano con `pgrep -qx Cocaine`: l'avviso parte solo se Cocaine è aperto, e non lo riapre se l'hai
-chiuso.
+Gli hook di avviso di Cocaine iniziano con `pgrep -qx Cocaine`: l'avviso parte solo se Cocaine è aperto, e non lo riapre se l'hai
+chiuso. L'hook di Consenti/Nega esegue invece il programma di Cocaine stesso, che non dà risposta (chiede il terminale) se l'app
+non è aperta.
 
 ## Feedback e assistenza
 
@@ -131,22 +132,34 @@ Bug e idee sono benvenuti anche come [issue su GitHub](https://github.com/Mattia
 
 ## Isola
 
-Cocaine vive anche nel notch (o, su uno schermo senza, in una sottile pillola in alto). Chiusa, mostra accanto al notch ciò che
-è attivo: Cocaine acceso e fino a quando, il conto alla rovescia del focus, un'AI che aspetta te, le AI al lavoro (✦ e quante), il microfono in uso, il
-brano in riproduzione e brevi messaggi ("Scaricato", "Screenshot", "Copiato", le barre di volume e luminosità). Ci passi sopra
-o ci clicchi e si apre, con queste pagine:
+Cocaine vive anche nel notch (o, su uno schermo senza, in una sottile barra in alto; l'interruttore allora si chiama *Mostra in cima
+allo schermo*). Chiusa, la busta sta a sinistra del notch e a destra la cosa attiva più importante, una alla volta: un breve
+messaggio (il nome del file appena scaricato, "Screenshot", "Copiato", le barre di volume e luminosità), il conto alla rovescia del
+focus, un'AI che aspetta te, il microfono in uso, le AI al lavoro (✦ e quante), il brano in riproduzione, Cocaine acceso e fino a
+quando, oppure *Resta disponibile*. Ci passi sopra o ci clicchi e si apre subito (e si chiude appena il puntatore esce), con queste
+pagine:
 
-- **Home**: l'interruttore, il timer, gli agent AI al lavoro.
+- **Home**: l'interruttore, il timer, *Resta disponibile*, gli agent AI al lavoro.
 - **Musica**: Musica e Spotify, con copertina, barra di avanzamento, play/pausa/avanti/indietro/casuale e, se li attivi, i
-  testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro). Serve il permesso Automazione.
-- **Calendario**: oggi e i prossimi eventi, fino a due settimane (chiede l'accesso a Calendario quando premi il pulsante).
-- **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio.
+  testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro; un problema di rete viene detto come tale).
+  Cosa suona arriva dagli annunci delle app stesse; il loro scripting (permesso Automazione) serve per la copertina e, mentre questa
+  pagina è aperta, per la posizione.
+- **Calendario**: oggi e i prossimi eventi, fino a due settimane (chiede l'accesso a Calendario la prima volta; se l'hai negato, un
+  pulsante apre Impostazioni di Sistema).
+- **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio per la sua durata, *Azzera* spegne
+  Cocaine solo se l'aveva acceso il focus, la fine viene annunciata (un suono, un lampo, un avviso se non sei al Mac) e un focus in
+  corso sopravvive a un riavvio o a un aggiornamento.
 - **Scaffale**: trascina dei file sull'isola (si apre da sola) e tienili lì, poi trascinali fuori o mandali tutti con AirDrop.
-- **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo avvisa quando ne arriva uno.
+  Tiene dei riferimenti, non copie, e resta dopo un riavvio (i file spariti nel frattempo vengono tolti).
+- **File**: download e screenshot recenti, da trascinare fuori (in qualsiasi app, Mail, AirDrop…); un lampo col nome del file avvisa
+  quando ne arriva uno. Le due cartelle vengono osservate, non rilette ogni pochi secondi.
 - **Appunti**: ciò che hai copiato da poco (testo, immagini, riferimenti a file), con ricerca e preferiti; clicca per copiare di nuovo.
   Solo in memoria, a meno che attivi *Salva su questo Mac* (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*);
   mai dai gestori di password. [Dettagli e limiti](docs/clipboard.it.md).
-- **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth, e l'utilizzo di Codex (i limiti) e Claude Code (i token), letti dai loro file locali.
+- **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth (aggiornate al massimo una volta al minuto), e
+  l'utilizzo di Codex (i limiti, dalle sessioni più recenti che li riportano) e Claude Code (i token delle ultime 5 ore e 7 giorni),
+  letti dai loro file locali. I file di Claude Code vengono letti una volta, poi solo la parte aggiunta; un primo conteggio su una
+  cronologia grande dice *Conteggio in corso* finché non è completo.
 - **Multimedia**: Apple Music, Spotify, YouTube Music, Netflix, Prime Video, YouTube, Disney+, Apple TV, Twitch, DAZN: un tocco apre l'app se
   è installata, altrimenti il sito nel browser predefinito.
 - **Specchio**: la fotocamera dal vivo, accesa solo mentre quella pagina è aperta; un interruttore la specchia (o ti mostra come ti vedono gli
@@ -169,6 +182,15 @@ utente) i tasti vanno a macOS e macOS mostra il suo indicatore. Prima di macOS 2
 anche congelato mentre l'isola mostra le barre, e torna quando disattivi l'opzione o chiudi Cocaine; se Cocaine va in crash o viene
 terminato, un piccolo watchdog lo restituisce in un paio di secondi ([dettagli](docs/recovery.it.md)). Da macOS 26 l'indicatore lo
 disegna Centro di Controllo, che Cocaine non tocca. Senza il permesso, macOS cambia comunque volume e luminosità e l'isola li mostra.
+
+**Da tastiera e con VoiceOver.** ⌃⌥⌘I (Generale → *Scorciatoie da tastiera*, modificabile) apre l'isola con la tastiera dentro:
+resta aperta finché premi Esc, di nuovo la scorciatoia o clicchi altrove; ← e → cambiano scheda, Tab passa tra i controlli (con
+Accesso completo da tastiera) e nella pagina Appunti ↑, ↓ e A capo copiano un elemento. Per VoiceOver l'isola chiusa è un solo
+elemento, "Cocaine", che dice cosa mostra e apre l'isola; mentre VoiceOver è attivo resta anche l'icona nella barra dei menu.
+Vengono annunciati i lampi dell'isola, un'AI che inizia a lavorare, avvisi e richieste, e cosa hanno fatto una scorciatoia o un
+link. Cocaine segue Aumenta contrasto, Differenzia senza colore e Riduci movimento (niente polvere che scende, niente molle,
+visualizzatore fermo).
+
 
 ## Lavoro da remoto
 
@@ -197,7 +219,7 @@ comandi più vecchi di due minuti (20 con *Sveglia per iPhone*) o datati nel fut
 gli iPhone abbinati (un comando già in corso non riceve risposta); un abbinamento scade dopo 180 giorni. Ogni comando passa da
 una lista fissa di comandi permessi: il livello di base permette stato, attiva/spegni ed elenco dei progetti; *Anche avviare e
 guidare gli agenti AI* aggiunge l'avvio degli agent e la possibilità di scrivere loro, il che equivale a eseguire codice come te:
-concedilo consapevolmente. Al massimo 20 comandi al minuto e ognuno è registrato in
+concedilo consapevolmente. Al massimo 20 messaggi al minuto vengono esaminati (gli altri sono scartati senza leggerli) e ogni comando è registrato in
 `~/Library/Application Support/Cocaine/remote-phone.log`. Trattalo come una chiave: il Comando Rapido contiene la chiave, si
 sincronizza tramite iCloud come ogni Comando Rapido e chiunque lo ottenga può usarlo.
 
@@ -238,10 +260,11 @@ e torna com'era quando finisce l'ultimo.
 
 **Sapere cosa succede.** Gli hook degli Avvisi AI dicono a Cocaine anche quando un agent inizia a lavorare, aspetta te,
 finisce o va in errore, e il pannello li elenca. `remote status` mostra lo stesso, e gli **Avvisi sul telefono** ti
-mandano ogni avviso: con `cocaine remote notify shortcut "Nome"` Cocaine esegue quel Comando Rapido (con il testo
-dell'avviso come input: costruiscine uno che ti manda un messaggio o una notifica), oppure con
-`cocaine remote notify ntfy https://ntfy.sh/il-tuo-argomento-segreto` ricevi una notifica push (il testo dell'avviso
-passa da quel servizio). `cocaine remote notify test` lo prova.
+mandano gli avvisi che arrivano mentre non sei al Mac: in *Lavoro da remoto → Avvisi sul telefono → Imposta…* (o con
+`cocaine remote notify shortcut "Nome"`) Cocaine esegue sul Mac quel Comando Rapido con il testo dell'avviso come input
+(costruiscine uno che ti manda un messaggio o una notifica), oppure (`notify ntfy https://ntfy.sh/il-tuo-argomento-segreto`) lo
+pubblica su un argomento ntfy come notifica push (il testo esce dal Mac). *Prova* (o `cocaine remote notify test`) lo prova e la
+riga dice com'è andata.
 
 **Svegliare il Mac.** È Cocaine attivo a tenerlo raggiungibile. Un Mac già andato in stop non sente il relay, e niente da
 internet può svegliare un MacBook in stop con il coperchio chiuso. Quindi, in *Lavoro da remoto*, attiva **Sveglia per
@@ -250,8 +273,8 @@ ricollega, esegue i comandi che l'iPhone ha mandato nel frattempo (fino a 20 min
 torni a dormire. Quindi un comando mandato a un Mac in stop riceve risposta entro circa 15 minuti: lo mandi e dopo usi
 *Ultima risposta*. Chiede il permesso una volta (estende la regola sudo di Cocaine con `pmset schedule wake`/`cancel wake`,
 marcati `cocaine`, nient'altro), consuma un po' di batteria, si ferma a batteria al 20% o meno e viene annullata quando
-chiudi Cocaine. Se serve la risposta subito, tieni Cocaine attivo. (`cocaine remote wake-info` stampa ancora quello che serve
-a un'app Wake-on-LAN, da usare sulla rete di casa.)
+chiudi Cocaine. Se serve la risposta subito, tieni Cocaine attivo. Si può attivare solo dopo aver abbinato un iPhone.
+(`cocaine remote wake-info` stampa ancora quello che serve a un'app Wake-on-LAN, da usare sulla rete di casa.)
 
 **Anche dai Comandi Rapidi e dagli script sul Mac.** Cocaine non ha azioni native per i Comandi Rapidi: richiedono metadati che
 produce solo la toolchain di Xcode, mentre l'app è compilata con i Command Line Tools. Al loro posto: i link (`cocaine://on?minutes=90`,
@@ -268,11 +291,14 @@ assente (dopo circa 4 minuti e mezzo, o prima del salvaschermo se parte prima), 
 acceso. Quindi, mentre è attivo, non partono nemmeno il salvaschermo, il blocco e lo spegnimento dello schermo. Serve il permesso
 Accessibilità; verifica che nel tuo lavoro sia consentito.
 
-Le schede del pannello stanno a sinistra e a destra del notch: *Generale* (il **Timer**: ∞, da 30 minuti a 8 ore, o qualsiasi
+Le schede del pannello stanno a sinistra e a destra del notch: *Generale* (**Tieni sveglio per**: ∞, da 30 minuti a 8 ore, o qualsiasi
 durata a passi di 15 minuti fino a 24 ore, poi si spegne; se scegli una durata a Cocaine spento, si accende per quel tempo;
-**Quando sei inattivo**: niente, abbassa o spegni lo schermo; **Protezione batteria**: a batteria, al 10–30 % spegne Cocaine o ti
-avvisa soltanto; la scheda Cocaine con login, aggiornamenti, lingua, *Mostra nel notch*, feedback aptico, scorciatoie globali ⌃⌥⌘C
-attiva/spegne, ⌃⌥⌘O pannello, ⌃⌥⌘P pausa avvisi, e *App Comandi Rapidi e link*), *Avvisi AI* (gli agent al lavoro o gli ultimi
+**Quando sei inattivo**: niente, abbassa o spegni lo schermo, e *Spegni ora*; **Protezione batteria**: a batteria, al 10–30 % spegne
+Cocaine o ti avvisa soltanto; la scheda Cocaine con login, aggiornamenti, lingua, *Mostra nel notch*, feedback aptico e *App Comandi
+Rapidi e link*; **Scorciatoie da tastiera**: attive di default, ⌃⌥⌘C attiva/spegne, ⌃⌥⌘O il pannello, ⌃⌥⌘P pausa avvisi, ⌃⌥⌘I
+l'isola; clicca una scorciatoia e digita la nuova combinazione (Esc annulla, Elimina la toglie, *Ripristina predefinite*); non
+servono permessi, una combinazione già usata da macOS o da un'altra app viene rifiutata o segnata *Usata da un'altra app*, e i nomi
+seguono il layout della tastiera), *Avvisi AI* (gli agent al lavoro o gli ultimi
 avvisi, poi le AI, quando e come), *Automazioni* (**Attivazione automatica**: attivo mentre un'AI lavora o aspetta te, mentre girano
 i programmi scelti, con il caricatore o a batteria fino al livello della Protezione batteria, con un monitor esterno collegato o no,
 o in una fascia oraria settimanale; vale "uno qualsiasi" o "tutti"; si spegne dopo un breve periodo di tolleranza; se lo spegni tu a
@@ -299,6 +325,10 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
   Cocaine lo attivasse, o lo hai cambiato nel frattempo, viene rispettato. Limiti: dopo un'interruzione di corrente o un riavvio
   forzato lo stop resta disattivato finché Cocaine non si riapre (o esegui `cocaine off`), e se Cocaine e il suo watchdog vengono
   terminati insieme nessuno può intervenire fino al prossimo avvio. [Dettagli](docs/recovery.it.md).
+- Permessi, ciascuno chiesto solo quando una funzione ne ha bisogno: **Accessibilità** (Resta disponibile, e i tasti di volume e
+  luminosità con *Sostituisci l’HUD di sistema*), **Automazione** (Musica e Spotify; Terminale e iTerm2 per tornare alla scheda di
+  una sessione), **Fotocamera** (Specchio), **Calendari** (Calendario), **File e cartelle** (Download e la cartella degli screenshot,
+  per File). Ciò che manca compare in *Permessi* nel pannello con un pulsante *Consenti*.
 - Domande, messaggi ed elenco di condivisione compaiono dentro il pannello o l'isola di Cocaine, con lo stesso design. Ciò che
   appartiene a macOS resta di macOS: la richiesta della password di amministratore, le domande sui permessi di privacy, le
   Impostazioni di Sistema e le finestre che AirDrop, Messaggi e Mail aprono dopo la scelta (Apple non permette di incorporarle).
@@ -320,8 +350,9 @@ sudo rm /etc/sudoers.d/cocaine
 
 ## Come funziona
 
-- `pmset -a disablesleep 1` impedisce lo stop, anche a coperchio chiuso. L'app installa una regola sudo che
-  permette senza password **solo** i due comandi `pmset -a disablesleep 1` e `pmset -a disablesleep 0`.
+- `pmset -a disablesleep 1` impedisce lo stop, anche a coperchio chiuso. L'app installa una regola sudo che permette senza
+  password solo `pmset -a disablesleep 1` e `0`, `pmset schedule wake`/`schedule cancel wake` marcati `cocaine` e la
+  cancellazione della regola stessa.
 - Mentre è attivo, `caffeinate -d` tiene acceso lo schermo (`-i` nella modalità schermo spento).
 - La luminosità è gestita con le API DisplayServices di macOS.
 

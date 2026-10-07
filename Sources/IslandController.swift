@@ -52,13 +52,15 @@ final class IslandController {
         model.hover = { [weak self] inside in self?.hover(inside) }
         model.toggleOpen = { [weak self] in self?.setOpen(!(self?.model.open ?? false)) }
         model.relayoutNow = { [weak self] in self?.relayout() }
+        model.toggleKeyboard = { [weak self] in self?.toggleKeyboard() }
+        startKeyboard()
         model.setKeyable = { [weak self] on in
             guard let p = self?.panel else { return }
             p.keyable = on
             if !on, p.isKeyWindow { p.orderOut(nil); p.orderFrontRegardless() }     // gives the keyboard back to the app in front
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.relayout(); self?.checkNow()                    // a display plugged, unplugged, mirrored, the lid (clamshell)
+            self?.relayout(); self?.checkNow(); self?.model.refreshTabs()                    // a display plugged, unplugged, mirrored, the lid (clamshell)
         }
         // Into or out of a full-screen Space, displays awake again: hidden or shown at once, not at the next check.
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.screensDidWakeNotification] {
@@ -133,7 +135,7 @@ final class IslandController {
 
     func setOpen(_ open: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
-        if !open { DialogCenter.shared.surfaceClosed(.island) }       // a dialog in the island goes with it: cancelled
+        if !open { DialogCenter.shared.surfaceClosed(.island); endKeyboard() }   // a dialog in the island goes with it: cancelled
         guard model.open != open else { return }
         if open {
             Haptic.tap(.alignment)
@@ -211,6 +213,7 @@ final class IslandController {
     private func hover(_ inside: Bool) {
         openTimer?.invalidate(); closeTimer?.invalidate()
         if !inside && DialogCenter.shared.isShowing(on: .island) { return }     // a question stays until it's answered or clicked away
+        if !inside && keyboardOpen { return }                                   // opened from the keyboard: kept until Esc or a click elsewhere
         setOpen(inside)                                    // no delay either way: as fast out as in
     }
 
@@ -237,6 +240,7 @@ final class IslandController {
         } else {
             dialogMonitors.forEach(NSEvent.removeMonitor)
             dialogMonitors.removeAll()
+            if keyboardOpen { panel?.makeKey(); return }                 // opened from the keyboard: it keeps the keyboard
             model.setKeyable(false)                                      // the search field takes it again on its own click
             if !hovering { setOpen(false) }                              // the pointer left while the question was up
         }
@@ -324,5 +328,87 @@ final class IslandController {
         var need = screen
         need.origin.y += topInset; need.size.height -= topInset                // global space: y grows downward
         return windows.contains { $0.layer == 0 && $0.pid != ownPID && $0.bounds.insetBy(dx: -1, dy: -1).contains(need) }
+    }
+
+    /// The island's window (VoiceOver is told when a dialog appears in it).
+    var window: NSWindow? { panel }
+
+    // MARK: the keyboard (⌃⌥⌘I, or VoiceOver's press on the closed island)
+
+    private(set) var keyboardOpen = false
+    private var keyboardMonitors: [Any] = []
+
+    /// Opens the island with the keyboard in it, or closes it. Opened this way it stays open when the pointer leaves (the pointer's
+    /// own hover still opens and closes it at once) until Esc, the shortcut again or a click elsewhere. ←/→ change tabs, Tab moves
+    /// between controls (with Full Keyboard Access), and on the Clipboard page ↑/↓ and Return pick an item.
+    func toggleKeyboard() {
+        guard enabled, let panel else { return }
+        if keyboardOpen { setOpen(false); return }
+        if suspended { setSuspended(false) }
+        keyboardOpen = true
+        model.keyboard = true
+        setOpen(true)
+        panel.keyable = true
+        panel.makeKey()
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            guard let self, self.keyboardOpen, !DialogCenter.shared.isShowing(on: .island) else { return }
+            self.setOpen(false)
+        }) { keyboardMonitors.append(m) }
+        A11y.announce(String(format: L("Island open, %@. Left and right arrows change tabs, Escape closes."), model.tabTitle(model.tab)))
+        DispatchQueue.main.async { A11y.layoutChanged(panel) }
+    }
+
+    /// Leaves keyboard mode (the island is closing): the keyboard goes back to the app in front.
+    private func endKeyboard() {
+        guard keyboardOpen else { return }
+        keyboardOpen = false
+        model.keyboard = false
+        keyboardMonitors.forEach(NSEvent.removeMonitor)
+        keyboardMonitors.removeAll()
+        model.setKeyable(false)
+    }
+
+    /// One local key monitor for the island's own window: Esc closes, ←/→ change tabs, the Clipboard page's ↑/↓/Return.
+    /// A dialog in the island has its own (dialogChanged); a text field being typed in keeps its keys.
+    private func startKeyboard() {
+        guard keyboardMonitors.isEmpty, localKeys == nil else { return }
+        localKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard let self, let panel = self.panel, e.window === panel, !DialogCenter.shared.isShowing(on: .island) else { return e }
+            return IslandKeys.handle(e.keyCode, flags: e.modifierFlags, editing: panel.firstResponder is NSTextView, model: self.model,
+                                     close: { self.setOpen(false) }) ? nil : e
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] n in
+            guard let self, self.keyboardOpen, (n.object as? NSWindow) === self.panel, !DialogCenter.shared.isShowing(on: .island) else { return }
+            self.setOpen(false)                                   // another app took the keyboard (⌘Tab): the island lets go too
+        }
+    }
+    private var localKeys: Any?
+}
+
+/// The island's keys (pure enough to test: the model and a close function are handed in). True when the key was used.
+enum IslandKeys {
+    static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel, close: () -> Void) -> Bool {
+        let plain = flags.intersection([.command, .option, .control]).isEmpty
+        guard plain else { return false }
+        if model.tab == "clipboard", model.open {
+            switch code {
+            case 125: model.clipboard.step(1); return true                         // ↓
+            case 126: model.clipboard.step(-1); return true                        // ↑
+            case 36, 76:                                                          // Return: copy the highlighted one
+                if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.hasMarkedText() { return false }
+                return model.copyHighlighted()
+            default: break
+            }
+        }
+        switch code {
+        case 53:                                                                  // Esc
+            if editing && !model.clipboard.query.isEmpty { return false }         // the search field clears itself first
+            guard model.open else { return false }
+            close()
+            return true
+        case 123 where !editing: model.stepTab(-1); return true                   // ←
+        case 124 where !editing: model.stepTab(1); return true                    // →
+        default: return false
+        }
     }
 }

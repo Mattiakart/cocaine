@@ -27,12 +27,16 @@ enum UI {
     static let switchSize = CGSize(width: 38, height: 22)
     /// The icon column of cards, rows and dialogs: wide symbols (battery, badges) still sit centred on it.
     static let iconColumn: CGFloat = 18
-    // Text inks on the black panel and island. Nothing that is read is dimmer than `hint` (about 5:1 on black).
+    // Text inks on the black panel and island. Nothing that is read is dimmer than `hint` (about 5:1 on black). With Increase
+    // Contrast (System Settings → Accessibility → Display) they are brighter; the panel and the island observe DisplayOptions.
     static let primary = Color.white
-    static let secondary = Color.white.opacity(0.6)
-    static let hint = Color.white.opacity(0.5)
-    /// A whole control that can't be used now (once: the control or its container, never both).
-    static let disabledOpacity: Double = 0.4
+    static var secondary: Color { Color.white.opacity(DisplayOptions.contrast ? 0.82 : 0.6) }
+    static var hint: Color { Color.white.opacity(DisplayOptions.contrast ? 0.72 : 0.5) }
+    /// The edge of a control's track (switch off, segments, steppers, fields): at least 3:1 against the card it sits on.
+    static var boundary: Color { Color.white.opacity(DisplayOptions.contrast ? 0.6 : 0.34) }
+    /// A whole control that can't be used now (once: the control or its container, never both). Text in a dimmed group stays
+    /// readable (about 3:1 or more for the secondary ink).
+    static var disabledOpacity: Double { DisplayOptions.contrast ? 0.75 : 0.6 }
 }
 
 /// The spacing scale: every gap and inset is one of these.
@@ -58,6 +62,9 @@ enum Dur {
         let h = String(format: agentsL("%d h"), minutes / 60)
         return minutes % 60 == 0 ? h : h + " " + String(format: agentsL("%d min"), minutes % 60)
     }
+
+    /// The shortest form, for a segment too narrow for "30 min": minutes as "30′", hours as they are ("2 h").
+    static func compact(minutes: Int) -> String { minutes <= 0 ? "∞" : minutes < 60 ? "\(minutes)′" : short(minutes: minutes) }
 
     /// Time left, in one unit, for the closed island's wing: "2 h", "45 min" (at least 1 min).
     static func left(seconds: Int) -> String {

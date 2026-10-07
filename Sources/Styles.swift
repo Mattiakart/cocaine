@@ -53,7 +53,8 @@ struct CocaineSwitch: View {
         let w = UI.switchSize.width, h = UI.switchSize.height
         Button(action: { Haptic.tap(.alignment); action() }) {
             ZStack {
-                Capsule().fill(on ? Island.accent : Color.white.opacity(0.18))
+                Capsule().fill(on ? Island.accent : Color.white.opacity(DisplayOptions.contrast ? 0.3 : 0.18))
+                if !on { Capsule().strokeBorder(UI.boundary, lineWidth: 1) }              // the off track's edge: 3:1 on the card
                 if let powder { Canvas { g, size in PowderLine.draw(g, size, level: powder) } }
                 Circle().fill(.white)
                     .shadow(color: .black.opacity(0.28), radius: 1.1, y: 0.6)
@@ -62,7 +63,7 @@ struct CocaineSwitch: View {
                     .offset(x: on ? (w - h) / 2 : -(w - h) / 2)
             }
             .frame(width: w, height: h)
-            .animation(.spring(response: 0.3, dampingFraction: 0.78), value: on)
+            .animation(Motion.reduce ? nil : .spring(response: 0.3, dampingFraction: 0.78), value: on)   // Reduce Motion: it just flips
             .contentShape(Capsule())
         }
         .buttonStyle(PressScale())

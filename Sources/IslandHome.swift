@@ -35,12 +35,12 @@ extension IslandView {
                         Text(statusText).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(2)
                     }
                     Spacer(minLength: Space.s)
-                    CocaineSwitch(on: m.on, powder: m.fillLevel) { m.toggleCocaine() }.accessibilityLabel("Cocaine")
+                    PowderSwitch(bag: m.bag, on: m.on) { m.toggleCocaine() }.accessibilityLabel(L("Cocaine, keeps the Mac awake"))
                 }
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text(L("Stay on for")).font(UI.section).foregroundStyle(UI.secondary)
                     Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: { Dur.short(minutes: $0) },
-                             spoken: { $0 == 0 ? L("No limit") : nil })
+                             spoken: { $0 == 0 ? L("No limit") : nil }, compact: { Dur.compact(minutes: $0) })
                         .onScrollSteps(every: 24) { n in
                             let c = Settings.timerChoices
                             let i = c.firstIndex(of: m.timerMinutes) ?? c.firstIndex { $0 >= m.timerMinutes } ?? 0

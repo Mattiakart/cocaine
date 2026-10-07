@@ -5,7 +5,7 @@ Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel.
 Lingue: italiano, inglese, cinese, spagnolo, francese, tedesco, giapponese. Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.
 
 INSTALLAZIONE
-1. Trascina Cocaine nella cartella Applicazioni.
+1. Trascina Cocaine sull'alias della cartella Applicazioni in questa finestra.
 2. Aprila. macOS la blocca, perché l'app non è notarizzata da Apple (è firmata con un certificato proprio di Cocaine,
    che Apple non verifica). Vai in Impostazioni di Sistema → Privacy e sicurezza, scorri in basso e clicca "Apri comunque".
    Serve solo la prima volta. I permessi che concedi di norma restano dopo gli aggiornamenti firmati con lo stesso
@@ -15,12 +15,16 @@ INSTALLAZIONE
    di cambiare un'unica impostazione di sistema, quella che impedisce lo stop del Mac.
 
 USO
-- Clicca la bustina nella barra dei menu per aprire il pannello.
+- Cocaine vive nel notch (l'"isola"): passa col puntatore sulla busta a sinistra del notch per aprirla, e clicca l'ingranaggio
+  per il pannello delle impostazioni. (Con l'isola spenta, o mentre VoiceOver è attivo, la bustina è nella barra dei menu:
+  cliccala per aprire il pannello.)
+- Tastiera: Control-Opzione-Comando-C attiva o spegne Cocaine, -O apre il pannello, -P mette in pausa gli avvisi, -I apre
+  l'isola con la tastiera dentro. Si cambiano in Generale → Scorciatoie da tastiera.
 - Nel pannello, l'interruttore in alto attiva o spegne Cocaine.
 - Bustina piena = Cocaine attivo: il Mac non va in stop, nemmeno col coperchio chiuso.
 - Bustina vuota = Cocaine spento: il Mac si comporta normalmente.
 - Mentre è attivo puoi far abbassare la luminosità dopo qualche minuto di inattività (torna com'era appena tocchi
-  tastiera o trackpad), oppure spegnere del tutto gli schermi mentre il Mac continua a lavorare (Generale → "Spegni lo schermo invece").
+  tastiera o trackpad), oppure spegnere del tutto gli schermi mentre il Mac continua a lavorare (Generale → Quando sei inattivo → Spegni).
 - "Apri al login" fa partire Cocaine a ogni accensione del Mac. Quando l'app si apre, Cocaine si attiva.
 
 ATTENZIONE
@@ -30,10 +34,12 @@ ATTENZIONE
   in stop il Mac, anche con la Protezione batteria spenta.
 - Col coperchio chiuso lo schermo integrato va alla luminosità minima e torna al suo livello quando lo riapri;
   i monitor esterni non vengono mai abbassati dal coperchio.
+- "Resta disponibile" (Automazioni), mentre agisce, impedisce anche che lo schermo si abbassi, si spenga e si blocchi da solo.
 - Quando chiudi l'app (Esci, Cmd-Q, disconnessione, spegnimento, kill o crash) lo stop torna com'era prima.
   Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre.
 
 DISINSTALLAZIONE
-1. Esci da Cocaine (così si disattiva).
-2. Sposta Cocaine nel Cestino.
-3. Nel Terminale: sudo rm /etc/sudoers.d/cocaine
+1. Nel pannello, Avvisi AI: togli le spunte alle tue AI (così gli hook di Cocaine escono dalle loro impostazioni).
+2. Esci da Cocaine (così si disattiva).
+3. Sposta Cocaine nel Cestino.
+4. Nel Terminale: sudo rm /etc/sudoers.d/cocaine

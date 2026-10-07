@@ -73,10 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var heatGuard = HeatGuard()
     private var asking = false                       // the "allow links" question is on screen
     private var linksRefusedUntil = Date.distantPast
-    private let hotkeys = Hotkeys()
     private var pendingCommands: [URL] = []          // cocaine://on|off|… that arrived while the app was still starting
     private var iconLevel: CGFloat = -1   // -1 = not drawn yet
     private var iconAnim: Timer?
+    private var voiceOverWatch: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // First: undo what a crashed session left (adopting its sleep), then start this session's lease and watchdog.
@@ -128,14 +128,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.islandChanged = { [weak self] in
             guard let self else { return }
             self.island.setEnabled(self.settings.island)
-            self.statusItem.isVisible = !self.settings.island || !self.island.showing    // the island replaces the menu-bar icon
+            self.updateStatusItem()                          // the island replaces the menu-bar icon
         }
-        statusItem.isVisible = !settings.island
+        updateStatusItem()
+        voiceOverWatch = NSWorkspace.shared.observe(\.isVoiceOverEnabled) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.updateStatusItem() }
+        }
         // …unless it can't be shown: Cocaine is never left without a sign on screen.
         island.onShowing = { [weak self] shown in
             guard let self else { return }
             log.notice("island \(shown ? "on screen" : "can't be shown: menu-bar icon back", privacy: .public)")
-            self.statusItem.isVisible = !self.settings.island || !shown
+            self.updateStatusItem()
         }
         island.settingsOpen = { [weak self] in self?.panel?.isVisible ?? false }
         island.start(panelModel: model, enabled: settings.island) { [weak self] in
@@ -180,9 +183,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return self.dim.busy || self.fadeTimer != nil || Date() < self.dimQuiet
         }
         setUpDimming()
-        island.model.focus.onStart = { [weak self] minutes in
-            guard let self, !System.cocaineOn else { return }
+        // A focus keeps the Mac awake for its length (resumed after a pause: to its new end). Reset turns Cocaine off again only
+        // when the focus turned it on and nobody changed it since; its end is said in the island, by VoiceOver, and as an alert
+        // when you're away.
+        island.model.focus.onStart = { [weak self] minutes, owned in
+            guard let self else { return nil }
+            let on = System.cocaineOn || self.wantOn == true
+            if let owned, on, let until = self.settings.onUntil, abs(until.timeIntervalSince(owned)) < 2 {
+                self.settings.onUntil = Date().addingTimeInterval(Double(minutes) * 60)
+                self.model.onUntil = self.settings.onUntil
+                return self.settings.onUntil
+            }
+            guard !on else { return nil }
+            self.autoOn.userToggled(to: true, triggerActive: self.triggerActive)
             self.setCocaine(true, forMinutes: minutes)
+            return self.settings.onUntil
+        }
+        island.model.focus.onReset = { [weak self] owned in
+            guard let self, System.cocaineOn || self.wantOn == true, let until = self.settings.onUntil, abs(until.timeIntervalSince(owned)) < 2 else { return }
+            self.autoOn.userToggled(to: false, triggerActive: self.triggerActive)
+            self.setCocaine(false)
+        }
+        island.model.focus.onFinish = { [weak self] wasBreak in
+            guard let self else { return }
+            let text = wasBreak ? L("Break over") : L("Focus over: time for a break")
+            if self.settings.island { self.island.model.flashNotice("timer", text) } else { A11y.announce(text) }
+            if self.idleNow >= 20 { self.alert(Notice(from: "Cocaine", message: text, project: nil)) }   // away: the usual alert
         }
         model.sendShortcut = { [weak self] in self?.sendShortcutToPhone() }
         model.revokePhones = { [weak self] in self?.revokePhones() }
@@ -195,7 +221,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let list = PhoneLink.loadForChange(), PhoneLink.save(list.filter { !$0.isLegacy && !$0.expired(at: now) }) { PhoneLink.legacyUntil = nil }
             self?.syncPhones()
         }
-        model.testPhone = { Phone.send(L("This is a test")) }
+        model.testPhone = { [weak self] in
+            self?.model.phoneTest = L("Sending…")
+            Phone.send(L("This is a test")) { result in self?.model.phoneTest = result }
+        }
+        model.setUpPhoneAlerts = { [weak self] in self?.setUpPhoneAlerts() }
         syncPhones()
         model.quit = { NSApp.terminate(nil) }
         model.backToIsland = { [weak self] in self?.hidePanel(); self?.island.reopen() }
@@ -203,7 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.answerApproval = { [weak self] id, choice in self?.answerApproval(id, choice) }
         model.releaseApproval = { [weak self] id in self?.releaseApproval(id) }
         model.board = board.entries                      // restored from before a restart
-        model.languageChanged = { [weak self] in self?.refreshIcon(on: System.cocaineOn, animate: false) }
+        model.languageChanged = { [weak self] in
+            self?.refreshIcon(on: System.cocaineOn, animate: false)
+            self?.island.model.refreshTabs()                        // the tabs' names
+        }
         hostView = PanelHostingView(rootView: PanelView(m: model))
         hostView.sizingOptions = [.intrinsicContentSize]
         hostView.onSizeChange = { [weak self] in DispatchQueue.main.async { self?.fitPanel(animated: true) } }
@@ -362,6 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A control command that may run (allowed, or not guarded): does it and answers the caller's x-success.
     private func runCommand(_ req: ControlRequest) {
+        defer { linkFeedback(req.action) }
         switch req.action {
         case .on(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes)
         case .off: autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
@@ -378,6 +412,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let r = ControlURL.reply(s, ControlURL.status(on: on, until: settings.onUntil, now: Date(),
                                                          screenOff: screenOffMode, trigger: triggerActive)) {
             NSWorkspace.shared.open(r)
+        }
+    }
+
+    /// What a link did, said by VoiceOver (a script or a Shortcut changed something you can't see).
+    private func linkFeedback(_ a: ControlAction) {
+        switch a {
+        case .on, .off, .toggle, .timer: A11y.announce((wantOn ?? System.cocaineOn) ? L("Cocaine is on") : L("Cocaine is off"))
+        case .pause: A11y.announce(L("Alerts paused"))
+        case .resume: A11y.announce(L("Alerts resumed"))
+        case .panel, .status: break
         }
     }
 
@@ -403,8 +447,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func boardSet(_ session: String, _ from: String, _ project: String?, _ state: String, _ origin: AgentOrigin? = nil) {
+        let was = board.entry(session)?.state
         board.set(session, from: from, project: project, state: state, origin: origin)
         writeBoard()
+        if state == "working" && was != "working" { A11y.announce(String(format: L("%@ is at work"), from)) }   // VoiceOver: an AI started
     }
 
     // MARK: Requests answered from the notch (Sources/AgentApprovals.swift)
@@ -530,10 +576,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: w)
     }
 
+    /// The board in the panel and in state.json (what remote.zsh reads): both only when something changed (it ran every 10 s and
+    /// redrew the island and rewrote the file each time). A failed write is logged, and tried again next time.
+    private var boardWritten: (entries: [AgentEntry], on: Bool, until: Date?)?
     private func writeBoard() {
         board.prune()
-        model.board = board.entries
-        board.write(cocaineOn: System.cocaineOn, until: settings.onUntil)
+        if model.board != board.entries { model.board = board.entries }
+        let state = (entries: board.entries, on: System.cocaineOn, until: settings.onUntil)
+        if let w = boardWritten, w.entries == state.entries, w.on == state.on, w.until == state.until { return }
+        if board.write(cocaineOn: state.on, until: state.until) { boardWritten = state }
+        else { boardWritten = nil; log.error("state.json couldn't be written") }
     }
 
     /// Per session: agents and tasks still running, its last sign of life, and a "finished" on hold. `inFlight` is the
@@ -616,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let away = forced ?? (idleNow >= 20 || dim.idleDimmed || (screenOffMode && screenGate.fired))
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
+        if !repeated { A11y.announce([a.from, a.message, a.project].compactMap { $0 }.joined(separator: ", ")) }   // VoiceOver, at the Mac or not
         if !repeated && !test {                          // "Recent alerts"
             settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date(), session: a.session, origin: a.origin)]
                 + settings.alertHistory
@@ -649,6 +702,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   self.settings.alertRepeatMinutes == minutes else { t.invalidate(); return }
             self.alert(a, away: true, repeated: true)
         }
+        t.tolerance = 5
         RunLoop.main.add(t, forMode: .common)
         repeatTimer = t
     }
@@ -732,6 +786,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !iconZone.contains(NSEvent.mouseLocation) { self?.hidePanel() }
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
+            if ShortcutCenter.shared.handleRecorderKey(e) { return nil }       // a shortcut being recorded takes every key
             if DialogCenter.shared.isShowing(on: .panel), DialogCenter.shared.handleKey(e) { return nil }   // Return/Esc: the dialog's
             if PickerCenter.shared.isOpen(on: .panel), PickerCenter.shared.handleKey(e) { return nil }     // ↑↓, Return, Space, Esc: the dropdown's
             if e.keyCode == 53 {                                   // Esc: closes the panel
@@ -761,7 +816,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     visible: (screen ?? NSScreen.main)?.visibleFrame ?? .zero)
         }
         guard frame != panel.frame else { return }
-        if animated {
+        if animated && !Motion.reduce {                                   // Reduce Motion: the panel just takes its new size
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.16
                 panel.animator().setFrame(frame, display: true)
@@ -778,6 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hidePanel() {
+        ShortcutCenter.shared.cancelRecording()             // a shortcut half recorded keeps its old keys
         island.setSuspended(false)
         panelMonitors.forEach(NSEvent.removeMonitor)
         panelMonitors.removeAll()
@@ -800,6 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.panel.makeKey()                            // Return, Esc and the text field (the panel never activates the app)
             return .panel                                   // the card is drawn over the visible area, wherever the page is scrolled
         }
+        center.window = { [weak self] s in s == .panel ? self?.panel : self?.island.window }
         center.changed = { [weak self] in
             if center.current != nil { PickerCenter.shared.close() }        // a question replaces an open dropdown
             self?.island.dialogChanged()
@@ -808,21 +865,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPanelState() {
-        let login = SMAppService.mainApp.status == .enabled
+        let status = SMAppService.mainApp.status
+        let login = status == .enabled, approval = status == .requiresApproval
         if model.loginEnabled != login { model.loginEnabled = login }
+        if model.loginNeedsApproval != approval { model.loginNeedsApproval = approval }
         let on = System.cocaineOn
+        let aiPage = model.page == "ai" || model.page.isEmpty     // the hooks' state is read where it's shown (Home shows Recent alerts)
         DispatchQueue.global().async {
             let missing = on && !System.displayHeld
-            let ai = AIHooks.status()
+            let ai = aiPage ? AIHooks.status() : nil
             DispatchQueue.main.async {
                 if self.model.holdMissing != missing { self.model.holdMissing = missing }
                 if missing { self.superviseHold() }
-                if !self.model.settingAI && self.model.ai != ai { self.model.ai = ai }
+                if let ai, !self.model.settingAI && self.model.ai != ai { self.model.ai = ai }
                 let paused = self.settings.alertsPausedUntil   // a pause ends by itself
                 if self.model.alertsPausedUntil != paused { self.model.alertsPausedUntil = paused }
                 let phone = Phone.configured ? Phone.summary : ""
                 if self.model.phone != phone { self.model.phone = phone }
-                self.model.battery = System.battery.map { "\($0.percent)%" }
+                let battery = System.battery.map { "\($0.percent)%" }
+                if self.model.battery != battery { self.model.battery = battery }
             }
         }
     }
@@ -892,7 +953,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Checks everything. With `askMissing`, asks (once per launch each) for what an enabled feature needs and lacks; the rest is
     /// asked when you use it (camera, calendar, music) and listed under Permissions if it was refused.
     /// Never blocks: Files and Music/Spotify are re-checked off the main thread and land here again when they change.
-    private func refreshPermissions(askMissing: Bool = false) {
+    /// `probe`: also list the Files folders and ask the music apps (off the main thread). Not from the 10 s tick: only when
+    /// something can have changed (back from System Settings, the app activated, the permission watch, the panel opening).
+    private func refreshPermissions(askMissing: Bool = false, probe: Bool = true) {
         let problems = Self.permissionProblems(needed: neededPermissions(), island: settings.island, state: Permissions.state)
         for p in problems where askMissing && !autoAsked.contains(p) && neededPermissions().contains(p) {
             autoAsked.insert(p); Permissions.request(p)
@@ -904,7 +967,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A permission taken away: the tap is dropped, so giving it back recreates it here.
         mediaKeys.healthCheck()
         if settings.replaceHUD && !mediaKeys.running && AXIsProcessTrusted() { mediaKeys.start() }
-        Permissions.probe(files: settings.island) { [weak self] changed in if changed { self?.refreshPermissions() } }
+        if probe { Permissions.probe(files: settings.island) { [weak self] changed in if changed { self?.refreshPermissions(probe: false) } } }
     }
 
     /// What the Permissions card lists: what an enabled feature needs and lacks, and (with the island on) what was refused.
@@ -925,6 +988,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.refreshPermissions()
             if self.model.permissionProblems.isEmpty { t.invalidate() }
         }
+        permissionWatch?.tolerance = 0.2
     }
 
     // MARK: Stay active, charging, the HUD keys
@@ -932,7 +996,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// While a chat app is open (or always) and you are idle, keeps the idle clock from running out; holds the display awake.
     private func presenceTick() {
         let want = settings.stayActive && (settings.stayActiveAlways || Presence.anyRunning(settings.stayActiveApps))
-        refreshPermissions()                                    // (also starts the HUD keys once their permission is given)
+        refreshPermissions(probe: false)                        // (also starts the HUD keys once their permission is given)
         if want != model.presenceActive {
             model.presenceActive = want
             updatePink()                                           // the pink powder follows
@@ -1038,7 +1102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// On battery power, at the chosen level: turn Cocaine off (or just warn), once until the battery recovers.
     private func checkBattery(_ on: Bool) {
         let b = System.battery
-        model.battery = b.map { "\($0.percent)%" }
+        let shown = b.map { "\($0.percent)%" }
+        if model.battery != shown { model.battery = shown }                 // (every set redraws the panel and the island)
         guard let b else { return }
         // The floor first: at 5 % Cocaine lets go whatever Battery Guard says (off, or already used up), every time.
         let floor = batteryFloor.check(percent: b.percent, onAC: b.onAC, on: on)
@@ -1128,17 +1193,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onUntil = settings.onUntil
     }
 
-    /// ⌃⌥⌘C toggles Cocaine, ⌃⌥⌘O opens the panel, ⌃⌥⌘P pauses (or resumes) alerts.
+    /// The global shortcuts (Sources/Shortcuts.swift; by default ⌃⌥⌘C on/off, ⌃⌥⌘O the panel, ⌃⌥⌘P pause alerts, ⌃⌥⌘I the island).
     private func applyHotkeys() {
-        hotkeys.set(enabled: settings.hotkeys) { [weak self] id in
-            guard let self else { return }
-            switch id {
-            case 1: self.toggleCocaine()
-            case 2: if self.panel.isVisible { self.hidePanel() } else { self.showPanel(fromClick: false) }
-            case 3: self.pauseAlerts(until: self.settings.alertsPausedUntil == nil ? Date().addingTimeInterval(3600) : nil)
-            default: break
+        let center = ShortcutCenter.shared
+        center.perform = { [weak self] a in self?.shortcut(a) }
+        center.setEnabled(settings.hotkeys)
+    }
+
+    /// What a shortcut does, with a sign that it ran: a flash in the island and a VoiceOver announcement.
+    private func shortcut(_ a: ShortcutAction) {
+        switch a {
+        case .toggle:
+            toggleCocaine()
+            shortcutFeedback(model.on ? "bolt.fill" : "moon.zzz.fill", model.on ? L("Cocaine is on") : L("Cocaine is off"))
+        case .panel:
+            if panel.isVisible { hidePanel() } else { showPanel(fromClick: false) }
+        case .pause:
+            let resume = settings.alertsPausedUntil != nil
+            pauseAlerts(until: resume ? nil : Date().addingTimeInterval(3600))
+            shortcutFeedback(resume ? "bell.fill" : "bell.slash.fill", resume ? L("Alerts resumed") : L("Alerts paused for an hour"))
+        case .island:
+            guard settings.island, island.showing else {        // no island on screen: the panel instead
+                if panel.isVisible { hidePanel() } else { showPanel(fromClick: false) }
+                return
             }
+            if panel.isVisible { hidePanel() }
+            island.toggleKeyboard()
         }
+    }
+
+    private func shortcutFeedback(_ icon: String, _ text: String) {
+        if settings.island && !panel.isVisible { island.model.flashNotice(icon, text) }   // (the flash announces itself)
+        else { A11y.announce(text) }
+    }
+
+    /// The menu-bar icon: hidden while the island stands in for it, except while VoiceOver runs (the closed island can't be
+    /// reached with the VoiceOver cursor as easily as a menu-bar item) or when the island can't be shown.
+    private func updateStatusItem() {
+        statusItem.isVisible = !settings.island || !island.showing || A11y.voiceOver
     }
 
     private let phoneListener = PhoneLink.listener()
@@ -1164,7 +1256,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.settings.wakeForPhone = false
             self.model.wakeForPhone = false
-            DialogCenter.shared.present(Dialogs.message(L("Couldn't turn on the wake-ups"))) { _ in }
+            DialogCenter.shared.present(Dialogs.message(L("Couldn't turn on the wake-ups"),
+                L("Waking the Mac on a schedule needs the administrator's permission once (pmset), and it wasn't given."))) { _ in }
         }
         let done = { [weak self] in if (self?.model.phoneCount ?? 0) == 0 { WakeSchedule.cancelInBackground() } }
         WakeSchedule.armInBackground { [weak self] ok in
@@ -1182,6 +1275,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// Phone alerts: a Shortcut on this Mac (run with the alert's text) and/or an ntfy topic (the text is posted there). The same
+    /// settings `cocaine remote notify` writes.
+    private func setUpPhoneAlerts() {
+        DialogCenter.shared.present(Dialogs.phoneAlertsKind()) { [weak self] r in
+            guard case .choice(let kind) = r, let self else { return }
+            switch kind {
+            case "shortcut":
+                DialogCenter.shared.present(Dialogs.phoneShortcut(self.settings.phoneShortcut)) { r in
+                    guard case .button("save", let text, _) = r else { return }
+                    self.settings.phoneShortcut = text.trimmingCharacters(in: .whitespaces)
+                    self.phoneAlertsChanged()
+                }
+            case "ntfy":
+                DialogCenter.shared.present(Dialogs.phoneNtfy(self.settings.phoneNtfy)) { r in
+                    guard case .button("save", let text, _) = r else { return }
+                    self.settings.phoneNtfy = text.trimmingCharacters(in: .whitespaces)
+                    self.phoneAlertsChanged()
+                }
+            default:
+                self.settings.phoneShortcut = ""; self.settings.phoneNtfy = ""
+                self.phoneAlertsChanged()
+            }
+        }
+    }
+
+    private func phoneAlertsChanged() {
+        model.phone = Phone.configured ? Phone.summary : ""
+        model.phoneTest = nil
     }
 
     /// Schedules the next wake just before sleeping and just after waking (so there is always one ahead), unless the
@@ -1273,7 +1396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard animate else { return }
         let target: CGFloat = on ? 1 : 0
         iconAnim?.invalidate()
-        guard iconLevel >= 0 else { setIconLevel(target, pouring: false); return }   // first draw: no animation
+        guard iconLevel >= 0, !Motion.reduce else { setIconLevel(target, pouring: false); return }   // first draw, Reduce Motion: no pour
         let start = iconLevel, duration = on ? 1.4 : 0.7
         let began = Date()
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
@@ -1305,6 +1428,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pinkHeading = target
         pinkTimer?.invalidate()
         let start = model.pinkLevel, filling = target > start, duration = filling ? 1.4 : 0.6, began = Date()
+        if Motion.reduce {                                                  // Reduce Motion: no pour
+            model.pinkLevel = target; model.pinkPouring = false; redrawStatusItem(); pinkTimer = nil
+            return
+        }
         let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             let f = min(1, CGFloat(Date().timeIntervalSince(began) / duration))
@@ -1473,11 +1600,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let svc = SMAppService.mainApp
         do {
             if enable { try svc.register() } else { try svc.unregister() }
-            if svc.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+            if svc.status == .requiresApproval { hidePanel(); SMAppService.openSystemSettingsLoginItems() }   // macOS wants the user's OK there
         } catch {
             DialogCenter.shared.present(Dialogs.message(L("Can't change Open at Login"),
                 "\(error.localizedDescription)\n\n" + L("You can add Cocaine manually in System Settings → General → Login Items."))) { _ in }
         }
         model.loginEnabled = svc.status == .enabled
+        model.loginNeedsApproval = svc.status == .requiresApproval
     }
 }

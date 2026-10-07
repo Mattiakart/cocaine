@@ -59,9 +59,9 @@ enum Language {
         return b
     }
 
-    /// Flag shown on the language button; both Chinese scripts use China's flag (the menu tells them apart by name).
+    /// Flag shown on the language button (Traditional Chinese: the globe; the menu names each language).
     static func flag(_ code: String) -> String {
-        ["en": "🇬🇧", "it": "🇮🇹", "zh-Hans": "🇨🇳", "zh-Hant": "🇨🇳", "es": "🇪🇸", "fr": "🇫🇷", "de": "🇩🇪", "ja": "🇯🇵"][code] ?? "🌐"
+        ["en": "🇬🇧", "it": "🇮🇹", "zh-Hans": "🇨🇳", "zh-Hant": "🌐", "es": "🇪🇸", "fr": "🇫🇷", "de": "🇩🇪", "ja": "🇯🇵"][code] ?? "🌐"
     }
 
     /// The language actually in use when following the Mac (English if the Mac's isn't one of ours).
@@ -78,7 +78,7 @@ enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"
@@ -104,17 +104,9 @@ func appLocale() -> Locale { Language.locale }
 /// The same lookup for the updater and signature code in Sources/.
 func updatesText(_ key: String) -> String { Language.text(key) }
 
+/// Runs a program and returns its exit status (-1: it couldn't start, or ran past `timeout` and was stopped). See Proc.
 @discardableResult
-func run(_ path: String, _ args: [String]) -> Int32 {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: path)
-    p.arguments = args
-    p.standardOutput = FileHandle.nullDevice
-    p.standardError = FileHandle.nullDevice
-    do { try p.run() } catch { return -1 }
-    p.waitUntilExit()
-    return p.terminationStatus
-}
+func run(_ path: String, _ args: [String], timeout: TimeInterval = 120) -> Int32 { Proc.run(path, args, timeout: timeout).status }
 
 /// Runs the bundled engine (`on`, `off`, …) and returns its exit status: 0 ok, 2 not authorized yet.
 @discardableResult

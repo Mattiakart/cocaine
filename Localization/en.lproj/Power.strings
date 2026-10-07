@@ -3,13 +3,10 @@
 "Turn the screen off instead" = "Turn the screen off instead";
 "The Mac keeps working with the screen off." = "The Mac keeps working with the screen off.";
 "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings.";
-"Now" = "Now";
 "Turn the screens off now" = "Turn the screens off now";
 "Power" = "Power";
 "On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "On while the Mac is on the charger, or on battery above a level; off 30 seconds after";
 "On the charger" = "On the charger";
-"Down to" = "Down to";
-"Below this level the battery trigger lets go" = "Below this level the battery trigger lets go";
 "External display" = "External display";
 "On while a display is connected (or while none is); off 30 seconds after" = "On while a display is connected (or while none is); off 30 seconds after";
 "Not connected" = "Not connected";

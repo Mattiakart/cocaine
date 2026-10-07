@@ -27,9 +27,15 @@ final class PanelModel: ObservableObject {
     @Published var holdMissing = false
     @Published var needsAuth = false
     @Published var loginEnabled = false
+    /// Open at login was asked for and macOS waits for the user's OK in System Settings → Login Items.
+    @Published var loginNeedsApproval = false
+    var openLoginItems: () -> Void = { SMAppService.openSystemSettingsLoginItems() }
     @Published var previewing = false
-    @Published var fillLevel: CGFloat = 0
-    @Published var pouring = false
+    /// The baggie's fill, animated 30 times a second while it pours: its own small object, observed only by the views that draw
+    /// the bag, so an animation doesn't redraw the whole panel and island (PanelModel's other values don't change meanwhile).
+    let bag = BagState()
+    var fillLevel: CGFloat { get { bag.fill } set { bag.fill = newValue } }
+    var pouring: Bool { get { bag.pouring } set { bag.pouring = newValue } }
     @Published var ai = AIHooks.Status()   // the "AI alerts" row shows only on Macs with a supported AI tool
     @Published var settingAI = false
     /// Which page of the panel is open: "" = the home, else "ai", "timer", "battery", "triggers", "keys" or "remote".
@@ -44,7 +50,6 @@ final class PanelModel: ObservableObject {
     @Published var triggerAgents: Bool { didSet { settings.triggerAgents = triggerAgents } }
     @Published var triggerApps: [String] { didSet { settings.triggerApps = triggerApps } }
     @Published var triggerPower: String { didSet { settings.triggerPower = triggerPower; triggersChanged() } }
-    @Published var triggerPowerMin: Int { didSet { settings.triggerPowerMin = triggerPowerMin; triggersChanged() } }
     @Published var triggerDisplay: String { didSet { settings.triggerDisplay = triggerDisplay; triggersChanged() } }
     @Published var triggerSchedule: Bool { didSet { settings.triggerSchedule = triggerSchedule; triggersChanged() } }
     @Published var scheduleDays: [Int] { didSet { settings.scheduleDays = scheduleDays; triggersChanged() } }
@@ -70,12 +75,12 @@ final class PanelModel: ObservableObject {
     /// Cocaine is off but Stay active is working: the bag is full of pink powder.
     /// The pink powder has its own fill, animated like the white one: it pours in when Cocaine is off and Stay active is on (whether
     /// or not a chat app is open), and empties when either changes.
-    @Published var pinkLevel: CGFloat = 0
-    @Published var pinkPouring = false
+    var pinkLevel: CGFloat { get { bag.pink } set { bag.pink = newValue } }
+    var pinkPouring: Bool { get { bag.pinkPouring } set { bag.pinkPouring = newValue } }
     var pinkTarget: CGFloat { (!on && (stayActive || presenceActive) && fillLevel < 0.05) ? 1 : 0 }
-    var bagPink: Bool { pinkLevel > 0.01 && fillLevel < 0.05 }
-    var bagLevel: CGFloat { bagPink ? pinkLevel : fillLevel }
-    var bagPouring: Bool { bagPink ? pinkPouring : pouring }
+    var bagPink: Bool { bag.isPink }
+    var bagLevel: CGFloat { bag.level }
+    var bagPouring: Bool { bag.pouringNow }
     @Published var presenceActive = false
     /// Why Cocaine is on, when a Smart Trigger turned it on ("Xcode", "On the charger"…); nil otherwise.
     @Published var triggeredBy: String?
@@ -96,6 +101,8 @@ final class PanelModel: ObservableObject {
     @Published var oldPhones = 0                     // pairings with an old (unprotected) Shortcut, or expired
     @Published var oldPhonesAllowedUntil: Date?      // old Shortcuts answered (basic commands only) until then
     @Published var phone = ""                        // "" = not set up; else what alerts go to
+    @Published var phoneTest: String?                // what the last Test did
+    var setUpPhoneAlerts: () -> Void = {}
     @Published var battery: String?                  // "80%" (nil = no battery)
     @Published var alertDone: Bool { didSet { settings.alertDone = alertDone } }
     @Published var alertInput: Bool { didSet { settings.alertInput = alertInput } }
@@ -152,6 +159,7 @@ final class PanelModel: ObservableObject {
     static func controlWords() {
         L10nControls.opensList = L("Opens a list"); L10nControls.all = L("All"); L10nControls.none = L("None")
         L10nControls.selected = L("%d selected"); L10nControls.search = L("Search"); L10nControls.openNow = L("Open now")
+        L10nControls.highlighted = L("Highlighted"); L10nControls.ticked = L("ticked"); L10nControls.unticked = L("not ticked")
         ControlHaptics.tap = { Haptic.tap(.alignment) }
     }
 
@@ -180,7 +188,6 @@ final class PanelModel: ObservableObject {
         triggerAgents = settings.triggerAgents
         triggerApps = settings.triggerApps
         triggerPower = settings.triggerPower
-        triggerPowerMin = settings.triggerPowerMin
         triggerDisplay = settings.triggerDisplay
         triggerSchedule = settings.triggerSchedule
         scheduleDays = settings.scheduleDays
@@ -208,4 +215,36 @@ final class PanelModel: ObservableObject {
         levelPercent = v
         settings.level = Float(v) / 100
     }
+}
+
+/// The baggie's state: how full it is with white powder (Cocaine on) or pink (Stay active alone), and whether it is pouring.
+final class BagState: ObservableObject {
+    @Published var fill: CGFloat = 0
+    @Published var pouring = false
+    @Published var pink: CGFloat = 0
+    @Published var pinkPouring = false
+    var isPink: Bool { pink > 0.01 && fill < 0.05 }
+    var level: CGFloat { isPink ? pink : fill }
+    var pouringNow: Bool { isPink ? pinkPouring : pouring }
+}
+
+/// The bag drawn in the panel's header and the island's Home tab: it alone redraws while the powder pours.
+struct BagIcon: View {
+    @ObservedObject var bag: BagState
+    var size: CGFloat = 20
+    var dim: CGFloat = 1
+
+    var body: some View {
+        Image(nsImage: Baggie.imageOnDark(level: bag.level, pouring: bag.pouringNow, size: size, pink: bag.isPink))
+            .opacity(dim)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The main on/off switch with its line of powder, which follows the bag's fill.
+struct PowderSwitch: View {
+    @ObservedObject var bag: BagState
+    let on: Bool
+    let action: () -> Void
+    var body: some View { CocaineSwitch(on: on, powder: bag.fill, action: action) }
 }

@@ -23,7 +23,7 @@ func clipboardL(_ key: String) -> String { L(key) }
 /// The island's clipboard page: search, favorites, pause, and the history itself (Sources/Clipboard.swift).
 private struct ClipboardPage: View {
     @ObservedObject var h: ClipboardHistory
-    let flash: (String, String) -> Void
+    let copyClip: (ClipItem) -> Void
     let keyable: (Bool) -> Void
 
     var body: some View {
@@ -34,6 +34,8 @@ private struct ClipboardPage: View {
                     Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(UI.hint)       // a glyph
                     TextField(L("Search"), text: $h.query).textFieldStyle(.plain).font(UI.value)
                         .onExitCommand { h.query = "" }
+                        .onSubmit { if let c = h.visible.first(where: { $0.id == h.hovered }) ?? h.visible.first { copyClip(c) } }   // Return: the highlighted one
+                        .help(L("↑ and ↓ pick an item, Return copies it"))
                     if !h.query.isEmpty {
                         Button { h.query = "" } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(UI.hint)
@@ -93,6 +95,12 @@ private struct ClipboardPage: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // VoiceOver: the row is "copy it"; delete and the star are its actions (the × only shows under the pointer).
+            .accessibilityLabel(title(c))
+            .accessibilityValue(c.pinned ? L("Favorite") : "")
+            .accessibilityHint(gone ? L("The file is no longer there") : L("Copy"))
+            .accessibilityAction(named: L("Delete")) { h.remove(c.id) }
+            .accessibilityAction(named: c.pinned ? L("Remove from favorites") : L("Add to favorites")) { h.togglePin(c.id) }
             // The two icons: small glyphs, 24 pt targets (side by side, they reach into the row's padding).
             if hover {
                 Button { h.remove(c.id) } label: {
@@ -102,13 +110,13 @@ private struct ClipboardPage: View {
             }
             Button { Haptic.tap(.alignment); h.togglePin(c.id) } label: {
                 Image(systemName: c.pinned ? "star.fill" : "star").font(.system(size: 10))
-                    .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.5 : 0.18)).frame(width: 24, height: 24).contentShape(Rectangle())
+                    .foregroundStyle(c.pinned ? Island.accent : Color.white.opacity(hover ? 0.65 : 0.4)).frame(width: 24, height: 24).contentShape(Rectangle())   // 3:1 on the row
             }
             .buttonStyle(.plain).help(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
             .accessibilityLabel(c.pinned ? L("Remove from favorites") : L("Add to favorites"))
         }
         .padding(.leading, Space.l).padding(.trailing, 1).frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(hover ? 0.14 : 0.08)))     // the pointer's row, or the keyboard's
         .onHover { inside in if inside { h.hovered = c.id } else if h.hovered == c.id { h.hovered = nil } }
         .help(gone ? L("The file is no longer there") : tip(c))
         .contextMenu {
@@ -153,14 +161,7 @@ private struct ClipboardPage: View {
         return parts.joined(separator: "\n")
     }
 
-    private func copy(_ c: ClipItem) {
-        if h.copy(c) {
-            Haptic.tap(.generic)
-            flash("doc.on.clipboard.fill", L("Copied"))
-        } else {
-            flash("exclamationmark.triangle.fill", c.kind == .files ? L("The file is no longer there") : L("Can't copy it"))
-        }
-    }
+    private func copy(_ c: ClipItem) { copyClip(c) }
 
     /// Where the history is kept, said plainly; a problem (no Keychain, unreadable file) takes its place.
     @ViewBuilder private var footer: some View {
@@ -180,7 +181,7 @@ extension IslandView {
     // MARK: clipboard
 
     var clipboardTab: some View {
-        ClipboardPage(h: clipboard, flash: { model.flashNotice($0, $1) }, keyable: model.setKeyable)
+        ClipboardPage(h: clipboard, copyClip: { model.copyClip($0) }, keyable: model.setKeyable)
     }
 
 }

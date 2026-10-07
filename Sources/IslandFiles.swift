@@ -1,4 +1,4 @@
-// The island's Files page: recent downloads and screenshots, with thumbnails.
+// The island's Files page: recent downloads and screenshots (FileShelf), their thumbnails and file icons (cached).
 
 import AppKit
 import AVFoundation
@@ -19,7 +19,9 @@ import os
 
 // MARK: Island, part 2: files and screenshots, clipboard, calendar
 
-/// Recent downloads and screenshots, found by looking at the two folders every couple of seconds.
+/// Recent downloads and screenshots. The two folders are watched (a kernel event when something is added, renamed or removed in
+/// them) and listed only then; a slow check once a minute catches a moved screenshot location. If a folder can't be watched
+/// (not allowed yet), it is listed every 5 s instead.
 final class FileShelf: ObservableObject {
     struct Item: Identifiable, Equatable {
         var url: URL
@@ -33,7 +35,11 @@ final class FileShelf: ObservableObject {
     var onNew: ((String, String) -> Void)?        // symbol, text: a file just arrived
     private var known = Set<URL>()
     private var primed = false
-    private var timer: Timer?
+    private var started = false
+    private var sources: [DispatchSourceFileSystemObject] = []
+    private var fallback: Timer?
+    private var watchedShots = ""
+    private var pending: DispatchWorkItem?
 
     static var downloadsFolder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads") }
     static var screenshotsFolder: URL {
@@ -46,21 +52,61 @@ final class FileShelf: ObservableObject {
     private static let partial: Set<String> = ["crdownload", "download", "part", "opdownload", "tmp"]
 
     func start() {
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in self?.poll() }
+        guard !started else { return }
+        started = true
         poll()
+        arm()
     }
-    func stop() { timer?.invalidate(); timer = nil; primed = false }
+
+    func stop() {
+        started = false; primed = false
+        sources.forEach { $0.cancel() }; sources = []
+        fallback?.invalidate(); fallback = nil
+        pending?.cancel()
+    }
+
+    /// Watches both folders; the fallback timer re-arms when the screenshot folder moved or a folder couldn't be watched.
+    private func arm() {
+        sources.forEach { $0.cancel() }; sources = []
+        let dirs = Array(Set([Self.downloadsFolder.path, Self.screenshotsFolder.path]))
+        watchedShots = Self.screenshotsFolder.path
+        for dir in dirs {
+            let fd = open(dir, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            let s = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .link], queue: .main)
+            s.setEventHandler { [weak self] in self?.changed() }
+            s.setCancelHandler { close(fd) }
+            s.resume()
+            sources.append(s)
+        }
+        fallback?.invalidate()
+        let all = sources.count == dirs.count
+        let t = Timer(timeInterval: all ? 60 : 5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.poll()
+            if Self.screenshotsFolder.path != self.watchedShots || self.sources.count < dirs.count { self.arm() }
+        }
+        t.tolerance = all ? 10 : 1
+        RunLoop.main.add(t, forMode: .common)
+        fallback = t
+    }
+
+    /// A burst of changes (a download being renamed into place) is listed once, a moment later.
+    private func changed() {
+        pending?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.poll() }
+        pending = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
+    }
 
     private let queue = DispatchQueue(label: "local.cocaine.files")
-    private var busy = false
+    private var busy = false, again = false
 
     private func poll() {
         // One listing at a time: the first one can wait (macOS asking for the folder) and must not pile up threads behind it.
-        guard !busy else { return }
+        guard !busy else { again = true; return }
         busy = true
         queue.async {
-            defer { DispatchQueue.main.async { self.busy = false } }
             let dl = Self.list(Self.downloadsFolder) { !Self.partial.contains($0.pathExtension.lowercased()) }
             let shotDir = Self.screenshotsFolder
             let sh = Self.list(shotDir) { u in
@@ -69,14 +115,16 @@ final class FileShelf: ObservableObject {
                     && (shotDir.path != Self.downloadsFolder.path) && Self.shotPrefixes.contains { n.hasPrefix($0) }
             }
             DispatchQueue.main.async {
+                self.busy = false
                 let all = Set((dl + sh).map(\.url))
                 if self.primed {
                     for it in dl where !self.known.contains(it.url) && Date().timeIntervalSince(it.date) < 120 { self.onNew?("arrow.down.circle.fill", it.name) }
                     for it in sh where !self.known.contains(it.url) && Date().timeIntervalSince(it.date) < 120 { self.onNew?("camera.viewfinder", L("Screenshot")) }
                 }
-                self.known.formUnion(all); self.primed = true
+                self.known = all; self.primed = true                      // only what is listed now: it never grows
                 if dl != self.downloads { self.downloads = dl }
                 if sh != self.shots { self.shots = sh }
+                if self.again { self.again = false; self.poll() }
             }
         }
     }
@@ -91,13 +139,24 @@ final class FileShelf: ObservableObject {
     }
 }
 
-/// A small image for a file, made off the main thread.
+/// File icons, made once per path (NSWorkspace builds a new image every time it is asked).
+enum IconCache {
+    private static let cache: NSCache<NSString, NSImage> = { let c = NSCache<NSString, NSImage>(); c.countLimit = 200; return c }()
+    static func icon(_ path: String) -> NSImage {
+        if let i = cache.object(forKey: path as NSString) { return i }
+        let i = NSWorkspace.shared.icon(forFile: path)
+        cache.setObject(i, forKey: path as NSString)
+        return i
+    }
+}
+
+/// A small image for a file, made off the main thread; the last 60 are kept.
 private final class Thumb: ObservableObject {
     @Published var image: NSImage?
-    private static var cache: [URL: NSImage] = [:]
+    private static let cache: NSCache<NSURL, NSImage> = { let c = NSCache<NSURL, NSImage>(); c.countLimit = 60; return c }()
     func load(_ url: URL, side: CGFloat) {
-        if let c = Self.cache[url] { image = c; return }
-        DispatchQueue.global().async {
+        if let c = Self.cache.object(forKey: url as NSURL) { image = c; return }
+        DispatchQueue.global(qos: .utility).async {
             var img: NSImage?
             if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
                let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side * 2] as CFDictionary) {
@@ -105,7 +164,7 @@ private final class Thumb: ObservableObject {
             } else {
                 img = NSWorkspace.shared.icon(forFile: url.path)
             }
-            DispatchQueue.main.async { if let img { Self.cache[url] = img }; self.image = img }
+            DispatchQueue.main.async { if let img { Self.cache.setObject(img, forKey: url as NSURL) }; self.image = img }
         }
     }
 }
@@ -134,7 +193,7 @@ extension IslandView {
                 FadingScroll(cap: 112) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
                     Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
                         HStack(spacing: Space.m) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: it.url.path)).resizable().frame(width: 20, height: 20)
+                            Image(nsImage: IconCache.icon(it.url.path)).resizable().frame(width: 20, height: 20)
                             Text(it.name).font(UI.value).lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: Space.xs)
                             Text(it.size.formatted(.byteCount(style: .file).locale(Language.locale))).font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint)
@@ -142,6 +201,9 @@ extension IslandView {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(it.name)
+                    .accessibilityValue(it.size.formatted(.byteCount(style: .file).locale(Language.locale)))
+                    .accessibilityHint(L("Shows it in Finder"))
                     .onDrag { NSItemProvider(object: it.url as NSURL) }
                 } } }
                 Spacer(minLength: 0)
@@ -152,10 +214,12 @@ extension IslandView {
                 if files.shots.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
                 ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: Space.m) {
                     ForEach(files.shots) { it in
-                        FileThumb(url: it.url, side: 62)
-                            .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([it.url]) }
+                        Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: { FileThumb(url: it.url, side: 62) }
+                            .buttonStyle(.plain)
                             .onDrag { NSItemProvider(object: it.url as NSURL) }
                             .help(it.name)
+                            .accessibilityLabel(it.name)
+                            .accessibilityHint(L("Shows it in Finder"))
                     }
                 } }
                 .mask(HStack(spacing: 0) { Rectangle(); LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 22) })

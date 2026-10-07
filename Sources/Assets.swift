@@ -103,10 +103,10 @@ enum Baggie {
     static func palette(dark: Bool, pink: Bool = false) -> Palette {
         let rose = NSColor(red: 1.0, green: 0.50, blue: 0.72, alpha: 1)
         return dark
-            ? Palette(outline: NSColor.white.withAlphaComponent(0.78), fill: NSColor.white.withAlphaComponent(0.14),
+            ? Palette(outline: NSColor.white.withAlphaComponent(DisplayOptions.contrast ? 0.95 : 0.78), fill: NSColor.white.withAlphaComponent(0.14),
                       powder: pink ? rose : .white, powderEdge: nil)
-            : Palette(outline: NSColor.black.withAlphaComponent(0.55), fill: NSColor.black.withAlphaComponent(0.07),
-                      powder: pink ? rose : .white, powderEdge: NSColor.black.withAlphaComponent(0.38))
+            : Palette(outline: NSColor.black.withAlphaComponent(DisplayOptions.contrast ? 0.85 : 0.55), fill: NSColor.black.withAlphaComponent(0.07),
+                      powder: pink ? rose : .white, powderEdge: NSColor.black.withAlphaComponent(DisplayOptions.contrast ? 0.7 : 0.38))
     }
 
     /// The same bag in its light-on-dark colors, for the black island and panel.

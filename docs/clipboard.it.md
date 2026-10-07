@@ -32,11 +32,13 @@ per dopo. Niente esce mai dal Mac.
 **Limiti** (Impostazioni): quanti elementi (25–500), per quanto tempo (da 1 ora a 30 giorni, o nessun limite), spazio
 totale (10–250 MB) ed elemento più grande (1–25 MB). Si applicano mentre copi, al caricamento e circa una volta al minuto.
 
-**Limiti della funzione**: gli appunti vengono controllati poco più di una volta al secondo; se l'app che copia non lo
+**Limiti della funzione**: gli appunti vengono controllati poco più di una volta al secondo (non mentre schermi o Mac dormono); se l'app che copia non lo
 dichiara, come provenienza si usa l'app in primo piano, quindi un'app che copia in background può essere attribuita a
 un'altra. Con una build firmata ad hoc (senza identità di firma locale) macOS richiede di nuovo l'accesso al
 Portachiavi dopo ogni aggiornamento; se lo rifiuti, non viene salvato nulla. Eliminare i file non garantisce che i byte
 siano cancellati da un SSD: a rendere illeggibile la cronologia eliminata è il fatto che viene eliminata anche la sua
-chiave. Il campo di ricerca prende la tastiera mentre la pagina Appunti è aperta.
+chiave. Il campo di ricerca prende la tastiera mentre la pagina Appunti è aperta: ↑ e ↓ scorrono gli elementi e A capo ne
+copia uno (anche con l’isola aperta da ⌃⌥⌘I). Con VoiceOver ogni elemento offre le azioni Elimina e preferito. Con *Salva su
+questo Mac* attivo, le immagini restano solo nei loro file cifrati, non anche in memoria.
 
 **Se la cronologia salvata non si può leggere** (danneggiata, scritta con un'altra chiave o da una versione più recente), Cocaine sposta l'indice e le sue immagini insieme in una cartella `unreadable-<ora>` accanto, riparte vuota e non le cancella mai; se nemmeno questo riesce, non salva nulla. Se il Portachiavi rifiuta l'accesso all'avvio, il salvataggio si ferma solo per quell'avvio.

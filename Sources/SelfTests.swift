@@ -597,6 +597,7 @@ func cliSelfTest() {
     RecoveryTest.selfChecks(check)
     dialogsSelfTest(check)                                 // in-app dialogs: queue, default buttons, validation, the real flows
     designSelfTest(check)                                  // language in dates and durations, scroll steps, the panel strip
+    uxSelfTest(check)                                      // shortcuts, focus timer, usage reader, island keys, contrast (Sources/UXTests.swift)
     if IslandCheck.run() != 0 { failed += 1 }              // the island as the live window holds it (its own PASS/FAIL lines)
     exit(failed == 0 ? 0 : 1)
 }

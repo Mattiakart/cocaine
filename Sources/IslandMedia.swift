@@ -42,8 +42,19 @@ private struct MediaApp: Identifiable {
         MediaApp(id: "dazn", name: "DAZN", symbol: "sportscourt.fill", color: Color(red: 0.9, green: 0.9, blue: 0.2), bundles: [], apps: ["DAZN.app"], url: "https://www.dazn.com"),
     ]
 
+    /// Where each app is (nil: not installed), looked up when the page opens, not on every redraw.
+    private static var found: [String: URL?] = [:]
+    static func refresh() { found = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.lookup()) }) }
+
     /// Where the app is, if it's installed.
     var installedURL: URL? {
+        if let f = Self.found[id] { return f }
+        let u = lookup()
+        Self.found[id] = u
+        return u
+    }
+
+    private func lookup() -> URL? {
         for b in bundles { if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: b) { return u } }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for dir in ["/Applications", home + "/Applications", "/System/Applications"] {
@@ -68,7 +79,7 @@ extension IslandView {
                     Button { Haptic.tap(.generic); app.open() } label: {
                         VStack(spacing: 5) {
                             ZStack(alignment: .bottomTrailing) {
-                                if let url { Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 38, height: 38) }
+                                if let url { Image(nsImage: IconCache.icon(url.path)).resizable().frame(width: 38, height: 38) }
                                 else {
                                     RoundedRectangle(cornerRadius: 9).fill(app.color.opacity(0.9)).frame(width: 38, height: 38)
                                         .overlay(Image(systemName: app.symbol).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white))
@@ -83,9 +94,12 @@ extension IslandView {
                     }
                     .buttonStyle(.plain)
                     .help(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))
+                    .accessibilityLabel(app.name)
+                    .accessibilityHint(url == nil ? String(format: L("Opens %@ on the web"), app.name) : String(format: L("Opens %@"), app.name))
                 }
             }
             Text(L("Opens the app, or the website if it isn't installed.")).font(UI.detail).foregroundStyle(UI.hint)
         }
+        .onAppear { MediaApp.refresh() }          // an app installed or removed since: seen when the page opens
     }
 }

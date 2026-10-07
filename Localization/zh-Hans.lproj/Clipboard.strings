@@ -1,9 +1,6 @@
 /* The island's clipboard history (Sources/Clipboard.swift and its views in main.swift). */
 
-"%d days" = "%d 天";
 "%d items" = "%d 项";
-"1 day" = "1 天";
-"1 week" = "1 周";
 "A regular expression, e.g. ^IBAN or \\bconfidential\\b. Matching text isn't kept." = "正则表达式,例如 ^IBAN 或 \\b机密\\b。匹配的文本不会保留。";
 "Add to favorites" = "添加到收藏";
 "Add" = "添加";

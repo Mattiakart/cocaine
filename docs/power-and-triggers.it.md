@@ -2,7 +2,7 @@
 
 Generale → *Quando sei inattivo* → **Spegni**: con Cocaine attivo, dopo il tempo di inattività
 scelto gli schermi (integrato ed esterni) si spengono invece di abbassarsi (`pmset displaysleepnow`, senza password di
-amministratore). Il Mac continua a lavorare: download, compilazioni e agenti AI vanno avanti. **Ora** li spegne subito. Un
+amministratore). Il Mac continua a lavorare: download, compilazioni e agenti AI vanno avanti. **Spegni ora** (nella stessa scheda) li spegne subito. Un
 tasto, un clic o un tocco sul trackpad li riaccende.
 
 - **Blocco:** nulla viene aggirato. Quando gli schermi si spengono macOS si blocca come impostato in *Impostazioni di

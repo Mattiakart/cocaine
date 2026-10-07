@@ -111,6 +111,36 @@ enum Dialogs {
                           safeDefault: true)
     }
 
+    /// Phone alerts: where they go (a row is the answer).
+    static func phoneAlertsKind() -> DialogSpec {
+        DialogSpec(icon: "bell.badge", title: L("Phone alerts"),
+                   message: L("When you're away, alerts can also go to your phone: through a Shortcut on this Mac (it gets the alert's text; make it message you), or posted to an ntfy topic (the text leaves this Mac)."),
+                   choices: [DialogChoice(id: "shortcut", title: L("A Shortcut on this Mac…"), symbol: "square.stack.3d.up"),
+                             DialogChoice(id: "ntfy", title: L("An ntfy topic…"), symbol: "antenna.radiowaves.left.and.right"),
+                             DialogChoice(id: "off", title: L("Turn phone alerts off"), symbol: "bell.slash", destructive: true)],
+                   choiceMode: .act, buttons: [cancel])
+    }
+
+    static func phoneShortcut(_ current: String) -> DialogSpec {
+        DialogSpec(icon: "square.stack.3d.up", title: L("The Shortcut to run"), message: L("Its name exactly as in the Shortcuts app."),
+                   field: DialogField(placeholder: L("Shortcut name"), text: current,
+                                      validate: { $0.trimmingCharacters(in: .whitespaces).isEmpty ? L("Type the Shortcut's name") : nil }),
+                   buttons: [DialogButton(id: "save", title: L("Save"), needsValidInput: true), cancel])
+    }
+
+    static func phoneNtfy(_ current: String) -> DialogSpec {
+        DialogSpec(icon: "antenna.radiowaves.left.and.right", title: L("The ntfy topic"),
+                   message: L("An address like https://ntfy.sh/a-long-secret-name. Anyone who knows it can read the alerts."),
+                   field: DialogField(placeholder: "https://ntfy.sh/…", text: current, validate: ntfyProblem),
+                   buttons: [DialogButton(id: "save", title: L("Save"), needsValidInput: true), cancel])
+    }
+
+    static func ntfyProblem(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard let u = URL(string: t), u.scheme == "https", u.host != nil, u.path.count > 1, !t.contains(" ") else { return L("An https:// address with a topic") }
+        return nil
+    }
+
     static func pairPhone() -> DialogSpec {
         DialogSpec(icon: "iphone", title: L("Pair an iPhone"),
                    message: L("The Shortcut carries a secret that lets whoever has it control this Mac, within the level you choose. Send it only to your own devices."),

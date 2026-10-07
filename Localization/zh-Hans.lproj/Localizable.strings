@@ -11,10 +11,8 @@
 "After" = "闲置";
 "Open at login" = "登录时打开";
 "Quit" = "退出";
-"Turns Cocaine off and quits" = "关闭 Cocaine 并退出";
 "Cocaine is on" = "Cocaine 已开启";
 "Cocaine is off" = "Cocaine 已关闭";
-"Cocaine needs your administrator password once, to be able to prevent your Mac from sleeping." = "Cocaine 需要管理员密码（仅需一次），才能阻止 Mac 进入睡眠。";
 "Can't change Open at Login" = "无法更改“登录时打开”";
 "You can add Cocaine manually in System Settings → General → Login Items." = "你可以在“系统设置”→“通用”→“登录项”中手动添加 Cocaine。";
 "Same as Mac" = "跟随系统";
@@ -25,12 +23,10 @@
 "needs your input" = "需要你的输入";
 "AI alerts" = "AI 提醒";
 "Can't change AI alerts" = "无法更改 AI 提醒";
-"Choose" = "选择";
 "until %@" = "直到 %@";
 "How" = "提醒方式";
 "Sound" = "声音";
 "No sound" = "无";
-"Other apps and scripts…" = "其他应用和脚本…";
 "Feedback or help" = "反馈或帮助";
 "Feedback" = "反馈";
 "This is a test" = "这是一次测试";
@@ -57,7 +53,6 @@
 "Never" = "从不";
 "Until you're back" = "直到我回来";
 "%d s" = "%d 秒";
-"Every %d min" = "每 %d 分钟";
 "%d min" = "%d 分钟";
 "When an AI completes its work" = "AI 完成工作时";
 "When it asks for a permission or an answer" = "请求权限或回答时";
@@ -92,9 +87,7 @@
 "Command" = "命令";
 "Done" = "已完成";
 "Error" = "错误";
-"Global shortcuts" = "全局快捷键";
 "Not set up" = "未设置";
-"Not set up: see the guide" = "未设置：见指南";
 "Off" = "关";
 "On battery only" = "仅使用电池时";
 "On battery only. Now %@" = "仅使用电池时。当前 %@";
@@ -106,9 +99,7 @@
 "Pause or resume alerts" = "暂停或恢复提醒";
 "Phone alerts" = "手机提醒";
 "Remote work" = "远程工作";
-"Remote work guide…" = "远程工作指南…";
 "Shortcut" = "快捷指令";
-"Shortcuts" = "快捷键";
 "Smart Triggers" = "智能触发";
 "Stay on for" = "保持唤醒时长";
 "Then" = "然后";
@@ -117,7 +108,6 @@
 "Turn Cocaine on or off" = "开启或关闭 Cocaine";
 "What Cocaine does at that level" = "到该电量时 Cocaine 的动作";
 "When the battery reaches" = "电量降到";
-"Work from any app" = "在任何应用中都可用";
 "Working" = "工作中";
 "now" = "刚刚";
 "stopped with an error" = "因错误而停止";
@@ -218,9 +208,6 @@
 "Stay available in chat apps" = "不显示为离开";
 "The chat apps to keep available" = "要保持在线的聊天 App";
 "While these apps are open" = "这些 App 打开时";
-"on/off" = "开/关";
-"panel" = "面板";
-"pause alerts" = "暂停提醒";
 "Drag files onto the notch, then drop them here" = "把文件拖到刘海上，再放到这里";
 "Microphone in use" = "麦克风使用中";
 "Volume and brightness bars appear in the island, not on screen." = "音量和亮度条显示在灵动岛中，而不是屏幕上。";

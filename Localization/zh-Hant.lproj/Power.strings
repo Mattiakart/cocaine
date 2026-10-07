@@ -3,13 +3,10 @@
 "Turn the screen off instead" = "改為關閉螢幕";
 "The Mac keeps working with the screen off." = "螢幕關閉時 Mac 繼續工作。";
 "While Cocaine is on. Any key or click turns the screen back on. The Mac locks as set in Lock Screen settings." = "在 Cocaine 開啟時。按任意鍵或按一下即可重新點亮螢幕。Mac 依「鎖定畫面」設定鎖定。";
-"Now" = "現在";
 "Turn the screens off now" = "立即關閉螢幕";
 "Power" = "電源";
 "On while the Mac is on the charger, or on battery above a level; off 30 seconds after" = "Mac 接上充電器時，或使用電池且電量高於某一程度時開啟；30 秒後關閉";
 "On the charger" = "接上充電器";
-"Down to" = "最低至";
-"Below this level the battery trigger lets go" = "低於此電量時電池觸發器停止";
 "External display" = "外接顯示器";
 "On while a display is connected (or while none is); off 30 seconds after" = "連接顯示器時（或未連接時）開啟；30 秒後關閉";
 "Not connected" = "未連接";
