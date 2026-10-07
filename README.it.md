@@ -144,8 +144,9 @@ pagine:
   testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro; un problema di rete viene detto come tale).
   Cosa suona arriva dagli annunci delle app stesse; il loro scripting (permesso Automazione) serve per la copertina e, mentre questa
   pagina è aperta, per la posizione.
-- **Calendario**: oggi e i prossimi eventi, fino a due settimane (chiede l'accesso a Calendario la prima volta; se l'hai negato, un
-  pulsante apre Impostazioni di Sistema).
+- **Calendario**: viste Giorno, Settimana e Mese con precedente/successivo, *Oggi* e i tasti freccia; clic su un evento per i
+  dettagli (orario, calendario, luogo, link della videochiamata, partecipanti, note) e *Apri in Calendario*. Chiede l'accesso a
+  Calendario la prima volta; se l'hai negato, un pulsante apre Impostazioni di Sistema. Vedi [docs/calendar.it.md](docs/calendar.it.md).
 - **Focus**: un timer focus/pausa con righello dei minuti; avviare un focus tiene il Mac sveglio per la sua durata, *Azzera* spegne
   Cocaine solo se l'aveva acceso il focus, la fine viene annunciata (un suono, un lampo, un avviso se non sei al Mac) e un focus in
   corso sopravvive a un riavvio o a un aggiornamento.
