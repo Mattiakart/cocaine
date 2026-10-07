@@ -113,8 +113,11 @@ enum ZipTool {
         return FileNames.unique(base.appendingPathComponent(name(for: urls)))
     }
 
-    /// The argv for ditto: one item keeps its folder name in the archive (--keepParent); several are staged in one folder whose
-    /// contents become the archive's top level. Resource forks and extended attributes are kept (--sequesterRsrc).
+    static func isFolder(_ u: URL) -> Bool { (try? u.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+
+    /// The argv for ditto: one folder keeps its name in the archive (--keepParent; a single file is the archive's only entry);
+    /// several items are staged in one folder whose contents become the archive's top level. Resource forks and extended
+    /// attributes are kept (--sequesterRsrc).
     static func arguments(source: URL, out: URL, keepParent: Bool) -> [String] {
         ["-c", "-k", "--sequesterRsrc"] + (keepParent ? ["--keepParent"] : []) + [source.path, out.path]
     }
@@ -139,7 +142,7 @@ enum ZipTool {
             }
             source = s
         }
-        let r = ShelfProc.run(ditto, arguments(source: source, out: out, keepParent: urls.count == 1), timeout: 3600, cancel: cancel)
+        let r = ShelfProc.run(ditto, arguments(source: source, out: out, keepParent: urls.count == 1 && isFolder(urls[0])), timeout: 3600, cancel: cancel)
         if r.cancelled { try? fm.removeItem(at: out); throw ShelfOpsError.cancelled }
         guard r.ok, fm.fileExists(atPath: out.path) else {
             try? fm.removeItem(at: out)

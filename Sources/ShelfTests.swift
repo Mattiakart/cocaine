@@ -120,7 +120,7 @@ enum ShelfTests {
         s.click(ids[1], order: ids, shift: false, command: true)
         check("⌘-click again removes it", !s.ids.contains(ids[1]) && s.ids.count == 3)
         s.click(ids[5], order: ids, shift: true, command: true)
-        check("⌘⇧-click adds the range to the selection", s.ids.isSuperset(of: Set(ids[5...7])) && s.ids.contains(ids[0]))
+        check("⌘⇧-click adds the range (from the anchor) to the selection", s.ids.isSuperset(of: Set(ids[1...5])) && s.ids.contains(ids[0]) && s.ids.contains(ids[7]))
         s.selectAll(ids)
         check("⌘A selects everything", s.ids == Set(ids))
         s.click(ids[1], order: ids, shift: false, command: false)
@@ -239,7 +239,9 @@ enum ShelfTests {
         let v2 = dir("newer"); let vdisk = ShelfDisk(dir: v2, persist: true)
         try? Data(#"{"v":2,"collections":[],"current":"6B29FC40-CA47-1067-B31D-00DD010662DA"}"#.utf8).write(to: vdisk.library)
         check("a library from a newer Cocaine isn't read as this one's", vdisk.load() == .unreadable)
-        check("in memory nothing is written", !ShelfDisk(dir: dir("m2"), persist: false).save(Data()) == false && !fm.fileExists(atPath: dir("m2").appendingPathComponent("library.json").path))
+        let m2 = ShelfDisk(dir: dir("m2"), persist: false)
+        _ = m2.save(Data("{}".utf8))
+        check("in memory nothing is written", !fm.fileExists(atPath: m2.library.path) && m2.load() == .none)
         // COCAINE_SUPPORT moves the folder (tests); isolated flags without it stay in memory
         let saved = getenv("COCAINE_SUPPORT").map { String(cString: $0) }
         setenv("COCAINE_SUPPORT", home.path, 1)
@@ -365,7 +367,7 @@ enum ShelfTests {
     static func zip(_ check: (String, Bool) -> Void, dir: (String) -> URL, file: (URL, String, String) -> URL) {
         let d = dir("zip"), other = dir("zip-other")
         let one = file(d, "one file.txt", "hello"), two = file(d, "two.txt", "world"), clash = file(other, "two.txt", "clash")
-        check("zip: one item keeps its folder name (--keepParent); several don't", ZipTool.arguments(source: one, out: d.appendingPathComponent("o.zip"), keepParent: true).contains("--keepParent")
+        check("zip: a folder keeps its name (--keepParent); several items don't", ZipTool.arguments(source: one, out: d.appendingPathComponent("o.zip"), keepParent: true).contains("--keepParent")
               && !ZipTool.arguments(source: d, out: d.appendingPathComponent("o.zip"), keepParent: false).contains("--keepParent"))
         check("zip names: one item, several (Archive.zip)", ZipTool.name(for: [one]) == "one file.txt.zip" && ZipTool.name(for: [one, two]) == L("Archive") + ".zip")
         do {
@@ -379,7 +381,12 @@ enum ShelfTests {
             let single = try ZipTool.zip([one], to: ZipTool.destination(for: [one]))
             let y = dir("unzip1")
             _ = ShelfProc.run("/usr/bin/ditto", ["-x", "-k", single.path, y.path])
-            check("zip of one file", FileManager.default.fileExists(atPath: y.appendingPathComponent("one file.txt").path))
+            check("zip of one file: just that file in it", ((try? FileManager.default.contentsOfDirectory(atPath: y.path)) ?? []) == ["one file.txt"])
+            let folder = dir("zip-folder"); _ = file(folder, "inner.txt", "i")
+            let fz = try ZipTool.zip([folder], to: ZipTool.destination(for: [folder]))
+            let z = dir("unzip2")
+            _ = ShelfProc.run("/usr/bin/ditto", ["-x", "-k", fz.path, z.path])
+            check("zip of one folder: the folder in it, by name", FileManager.default.fileExists(atPath: z.appendingPathComponent("zip-folder/inner.txt").path) && fz.lastPathComponent == "zip-folder.zip")
         } catch { check("zip: \(error)", false) }
         let t = CancelToken(); t.cancel()
         check("zip: cancelled before it starts throws and leaves nothing", (try? ZipTool.zip([one, two], to: d.appendingPathComponent("c.zip"), cancel: t)) == nil

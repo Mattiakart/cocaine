@@ -59,6 +59,16 @@ enum ImageTools {
         }
     }
 
+    /// A file's extension for a type: the source's own when it is that type ("photo.JPG" stays .JPG), else the usual one (jpg).
+    static func fileExtension(_ t: UTType, source: URL) -> String {
+        if UTType(filenameExtension: source.pathExtension.lowercased()) == t, !source.pathExtension.isEmpty { return source.pathExtension }
+        switch t {
+        case .jpeg: return "jpg"
+        case .tiff: return "tiff"
+        default: return t.preferredFilenameExtension ?? "png"
+        }
+    }
+
     /// The longest side to draw, or nil to keep the size (never larger than the original).
     static func targetMaxSide(_ r: ImageJob.Resize, width: Int, height: Int) -> Int? {
         let long = max(width, height)
@@ -78,7 +88,7 @@ enum ImageTools {
     /// "photo-1200.jpg", "photo.png": what a processed file is called (before making it unique).
     static func outputName(_ source: URL, job: ImageJob, size: (Int, Int)?) -> String {
         let base = source.deletingPathExtension().lastPathComponent
-        let ext = type(for: job.format, source: source).preferredFilenameExtension ?? "png"
+        let ext = fileExtension(type(for: job.format, source: source), source: source)
         if job.replace { return base + "." + ext }
         if let s = size { return "\(base)-\(max(s.0, s.1)).\(ext)" }
         return base + (job.stripMetadata && job.format == .same ? "-clean" : "") + "." + ext
@@ -136,7 +146,7 @@ enum ImageTools {
         // Replacing: the original to the Trash (it can come back), the new file under the original's name when the type is the same.
         do { try trash(url) } catch { try? FileManager.default.removeItem(at: out); throw error }
         guard out.pathExtension == "cocaine-new" else { return out }          // another type: already under its own name
-        let final = url.deletingPathExtension().appendingPathExtension(ut.preferredFilenameExtension ?? "png")
+        let final = url.deletingPathExtension().appendingPathExtension(fileExtension(ut, source: url))
         let to = FileNames.unique(final)
         try FileManager.default.moveItem(at: out, to: to)
         return to
