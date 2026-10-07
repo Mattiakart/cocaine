@@ -38,3 +38,5 @@
 "Signature: a certificate that isn't Cocaine's or Apple's." = "Signature : un certificat qui n’est ni celui de Cocaine ni celui d’Apple.";
 "Signature: Developer ID, not notarized." = "Signature : Developer ID, non notarisée.";
 "Signature: Developer ID, notarized by Apple." = "Signature : Developer ID, notarisée par Apple.";
+"Version %@ is signed with another certificate; download it from GitHub" = "La version %@ est signée avec un autre certificat ; téléchargez-la sur GitHub";
+"The new version didn't start, so the previous one was put back." = "La nouvelle version n’a pas démarré : la précédente a été remise en place.";

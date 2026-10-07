@@ -38,3 +38,5 @@
 "Signature: a certificate that isn't Cocaine's or Apple's." = "署名：Cocaine のものでも Apple のものでもない証明書。";
 "Signature: Developer ID, not notarized." = "署名：Developer ID（公証なし）。";
 "Signature: Developer ID, notarized by Apple." = "署名：Developer ID（Apple の公証済み）。";
+"Version %@ is signed with another certificate; download it from GitHub" = "バージョン %@ は別の証明書で署名されています。GitHub からダウンロードしてください";
+"The new version didn't start, so the previous one was put back." = "新しいバージョンが起動しなかったため、以前のバージョンに戻しました。";

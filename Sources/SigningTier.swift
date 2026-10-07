@@ -26,7 +26,7 @@ enum SigningTier: String, CaseIterable {
         var leafCommonName: String?
         var certificateCount = 0
         var developerID = false      // satisfies developerIDRequirement
-        var stapledTicket = false    // Contents/CodeResources, where stapler puts an app's ticket
+        var stapledTicket = false    // satisfies the `notarized` requirement (a notarization ticket stapled to it)
         var hardenedRuntime = false
         var teamID: String?
         var designatedRequirement: String?
@@ -68,8 +68,16 @@ enum SigningTier: String, CaseIterable {
             f.developerID = SecStaticCodeCheckValidity(code, [], req) == errSecSuccess
         }
         f.designatedRequirement = designatedRequirement(of: code)
-        f.stapledTicket = FileManager.default.fileExists(atPath: url.appendingPathComponent("Contents/CodeResources").path)
+        f.stapledTicket = f.developerID && satisfiesNotarized(code)
         return f
+    }
+
+    /// The code-signing requirement `notarized`: a notarization ticket for this code (stapled; offline that is the only
+    /// way to see one). A file named Contents/CodeResources, which the old check looked for, proves nothing.
+    static func satisfiesNotarized(_ code: SecStaticCode) -> Bool {
+        var req: SecRequirement?
+        guard SecRequirementCreateWithString("notarized" as CFString, [], &req) == errSecSuccess, let req else { return false }
+        return SecStaticCodeCheckValidity(code, [], req) == errSecSuccess
     }
 
     static func designatedRequirement(of code: SecStaticCode) -> String? {

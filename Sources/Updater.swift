@@ -21,16 +21,19 @@ final class Updater: ObservableObject {
     }
 
     @Published private(set) var phase = Phase.idle
-    @Published private(set) var lastCheck: Date? = UserDefaults.standard.object(forKey: "updateLastCheck") as? Date
-    @Published var autoCheck: Bool = UserDefaults.standard.object(forKey: "updateAutoCheck") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(autoCheck, forKey: "updateAutoCheck") }
+    @Published private(set) var lastCheck: Date? = AppDefaults.store.object(forKey: "updateLastCheck") as? Date
+    @Published var autoCheck: Bool = AppDefaults.store.object(forKey: "updateAutoCheck") as? Bool ?? true {
+        didSet { AppDefaults.store.set(autoCheck, forKey: "updateAutoCheck") }
     }
     @Published private(set) var eligibility = UpdateEligibility.ok
 
     private var pending: (release: ReleaseInfo, manifest: UpdateManifest)?
     private var download: ResumableDownload?
     private var timer: Timer?
+    private var healthObserver: NSObjectProtocol?
     private var lastAction: () -> Void = {}
+    /// This copy's designated requirement, to compare with a format-2 manifest's before offering an install.
+    private lazy var runningRequirement: String? = SigningTier.facts(of: Bundle.main.bundleURL).designatedRequirement
 
     /// COCAINE_UPDATE_PREVIEW=available|downloading|failed|homebrew shows that state, for `--render-panel` screenshots only.
     private init() {
@@ -47,9 +50,25 @@ final class Updater: ObservableObject {
     let currentBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0
     var publicKey: Curve25519.Signing.PublicKey? { UpdateVerifier.publicKey(base64: UpdateKey.publicKeyBase64) }
 
-    /// At launch: clears leftovers of a finished or interrupted update, then checks when due (and hourly whether it is).
+    /// At launch: right after an in-app update, proves this version runs (UpdateHealth) or says the update was undone; clears
+    /// leftovers of a finished or interrupted update, then checks when due (and hourly whether it is).
     func start() {
-        DispatchQueue.global(qos: .utility).async { Installer.cleanupLeftovers(near: Bundle.main.bundleURL) }
+        let cleanup = { DispatchQueue.global(qos: .utility).async { Installer.cleanupLeftovers(near: Bundle.main.bundleURL) } }
+        switch UpdateHealth.launch(currentBuild: currentBuild, pending: UpdateHealth.read(UpdateHealth.pendingFile), mark: UpdateHealth.read(UpdateHealth.markFile)) {
+        case .proveHealth:
+            let build = currentBuild
+            var done = false
+            let prove = { if !done { done = true; UpdateHealth.writeMark(build: build) } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + UpdateHealth.delay) { prove(); DispatchQueue.main.asyncAfter(deadline: .now() + 15) { cleanup() } }
+            healthObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in prove() }
+        case .rolledBack:
+            UpdateHealth.clear()
+            phase = .failed(updatesText("The new version didn't start, so the previous one was put back."), retry: false)
+            cleanup()
+        case .normal:
+            UpdateHealth.clear()
+            cleanup()
+        }
         eligibility = UpdateEligibility.of(bundle: Bundle.main.bundleURL, tier: SigningTier.current, hasKey: publicKey != nil)
         let t = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
         RunLoop.main.add(t, forMode: .common)
@@ -68,7 +87,7 @@ final class Updater: ObservableObject {
         switch phase { case .checking, .downloading, .installing: return; default: break }
         lastAction = { [weak self] in self?.check() }
         phase = .checking
-        lastCheck = Date(); UserDefaults.standard.set(lastCheck, forKey: "updateLastCheck")
+        lastCheck = Date(); AppDefaults.store.set(lastCheck, forKey: "updateLastCheck")
         SmallFetch.get(UpdateSource.latestAPI, maxBytes: 1_000_000, policy: .github, accept: "application/vnd.github+json") { r in
             switch r {
             case .failure(let e): DispatchQueue.main.async { self.failed(e, quiet: automatic) }
@@ -97,8 +116,15 @@ final class Updater: ObservableObject {
                     }
                     switch UpdateVerifier.check(m, key: self.publicKey, currentVersion: self.currentVersion,
                                                 currentBuild: self.currentBuild, release: rel) {
-                    case .success: self.pending = (rel, m); self.phase = .available(m.version)
+                    case .success:
+                        if !UpdateEligibility.signerMatches(release: m.requirement, running: self.runningRequirement) {
+                            self.pending = nil; self.eligibility = .otherSigner; self.phase = .available(m.version); return
+                        }
+                        self.pending = (rel, m); self.phase = .available(m.version)
                     case .failure(.notNewer): self.phase = .upToDate          // an older release replayed: nothing to offer
+                    case .failure(.staleBuild(let why)):                      // a release mistake: never "up to date"
+                        log.error("update: \(why, privacy: .public)")
+                        self.rejected(.staleBuild(why), quiet: false)
                     case .failure(let e): self.rejected(e, quiet: false)       // a bad signature is always shown
                     }
                 }
@@ -109,7 +135,9 @@ final class Updater: ObservableObject {
     /// Install (or, for copies that can't update themselves, the right alternative).
     func install() {
         dispatchPrecondition(condition: .onQueue(.main))
-        eligibility = UpdateEligibility.of(bundle: Bundle.main.bundleURL, tier: SigningTier.current, hasKey: publicKey != nil)
+        if eligibility != .otherSigner {
+            eligibility = UpdateEligibility.of(bundle: Bundle.main.bundleURL, tier: SigningTier.current, hasKey: publicKey != nil)
+        }
         guard eligibility == .ok, let p = pending else { NSWorkspace.shared.open(UpdateSource.releasesPage); return }
         let rel = p.release, m = p.manifest
         lastAction = { [weak self] in self?.install() }
@@ -141,26 +169,34 @@ final class Updater: ObservableObject {
         guard let req = CodeIdentity.runningRequirement() else { return failedText(updatesText("This copy's signature can't be read.")) }
         phase = .installing
         let installed = Bundle.main.bundleURL
+        RecoverySession.shared.expectingReplacement = true          // our own swap: not "the bundle was replaced behind our back"
         DispatchQueue.global(qos: .userInitiated).async {
-            let staged = Installer.stage(dmg: dmg, manifest: m, installed: installed, requirement: req)
+            // Hashed again right before mounting: the file in Caches may have changed since the download was checked.
+            let rehash = UpdateFiles.sha256(of: dmg) == m.sha256
+            let staged: Result<Installer.Staged, InstallError> = rehash ? Installer.stage(dmg: dmg, manifest: m, installed: installed, requirement: req)
+                                                                       : .failure(.badImage("the DMG changed after it was verified"))
             let result: Result<URL, InstallError> = staged.flatMap { Installer.install($0, at: installed, manifest: m, requirement: req) }
             if case .success = result { runTool(Self.lsregister, ["-f", installed.path], timeout: 10) }   // Launch Services sees the new version
             DispatchQueue.main.async { () -> Void in
-                self.finishInstall(result, dmg: dmg, installed: installed)
+                if !rehash { try? FileManager.default.removeItem(at: dmg); self.failed(.hashMismatch, quiet: false); RecoverySession.shared.expectingReplacement = false; return }
+                self.finishInstall(result, dmg: dmg, installed: installed, build: m.build)
             }
         }
     }
 
-    private func finishInstall(_ result: Result<URL, InstallError>, dmg: URL, installed: URL) {
+    private func finishInstall(_ result: Result<URL, InstallError>, dmg: URL, installed: URL, build: Int) {
         switch result {
         case .failure(let e):
+            RecoverySession.shared.expectingReplacement = false
             failedInstall(e)
         case .success(let backup):
             try? FileManager.default.removeItem(at: dmg)
             prepareForUpdateHandover()
-            let relauncher = Installer.launchRelauncher(pid: getpid(), app: installed, backup: backup)
+            UpdateHealth.expect(build: build)
+            let relauncher = Installer.launchRelauncher(pid: getpid(), app: installed, backup: backup, build: build)
             if relauncher == nil {
                 RecoverySession.shared.cancelUpdateHandover()        // no new version starts by itself: quitting releases sleep
+                UpdateHealth.clear()
                 failedText(updatesText("Installed. Quit and reopen Cocaine to start the new version."))
                 return
             }
@@ -217,6 +253,7 @@ final class Updater: ObservableObject {
             case .unsignedBuild: return String(format: updatesText("Version %@: this build is signed ad hoc; download it from GitHub"), v)
             case .notInstalled: return String(format: updatesText("Version %@: move Cocaine to Applications first"), v)
             case .notWritable: return String(format: updatesText("Version %@: Cocaine's folder isn't writable; download it from GitHub"), v)
+            case .otherSigner: return String(format: updatesText("Version %@ is signed with another certificate; download it from GitHub"), v)
             }
         case .downloading(let f): return String(format: updatesText("Downloading… %d%%"), Int(f * 100))
         case .installing: return updatesText("Verifying and installing…")

@@ -253,8 +253,22 @@ enum UpdateTests {
         else { check("replay: an older version is refused even with a higher build number", false) }
         if case .failure(.notNewer) = verdict(manifest("2.2.3", build: 44, data: dmg)) { check("replay: the running release itself is refused", true) }
         else { check("replay: the running release itself is refused", false) }
-        if case .failure(.notNewer) = verdict(manifest("2.3.0", build: 44, data: dmg)) { check("replay: a newer version with an old build number is refused", true) }
-        else { check("replay: a newer version with an old build number is refused", false) }
+        // A newer version with a build number that isn't higher is a release mistake: refused, and never shown as "up to date".
+        if case .failure(.staleBuild) = verdict(manifest("2.3.0", build: 44, data: dmg)) { check("replay: a newer version with an old build number is refused (as a stale build)", true) }
+        else { check("replay: a newer version with an old build number is refused (as a stale build)", false) }
+        // Format 2: the designated requirement is signed too.
+        var f2 = good; f2.requirement = "identifier \"local.cocaine.toggle\" and certificate leaf = H\"00\""
+        f2 = try! f2.signed(with: testKey)
+        check("format 2: a manifest naming the release's requirement verifies", (try? verdict(f2).get()) == SemVer("2.3.0") && f2.format == 2)
+        t = f2; t.requirement = "identifier \"local.cocaine.toggle\" and certificate leaf = H\"ff\""
+        check("format 2: a changed requirement breaks the signature", verdict(t) == .failure(.badSignature))
+        t = f2; t.format = 1
+        check("format 2: downgraded to format 1 with a requirement is refused", { if case .failure = verdict(t) { return true }; return false }())
+        check("format 1 manifests still verify (older releases)", { var o = good; o.format = 1; o = try! o.signed(with: testKey); return (try? verdict(o).get()) == SemVer("2.3.0") }())
+        check("format 2: round trip keeps the requirement", UpdateManifest.decode(try! f2.encoded()) == f2)
+        check("signer: same requirement → offered; another → not; format 1 → decided after the download",
+              UpdateEligibility.signerMatches(release: "a", running: "a") && !UpdateEligibility.signerMatches(release: "a", running: "b")
+              && UpdateEligibility.signerMatches(release: nil, running: "b") && !UpdateEligibility.signerMatches(release: "a", running: nil))
         let base = UpdateSource.downloadPrefix + "v2.4.0/"
         let rel24 = ReleaseInfo(tag: "v2.4.0", version: SemVer("2.4.0")!, dmg: ReleaseAsset(name: "Cocaine-2.4.0.dmg", size: 11, url: URL(string: base + "Cocaine-2.4.0.dmg")!),
                                 manifest: ReleaseAsset(name: "Cocaine-2.4.0.dmg.manifest.json", size: 300, url: URL(string: base + "m")!))
@@ -334,6 +348,14 @@ enum UpdateTests {
         check("eligibility: translocated copy must be moved first",
               UpdateEligibility.of(bundle: URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/Cocaine.app"), tier: .local, hasKey: true, caskrooms: []) == .notInstalled)
         check("eligibility: a writable, signed, installed copy may update", UpdateEligibility.of(bundle: other, tier: .local, hasKey: true, caskrooms: []) == .ok)
+        for folder in ["build", "build.noindex", "DerivedData"] {
+            let b = root.appendingPathComponent("\(folder)/Cocaine.app"); try? fm.createDirectory(at: b, withIntermediateDirectories: true)
+            check("eligibility: a copy in a \(folder) folder isn't an installed one", UpdateEligibility.of(bundle: b, tier: .local, hasKey: true, caskrooms: []) == .notInstalled)
+        }
+        let locked = root.appendingPathComponent("Locked/Cocaine.app"); try? fm.createDirectory(at: locked, withIntermediateDirectories: true)
+        chmod(locked.path, 0o555)
+        check("eligibility: a bundle that can't be moved (not writable itself) is said so", UpdateEligibility.of(bundle: locked, tier: .local, hasKey: true, caskrooms: []) == .notWritable(locked.path))
+        chmod(locked.path, 0o755)
         try? fm.removeItem(at: root)
     }
 
@@ -607,34 +629,88 @@ enum UpdateTests {
         } else { skip("identity: two builds signed with the local identity satisfy each other's requirement", inCI ? "CI" : "no local signing identity on this Mac") }
     }
 
+    /// The relauncher with stand-in apps (this binary's `--update-standin`): one that runs and writes the health mark, one
+    /// that crashes at launch, one that hangs, and one that can't even be opened. The opener starts the bundle's executable
+    /// the way `open` would (detached) and logs which app it was; nothing is registered with Launch Services.
     private static func relauncher() {
         let fm = FileManager.default
         let root = tempDir("relaunch")
         defer { try? fm.removeItem(at: root) }
-        let app = root.appendingPathComponent("Cocaine.app"), backup = root.appendingPathComponent("old/Cocaine.app")
-        TestBundles.make(at: app, version: "2.3.0", build: 45, marker: "new")
-        TestBundles.make(at: backup, version: "2.2.3", build: 44, marker: "old")
+        let app = root.appendingPathComponent("Applications/Cocaine.app")
         let log = root.appendingPathComponent("opened")
         let opener = root.appendingPathComponent("open.sh")
-        // Fails for the new app (its marker says "new"), works for the old one: the rollback path.
-        try? "#!/bin/sh\nm=$(cat \"$1/Contents/Resources/marker\")\necho \"$m\" >> \(log.path)\n[ \"$m\" = \"$FAIL\" ] && exit 1\nexit 0\n".write(to: opener, atomically: true, encoding: .utf8)
+        try? "#!/bin/sh\nm=$(cat \"$1/Contents/Resources/marker\")\necho \"$m\" >> \(log.path)\n[ \"$m\" = unopenable ] && exit 1\n\"$1/Contents/MacOS/Cocaine\" --update-standin \"$(cat \"$1/Contents/Resources/standin\")\" >/dev/null 2>&1 &\nexit 0\n"
+            .write(to: opener, atomically: true, encoding: .utf8)
         chmod(opener.path, 0o755)
+        /// The new app in place, the old one as the update's rollback copy (in a .cocaine-update- work folder, as the swap leaves it).
+        func setUp(new standin: String, marker: String = "new") -> (backup: URL, work: URL) {
+            try? fm.removeItem(at: root.appendingPathComponent("Applications")); try? fm.removeItem(at: log)
+            let work = root.appendingPathComponent("Applications/\(Installer.workPrefix)t"), backup = work.appendingPathComponent("Cocaine.app")
+            TestBundles.make(at: app, version: "2.3.0", build: 45, marker: marker)
+            TestBundles.make(at: backup, version: "2.2.3", build: 44, marker: "old")
+            try? Data(standin.utf8).write(to: app.appendingPathComponent("Contents/Resources/standin"))
+            try? Data("hang".utf8).write(to: backup.appendingPathComponent("Contents/Resources/standin"))   // runs, writes nothing
+            return (backup, work)
+        }
+        func waitExit(_ pid: pid_t?, _ seconds: Double) -> Int32? {
+            guard let pid else { return nil }
+            let end = Date().addingTimeInterval(seconds)
+            var st: Int32 = 0
+            while Date() < end { if waitpid(pid, &st, WNOHANG) == pid { return (st & 0x7f) == 0 ? (st >> 8) & 0xff : -1 }; usleep(50_000) }
+            kill(pid, SIGKILL); waitpid(pid, &st, 0); return nil
+        }
+        func opened() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
+        func running(_ bundle: URL) -> [pid_t] {
+            var out = ""
+            runTool("/usr/bin/pgrep", ["-U", String(getuid()), "-f", bundle.appendingPathComponent("Contents/MacOS/Cocaine").path + " --update-standin"], output: &out)
+            return out.split(separator: "\n").compactMap { pid_t($0) }
+        }
+        func stopStandIns() { for p in running(app) { kill(p, SIGKILL) } }
+        defer { stopStandIns() }
+
+        // 1. The new version runs and writes its mark: the rollback copy is deleted, the new app stays.
+        var s = setUp(new: "45")
+        UpdateHealth.expect(build: 45)
         let sleeper = Process(); sleeper.executableURL = URL(fileURLWithPath: "/bin/sleep"); sleeper.arguments = ["1"]
         try? sleeper.run()
-        setenv("FAIL", "none", 1)
         let started = Date()
-        let h = Installer.launchRelauncher(pid: sleeper.processIdentifier, app: app, backup: backup, opener: opener.path)
-        h?.waitUntilExit()
-        let opened = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-        check("relaunch: waits for the old process to quit, then opens the new app", opened == "new\n" && Date().timeIntervalSince(started) >= 0.8, opened)
-        try? fm.removeItem(at: log)
-        setenv("FAIL", "new", 1)
-        let h2 = Installer.launchRelauncher(pid: 999_999, app: app, backup: backup, opener: opener.path)
-        h2?.waitUntilExit()
-        let opened2 = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+        let r1 = waitExit(Installer.launchRelauncher(pid: sleeper.processIdentifier, app: app, backup: s.backup, build: 45, opener: opener.path, wait: 10), 20)
+        check("relaunch: waits for the old process to quit, opens the new app, which proves it runs (exit 0)",
+              r1 == 0 && opened() == "new\n" && Date().timeIntervalSince(started) >= 0.8 && TestBundles.marker(app) == "new", "\(String(describing: r1)) \(opened())")
+        check("relaunch: once the new version has written its mark the rollback copy is deleted", !fm.fileExists(atPath: s.work.path))
+        check("health: the mark names the new build and clears the pending one",
+              UpdateHealth.read(UpdateHealth.markFile) == 45 && UpdateHealth.read(UpdateHealth.pendingFile) == nil)
+        stopStandIns()
+
+        // 2. The new version crashes at launch (before 2.4.x `open` returned 0 and the backup was left to be deleted).
+        s = setUp(new: "crash")
+        UpdateHealth.expect(build: 45)
+        let r2 = waitExit(Installer.launchRelauncher(pid: 999_999, app: app, backup: s.backup, build: 45, opener: opener.path, wait: 3), 20)
+        check("relaunch: a new version that crashes at launch is replaced by the previous one, which is opened (exit 4)",
+              r2 == 4 && opened() == "new\nold\n" && TestBundles.marker(app) == "old", "\(String(describing: r2)) \(opened())")
+        check("health: the previous version, back, knows the update was undone",
+              UpdateHealth.launch(currentBuild: 44, pending: UpdateHealth.read(UpdateHealth.pendingFile), mark: UpdateHealth.read(UpdateHealth.markFile)) == .rolledBack)
+        stopStandIns()
+
+        // 3. The new version hangs (never writes its mark): it is ended, then the previous one is put back.
+        s = setUp(new: "hang")
+        UpdateHealth.expect(build: 45)
+        let r3 = waitExit(Installer.launchRelauncher(pid: 999_999, app: app, backup: s.backup, build: 45, opener: opener.path, wait: 2), 20)
+        check("relaunch: a new version that hangs is ended and the previous one put back (exit 4)",
+              r3 == 4 && TestBundles.marker(app) == "old" && opened() == "new\nold\n", "\(String(describing: r3)) \(opened())")
+        stopStandIns()
+
+        // 4. The new version can't be opened at all.
+        s = setUp(new: "45", marker: "unopenable")
+        let r4 = waitExit(Installer.launchRelauncher(pid: 999_999, app: app, backup: s.backup, build: 45, opener: opener.path, wait: 2), 20)
         check("relaunch: if the new app can't open, the previous one is put back and opened",
-              opened2 == "new\nold\n" && TestBundles.marker(app) == "old" && h2?.terminationStatus == 4, opened2)
-        unsetenv("FAIL")
+              r4 == 4 && opened() == "unopenable\nold\n" && TestBundles.marker(app) == "old", "\(String(describing: r4)) \(opened())")
+        stopStandIns()
+        UpdateHealth.clear(); try? fm.removeItem(at: UpdateHealth.markFile)
+        check("health: a launch is the new version on probation, the old one put back, or neither",
+              UpdateHealth.launch(currentBuild: 45, pending: 45, mark: nil) == .proveHealth && UpdateHealth.launch(currentBuild: 45, pending: 45, mark: 45) == .normal
+              && UpdateHealth.launch(currentBuild: 44, pending: 45, mark: nil) == .rolledBack && UpdateHealth.launch(currentBuild: 44, pending: nil, mark: nil) == .normal
+              && UpdateHealth.launch(currentBuild: 46, pending: 45, mark: nil) == .normal)
     }
 }
 

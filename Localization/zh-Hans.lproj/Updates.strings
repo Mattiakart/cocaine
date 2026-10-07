@@ -38,3 +38,5 @@
 "Signature: a certificate that isn't Cocaine's or Apple's." = "签名：既不属于 Cocaine 也不属于 Apple 的证书。";
 "Signature: Developer ID, not notarized." = "签名：Developer ID，未经公证。";
 "Signature: Developer ID, notarized by Apple." = "签名：Developer ID，已由 Apple 公证。";
+"Version %@ is signed with another certificate; download it from GitHub" = "版本 %@ 使用了其他证书签名；请从 GitHub 下载";
+"The new version didn't start, so the previous one was put back." = "新版本未能启动，已恢复为之前的版本。";
