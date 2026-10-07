@@ -79,6 +79,7 @@ iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.ic
 install -m 0755 cocaine.zsh "$APP/Contents/Resources/cocaine"
 install -m 0644 remote.zsh "$APP/Contents/Resources/remote.zsh"
 cp Info.plist "$APP/Contents/Info.plist"
+install -m 0644 Cocaine.sdef "$APP/Contents/Resources/Cocaine.sdef"   # the AppleScript dictionary (Sources/Scripting.swift)
 cp -R Localization/*.lproj "$APP/Contents/Resources/"   # UI text; macOS picks the Mac's language, else English
 
 # A bundle that couldn't be signed or verified as asked is removed: nothing usable is left with a weaker signature.

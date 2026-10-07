@@ -237,6 +237,10 @@ enum ControlURL {
             }
             mins = n
         }
+        if let raw = value("timer") {           // on?timer=off: until turned off, whatever the panel's timer says
+            guard raw.lowercased() == "off", mins == nil, name == "on" else { return .failure(.badMinutes) }
+            mins = 0
+        }
         var until: Date?
         if let raw = value("until") {        // only "on" takes a deadline, and never together with minutes
             guard mins == nil, name == "on", let d = UntilTime.parse(raw, now: now, calendar: calendar) else { return .failure(.badUntil) }

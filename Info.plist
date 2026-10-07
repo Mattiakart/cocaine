@@ -46,6 +46,10 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
+	<key>OSAScriptingDefinition</key>
+	<string>Cocaine.sdef</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Cocaine reads and controls Music and Spotify to show what is playing in the island.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

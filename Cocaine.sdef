@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<!-- Cocaine's AppleScript dictionary (Sources/Scripting.swift). Three commands that change what the Mac does, guarded like the
+     cocaine:// links (the "Shortcuts app and links" switch, or the user's OK in Cocaine), and read-only properties. Nothing here
+     reads or writes files or runs anything: values are checked and bounded (1-1440 minutes, a time within 24 hours). -->
+<dictionary title="Cocaine Terminology">
+	<!-- Only the application object (no documents, windows, save or open: Cocaine has none). -->
+	<suite name="Standard Suite" code="????" description="The application.">
+		<class name="application" code="capp" description="Cocaine.">
+			<cocoa class="NSApplication"/>
+			<property name="name" code="pnam" type="text" access="r" description="The name of the application."/>
+			<property name="version" code="vers" type="text" access="r" description="The version of the application."/>
+		</class>
+	</suite>
+	<suite name="Cocaine Suite" code="CcAw" description="Keep the Mac awake.">
+		<command name="keep awake" code="CcAwKAwk" description="Keeps the Mac awake: until stopped, for some minutes, or until a time. Returns whether Cocaine is now on.">
+			<cocoa class="CocaineKeepAwakeCommand"/>
+			<parameter name="for" code="Cmin" type="integer" optional="yes" description="Minutes, 1 to 1440 (24 hours).">
+				<cocoa key="minutes"/>
+			</parameter>
+			<parameter name="until" code="Cutl" optional="yes" description="A date within the next 24 hours, or a time as text: &quot;18:30&quot;, &quot;18:30 tomorrow&quot;, &quot;2026-10-07T18:30&quot;.">
+				<cocoa key="until"/>
+				<type type="date"/>
+				<type type="text"/>
+			</parameter>
+			<result type="boolean" description="Cocaine is on."/>
+		</command>
+		<command name="stop keeping awake" code="CcAwStop" description="Turns Cocaine off: the Mac sleeps as usual. Returns whether Cocaine is now on (false).">
+			<cocoa class="CocaineStopAwakeCommand"/>
+			<result type="boolean" description="Cocaine is on."/>
+		</command>
+		<command name="toggle" code="CcAwTggl" description="Turns Cocaine on (with the panel's timer) or off. Returns whether Cocaine is now on.">
+			<cocoa class="CocaineToggleAwakeCommand"/>
+			<result type="boolean" description="Cocaine is on."/>
+		</command>
+		<class-extension extends="application" description="Cocaine's state (read only).">
+			<property name="awake" code="CAwk" type="boolean" access="r" description="Cocaine is keeping the Mac awake.">
+				<cocoa key="scriptAwake"/>
+			</property>
+			<property name="awake until" code="CUnt" type="date" access="r" description="When Cocaine turns itself off (missing value when it has no timer, or is off).">
+				<cocoa key="scriptUntil"/>
+			</property>
+			<property name="remaining minutes" code="CRem" type="integer" access="r" description="Minutes until Cocaine turns itself off (0 when there is no timer).">
+				<cocoa key="scriptRemaining"/>
+			</property>
+			<property name="screen off mode" code="CScr" type="boolean" access="r" description="When idle the screens turn off while the Mac keeps working.">
+				<cocoa key="scriptScreenOff"/>
+			</property>
+			<property name="trigger active" code="CTrg" type="boolean" access="r" description="A Smart Trigger wants the Mac awake now.">
+				<cocoa key="scriptTrigger"/>
+			</property>
+		</class-extension>
+	</suite>
+</dictionary>
