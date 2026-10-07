@@ -65,7 +65,7 @@ and quits.
 ```sh
 C=/Applications/Cocaine.app/Contents/Resources/cocaine   # or ~/Applications/…
 $C on            # on (keeps any timer)
-$C on 90m        # on for 90 minutes (90, 2h, 1h30m; 1 min–24 h); Cocaine.app turns it off then
+$C on 90m        # on for 90 minutes (90, 2h, 1h30m; 1 min–24 h); then off (by Cocaine.app, or the engine when the app is closed)
 $C off
 $C status --json # {"state":"ON","on":true,"until":1790000000,"remaining_minutes":42,"screen":"kept on","screen_off_mode":false}
 ```

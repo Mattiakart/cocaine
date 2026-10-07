@@ -28,7 +28,7 @@ ATTENZIONE
   Bloccalo con Control-Command-Q prima di allontanarti.
 - A coperchio chiuso e a batteria il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
 - Quando chiudi l'app (Esci, Cmd-Q, disconnessione, spegnimento, kill o crash) lo stop torna com'era prima.
-  Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre.
+  Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre (o esegui: cocaine off).
 
 DISINSTALLAZIONE
 1. Esci da Cocaine (così si disattiva).

@@ -68,7 +68,7 @@ errati (`minutes=0`, `abc`, oltre 1440) sono rifiutati, non indovinati. Un link 
 ```sh
 C=/Applications/Cocaine.app/Contents/Resources/cocaine   # o ~/Applications/…
 $C on            # attiva (mantiene un eventuale timer)
-$C on 90m        # attiva per 90 minuti (90, 2h, 1h30m; da 1 min a 24 h); poi lo spegne Cocaine.app
+$C on 90m        # attiva per 90 minuti (90, 2h, 1h30m; da 1 min a 24 h); poi lo spegne Cocaine.app (o il motore, ad app chiusa)
 $C off
 $C status --json # {"state":"ON","on":true,"until":1790000000,"remaining_minutes":42,"screen":"kept on","screen_off_mode":false}
 ```

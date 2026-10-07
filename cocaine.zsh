@@ -2,7 +2,7 @@
 # cocaine — engine behind Cocaine.app: overrides macOS sleep (pmset disablesleep) and, while
 # that override is ON, keeps the display from idle-sleeping (or, in "screen off" mode, lets it sleep).
 #
-#   cocaine on [duration]     on; with a duration (90, 90m, 2h, 1h30m; 1 min…24 h) Cocaine.app turns it off then
+#   cocaine on [duration]     on; with a duration (90, 90m, 2h, 1h30m; 1 min…24 h) it turns off then (Cocaine.app, or the hold helper)
 #   cocaine off
 #   cocaine status [--json]   ON/OFF (first line), then the display hold; --json for scripts and Shortcuts
 #   cocaine mode screen-off|normal|status   screen off: the Mac stays awake but its displays may sleep (and lock)

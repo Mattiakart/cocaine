@@ -277,18 +277,19 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
 - On battery with the lid closed the Mac keeps running, and it won't sleep even when the battery is almost empty.
 - Opening the app turns Cocaine on, and quitting it puts things back as they were. That covers **Quit**, ⌘Q, logging out,
   shutting down, `kill` and crashes (a small watchdog notices when Cocaine is gone). If sleep was already disabled before Cocaine
-  turned it on, or you changed it meanwhile, that is respected. Limits: after a power cut or forced restart sleep stays disabled
-  until Cocaine opens again (or run `cocaine off`), and if Cocaine and its watchdog are killed together nothing can act until
-  the next launch. [Details](docs/recovery.en.md).
+  turned it on, or you changed it meanwhile, that is respected; the same if the app is deleted while it runs. Limits: after a
+  power cut or forced restart sleep stays disabled until Cocaine opens again (or run `cocaine off`, or
+  `Cocaine.app/Contents/MacOS/Cocaine --boot-check`); if Cocaine and its watchdog are killed together, its display helper
+  puts things back after a minute. [Details](docs/recovery.en.md).
 - Questions, messages and the share list appear inside Cocaine's own panel or island, in the same design. What macOS owns stays
   macOS's: the admin-password prompt, the privacy permission questions, System Settings, and the windows AirDrop, Messages and
   Mail open after you pick them (Apple doesn't allow embedding those).
-- Only one Cocaine runs at a time: a second copy opened while one is running steps aside.
+- Only one Cocaine runs at a time: opening it again shows the running one's panel.
 
 ## Uninstall
 
-With Homebrew: `brew uninstall --cask cocaine`. It turns Cocaine off and removes the app, its sudo rule and the AI alerts
-hooks, without asking. (`--zap` also deletes the settings, the clipboard history and other saved state.) The cask's uninstall step respects the
+With Homebrew: `brew uninstall --cask cocaine`. It quits Cocaine (ending it if it hangs), puts sleep back and removes the
+app, its sudo rule and the AI alerts hooks, without asking. (`--zap` also deletes the settings, the clipboard history and other saved state.) The cask's uninstall step respects the
 recovery rules ([notes](docs/maintainers/cask-changes.md)); Homebrew runs the uninstall step of the version that is installed, so
 the first upgrade *to* 2.3.0 still uses the previous one, and the hand-over during upgrades works from the next update on.
 
@@ -307,8 +308,10 @@ sudo rm /etc/sudoers.d/cocaine
   starting the app); the code is in [`Sources/`](Sources), one file per area (see [`Sources/README.md`](Sources/README.md)).
   The engine is a zsh script ([`cocaine.zsh`](cocaine.zsh)). Screen dimming uses macOS's DisplayServices.
 
-Build it yourself with `./build.sh --dmg` (`--sign local|developer-id|adhoc` picks the signing tier and never falls back to another;
-`--release` refuses ad hoc). `./verify.sh` builds and runs every automatic check; the same runs on GitHub Actions.
+Build it yourself with `./build.sh --no-install` (into `build.noindex/`; plain `./build.sh` also installs it as the one copy on
+the Mac). `--sign local|developer-id|adhoc` picks the signing tier and never falls back to another; `--dmg` is a release build
+and needs the update key ([details](docs/signing-and-updates.en.md)). `./verify.sh` builds and runs every automatic check
+(the app's tests run from a copy with its own settings); the same runs on GitHub Actions.
 
 ## License
 

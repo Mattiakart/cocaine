@@ -285,18 +285,19 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
 - A batteria e col coperchio chiuso il Mac continua a consumare, e non va in stop nemmeno con la batteria quasi scarica.
 - Quando apri l'app, Cocaine si attiva, e quando la chiudi rimette le cose com'erano. Vale per **Esci**, ⌘Q, la disconnessione, lo
   spegnimento, `kill` e i crash (un piccolo watchdog si accorge che Cocaine non c'è più). Se lo stop era già disattivato prima che
-  Cocaine lo attivasse, o lo hai cambiato nel frattempo, viene rispettato. Limiti: dopo un'interruzione di corrente o un riavvio
-  forzato lo stop resta disattivato finché Cocaine non si riapre (o esegui `cocaine off`), e se Cocaine e il suo watchdog vengono
-  terminati insieme nessuno può intervenire fino al prossimo avvio. [Dettagli](docs/recovery.it.md).
+  Cocaine lo attivasse, o lo hai cambiato nel frattempo, viene rispettato; lo stesso se l'app viene eliminata mentre è aperta.
+  Limiti: dopo un'interruzione di corrente o un riavvio forzato lo stop resta disattivato finché Cocaine non si riapre (o esegui
+  `cocaine off`, o `Cocaine.app/Contents/MacOS/Cocaine --boot-check`); se Cocaine e il suo watchdog vengono terminati insieme,
+  l'helper dello schermo rimette le cose a posto dopo un minuto. [Dettagli](docs/recovery.it.md).
 - Domande, messaggi ed elenco di condivisione compaiono dentro il pannello o l'isola di Cocaine, con lo stesso design. Ciò che
   appartiene a macOS resta di macOS: la richiesta della password di amministratore, le domande sui permessi di privacy, le
   Impostazioni di Sistema e le finestre che AirDrop, Messaggi e Mail aprono dopo la scelta (Apple non permette di incorporarle).
-- Gira una sola copia di Cocaine alla volta: una seconda copia aperta mentre un'altra è in esecuzione si fa da parte.
+- Gira una sola copia di Cocaine alla volta: riaprirlo mostra il pannello di quello già aperto.
 
 ## Disinstallazione
 
-Con Homebrew: `brew uninstall --cask cocaine`. Spegne Cocaine e toglie l'app, la regola sudo e gli hook degli Avvisi AI,
-senza chiedere nulla. (`--zap` cancella anche le impostazioni, la cronologia degli appunti e gli altri dati salvati.) Il passaggio di
+Con Homebrew: `brew uninstall --cask cocaine`. Chiude Cocaine (e lo termina se è bloccato), rimette lo stop e toglie l'app,
+la regola sudo e gli hook degli Avvisi AI, senza chiedere nulla. (`--zap` cancella anche le impostazioni, la cronologia degli appunti e gli altri dati salvati.) Il passaggio di
 disinstallazione del cask rispetta le regole di ripristino ([note](docs/maintainers/cask-changes.md)); Homebrew esegue quello della
 versione installata, quindi il primo aggiornamento *alla* 2.3.0 usa ancora il precedente e il passaggio di consegne durante gli
 aggiornamenti funziona dall'aggiornamento successivo.
@@ -317,8 +318,10 @@ sudo rm /etc/sudoers.d/cocaine
 Codice: l'app per la barra dei menu (Swift/SwiftUI) è in [`Sources/`](Sources), un file per area (vedi
 [`Sources/README.md`](Sources/README.md)); `main.swift` è solo il punto d'ingresso (le opzioni da riga di comando e l'avvio).
 `cocaine.zsh` è lo script "motore".
-Per compilare: `./build.sh --dmg` (`--sign local|developer-id|adhoc` sceglie il livello di firma e non ripiega mai su un altro;
-`--release` rifiuta ad hoc). `./verify.sh` compila ed esegue tutti i controlli automatici; lo stesso gira su GitHub Actions.
+Per compilare: `./build.sh --no-install` (in `build.noindex/`; `./build.sh` senza opzioni la installa anche, come unica copia
+sul Mac). `--sign local|developer-id|adhoc` sceglie il livello di firma e non ripiega mai su un altro; `--dmg` è una build di
+release e richiede la chiave degli aggiornamenti ([dettagli](docs/signing-and-updates.it.md)). `./verify.sh` compila ed esegue
+tutti i controlli automatici (i test dell'app girano da una copia con impostazioni proprie); lo stesso gira su GitHub Actions.
 
 ## Licenza
 
