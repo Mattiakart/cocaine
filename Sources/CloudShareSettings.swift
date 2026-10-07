@@ -17,6 +17,14 @@ final class CloudEditor: ObservableObject {
     @Published var saved: Set<String> = []         // the secret names the Keychain has for it
     @Published var problem: String?
     @Published var warning: String?
+
+    /// Renders: a provider shown open in the editor (CloudShareFixtures).
+    static var fixture: (ShareProviderConfig, Set<String>, String?)?
+    static func make() -> CloudEditor {
+        let e = CloudEditor()
+        if let (c, saved, w) = fixture { e.draft = c; e.saved = saved; e.warning = w; e.editing = c.id }
+        return e
+    }
 }
 
 struct CloudShareSettingsBody: View {
@@ -24,7 +32,7 @@ struct CloudShareSettingsBody: View {
     @ObservedObject var store: ShareStore
     @ObservedObject var history: ShareHistory
     @ObservedObject var pickers = PickerCenter.shared
-    @StateObject private var ed = CloudEditor()
+    @StateObject private var ed = CloudEditor.make()
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
@@ -138,7 +146,7 @@ struct CloudShareSettingsBody: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 2) {
                     if center.testing == p.id { BusyDots(color: Island.accent).frame(width: CTL.h, height: CTL.h).accessibilityLabel(L("Testing…")) }
-                    else { icon("bolt.horizontal", L("Test connection")) { pickers.close(); center.test(p.id) }.disabled(problem != nil).opacity(problem == nil ? 1 : CTL.disabled) }
+                    else { icon("play", L("Test connection")) { pickers.close(); center.test(p.id) }.disabled(problem != nil).opacity(problem == nil ? 1 : CTL.disabled) }
                     icon(expanded ? "chevron.up" : "pencil", L("Edit…")) { pickers.close(); expanded ? close() : edit(p) }
                     icon("trash", L("Remove"), destructive: true) { pickers.close(); remove(p) }
                 }
@@ -348,7 +356,7 @@ struct CloudShareSettingsBody: View {
         let live = !r.revoked && !r.expired(now)
         let date = DateFormatter.localizedString(from: r.date, dateStyle: .short, timeStyle: .short)
         return HStack(spacing: Space.m) {
-            Image(systemName: live ? "link" : "link.badge.plus").font(UI.icon).foregroundStyle(live ? Island.accent : UI.hint).frame(width: UI.iconColumn)
+            Image(systemName: "link").font(UI.icon).foregroundStyle(live ? Island.accent : UI.hint).frame(width: UI.iconColumn)
             VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(r.name).font(UI.title).lineLimit(1).truncationMode(.middle)
                 Text([r.providerTitle, date, Self.status(r, now: now)].joined(separator: " · ")).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)

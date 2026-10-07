@@ -208,6 +208,7 @@ func cliRenderIsland() {
     ClipboardFixtures.apply(args, im)                           // --clipboard-fixture <name>: pinboards, selection, details…
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
+    CloudShareFixtures.apply(args)                             // --cloud-fixture toast: the link under the shelf (Sources/CloudShareFixtures.swift)
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
     ReviewFixtures.apply(args, pm: pm, usage: im.usage)          // --plan-fixture, --question-fixture, --diff-fixture, --quota-fixture
     // The morph: --progress 0.3 (or a list, 0,0.15,0.3…, drawn one under the other) draws those moments of opening; closing runs
@@ -300,6 +301,7 @@ func cliRenderPanel() {
     // --island / --no-island: hanging from the notch (the strip) or not, whatever the real setting; --notch-width 210: another Mac's notch.
     applyScreensFixture(CommandLine.arguments)                  // --screens-fixture <name>, --screens-edit <screen id>
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
+    CloudShareFixtures.apply(CommandLine.arguments)             // --cloud-fixture <name>: Settings → Island → Sharing samples
     if CommandLine.arguments.contains("--island") { model.island = true }
     if CommandLine.arguments.contains("--no-island") { model.island = false }
     if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {

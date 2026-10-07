@@ -179,12 +179,14 @@ struct ShelfActionExtras: View {
                         if let i = c.actions.firstIndex(where: { $0.id == a.id }) { c.actions[i].key = n == 0 ? nil : n }
                     }
                 })
+                .fixedSize()
                 Text(L("Then")).font(UI.detail).foregroundStyle(UI.secondary)
                 ValueButton(id: "shelf.then.\(a.id)", title: L("Then"), value: config.config.actions.first { $0.id == a.then }?.name ?? L("None"), maxWidth: 150, spec: {
                     PickerSpec(id: "shelf.then.\(a.id)", title: L("Then"),
                                items: [PickerItem(id: "none", title: L("None"))] + config.config.actions.filter { $0.id != a.id }.map { PickerItem(id: $0.id.uuidString, title: $0.name, symbol: $0.symbol) },
                                mode: .single(a.then?.uuidString ?? "none"))
                 }, onPick: { id in config.updateAction(a.id) { $0.then = UUID(uuidString: id) } })
+                .fixedSize()
                 Spacer(minLength: 0)
             }
         }
