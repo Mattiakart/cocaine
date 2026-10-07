@@ -1542,6 +1542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         m.iconChanged = { [weak self] in self?.redrawStatusItem() }
         m.startWhile = { [weak self] t in self?.awake.startWhile(t) }
         m.stopWhile = { [weak self] in self?.awake.endWhile(nil) }
+        m.addShortcuts = { AwakeShortcuts.present(m) }
         m.keepAwakeUntil = { [weak self] d in
             guard let self else { return }
             self.autoOn.userToggled(to: true, triggerActive: self.triggerActive)

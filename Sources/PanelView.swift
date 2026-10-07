@@ -34,6 +34,7 @@ struct PanelView: View {
     @ObservedObject var keys = ShortcutCenter.shared
     @ObservedObject var display = DisplayOptions.shared
     @ObservedObject var envs = AIEnvironmentCenter.shared
+    @ObservedObject var awakeModel = AwakeModel.shared        // the keep-awake rows (Sources/AwakePanel.swift)
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -217,6 +218,7 @@ struct PanelView: View {
                      compact: { Dur.compact(minutes: $0) })
                 .frame(maxWidth: .infinity)
                 .onScrollSteps(every: 24) { n in stepTimerPreset(n) }
+            AwakeUntilRow()                                       // or until a clock time
             if !m.on {
                 Text(L("Picking a length turns Cocaine on for that long")).font(UI.detail).foregroundStyle(UI.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -410,6 +412,7 @@ struct PanelView: View {
             timerCard
             idleCard
             batteryCard
+            AwakeOptionsCard(statusItemShown: !m.island)      // unplugged, locked, at launch, left click, icon, notices
             appCard
             shortcutsCard
         }
@@ -729,12 +732,14 @@ struct PanelView: View {
                 if m.triggerSchedule {
                     scheduleRows
                 }
-                if m.triggerCount >= 2 {
+                AwakeTriggerRows(live: m.liveTriggers)                // VPN, processor, sound output, disk, USB device
+                if m.triggerCount + awakeModel.config.count >= 2 {
                     segRow(L("Turn on when"), tip: L("Any: one reason is enough. All: every chosen one must hold."), $m.triggerAll, [false, true]) {
                         $0 ? L("All are true") : L("Any is true")
                     }
                 }
             }
+            AwakeWhileCard()                                          // a program runs, downloads are in progress
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
                 row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
@@ -795,6 +800,7 @@ struct PanelView: View {
                 }
                 LinkButton(title: L("Remote work guide")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
             }
+            AwakeScriptingCard()                                      // Mac Shortcuts pack, AppleScript
         }
     }
 

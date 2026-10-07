@@ -324,6 +324,7 @@ func cliRenderPanel() {
         model.alertVoice = Voices.available.map(\.identifier).max { Voices.name($0).count < Voices.name($1).count } ?? ""
     }
     if CommandLine.arguments.contains("--longsound") { model.alertDuration = 0; model.alertRepeatMinutes = 10 }
+    AwakeModel.shared.fillSample(rows: CommandLine.arguments.contains("--awake"))   // keep-awake rows: sample lists, never this Mac's
     if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
     renderSampleDialog(CommandLine.arguments, surface: .panel)          // --dialog <kind>: a dialog over the panel
     let checkOverflow = CommandLine.arguments.contains("--overflow-check")

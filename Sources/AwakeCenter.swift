@@ -36,6 +36,22 @@ final class AwakeModel: ObservableObject {
     @Published var packBusy = false
     @Published var packNote: String?
 
+    /// Renders and tests: fixed lists instead of this Mac's audio outputs, volumes, USB devices and processes.
+    var sample: [String: [String]]?
+
+    /// `--render-panel … --awake`: every keep-awake row filled with sample values (in memory; nothing of this Mac is shown).
+    func fillSample(rows: Bool) {
+        sample = ["audio": ["MacBook Pro Speakers", "AirPods Pro", "LG UltraFine Display Audio"], "volumes": ["Backup 2TB", "Photos"],
+                  "usb": ["YubiKey 5C NFC", "Studio Display"], "processes": ["Xcode", "ffmpeg", "node", "Terminal"]]
+        guard rows else { return }
+        triggerVPN = true; triggerCPU = "above"; triggerCPUPercent = 75; triggerCPUMinutes = 10
+        triggerAudio = ["AirPods Pro"]; triggerVolumes = ["Backup 2TB", "Photos"]; triggerUSB = ["YubiKey 5C NFC"]
+        unplugOff = 300; lockPause = true; launchTurnsOn = "manual"; leftClickToggles = true; menuIcon = "cup"; notifyChanges = true
+        cpuLoad = 82
+        whileTarget = WhileTarget(kind: .process, pid: 4001, started: 0, name: "ffmpeg")
+        packNote = String(format: L("“%@” opened in Shortcuts"), AwakeShortcuts.title(.keepAwake))
+    }
+
     var triggersChanged: () -> Void = {}
     var iconChanged: () -> Void = {}
     var startWhile: (WhileTarget) -> Void = { _ in }
