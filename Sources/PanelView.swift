@@ -445,6 +445,7 @@ struct PanelView: View {
                     toggle(L("Replace system HUD"), $m.replaceHUD)
                 }
             }
+            card("rectangle.3.group", L("Screens")) { ScreensEditor() }        // Sources/ScreensEditor.swift
             clipboardCard
         }
     }
