@@ -202,7 +202,7 @@ func cliRenderIsland() {
         .split(separator: ",").compactMap { Double($0).map { CGFloat($0) } }
     if let i = args.firstIndex(of: "--flash"), i + 1 < args.count {
         let level = args.firstIndex(of: "--level").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
-        im.flash = (level == nil ? "arrow.down.circle.fill" : "speaker.wave.2.fill", args[i + 1], level)
+        im.flashNotice(level == nil ? "arrow.down.circle.fill" : "speaker.wave.2.fill", args[i + 1], level: level)    // the HUD below the notch
     }
     if args.contains("--pink") { pm.on = false; pm.fillLevel = 0; pm.presenceActive = true; pm.pinkLevel = 1 }        // Stay active alone: the pink bag
     Island.forceExternal = args.contains("--external")
@@ -227,7 +227,7 @@ func cliRenderIsland() {
             if let notch {
                 IslandOutline(pose: IslandPose(p: 0, leftW: 0, rightW: 0), layout: l).fill(notch).frame(width: l.size.width, height: l.size.height)
             }
-        }.frame(width: 760, height: im.open || progress != nil ? 250 : 70, alignment: .top).clipped()
+        }.frame(width: 760, height: im.open || progress != nil ? 250 : im.flash != nil ? 110 : 70, alignment: .top).clipped()
         let host = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = host

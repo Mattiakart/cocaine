@@ -21,6 +21,8 @@ import os
 
 final class IslandModel: ObservableObject {
     @Published var open = false
+    /// Which screen's island is open (its display id; 0 with a single island). Only one is open at a time.
+    @Published var openScreen: CGDirectDisplayID = 0
     @Published var tab = "home"
     @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
     /// Opened from the keyboard (⌃⌥⌘I): kept open, with the keys of IslandKeys.
@@ -45,7 +47,17 @@ final class IslandModel: ObservableObject {
     let mirror = MirrorController()
     let ddc = DDCDisplays()
     let hud = HUDWatch()
-    @Published var flash: (icon: String, text: String, level: Double?)?
+    /// The HUD below the notch (Sources/IslandHUD.swift): what it shows (kept while it retracts), whether it is down, and on
+    /// which screen's island (the display id the controller routed it to; 0 = the only island, or the render tools').
+    @Published private(set) var hudItem: HUDItem?
+    @Published private(set) var hudShown = false
+    @Published var hudScreen: CGDirectDisplayID = 0
+    private var hudTimeline = HUDTimeline()
+    /// The screen a HUD goes to (set by the controller): the display a key acted on, else the pointer's screen, else the notch's.
+    var hudRoute: (CGDirectDisplayID?) -> CGDirectDisplayID = { _ in 0 }
+    var now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    /// The island on this display (0: any) is open: the HUD there gives way.
+    var hudYields: (CGDirectDisplayID) -> Bool = { _ in false }
     private var forwards: [AnyCancellable] = []
     private var flashWork: DispatchWorkItem?
 
@@ -99,26 +111,52 @@ final class IslandModel: ObservableObject {
         }
     }
 
-    /// A short message in the closed island: "Downloaded", "Copied"… VoiceOver says it too (not volume and brightness levels:
-    /// they change in steps while a key is held).
-    func flashNotice(_ icon: String, _ text: String, level: Double? = nil) {
-        flash = (icon, text, level)
+    /// What the HUD shows now, if it is down (VoiceOver's summary of the closed island, the render tools).
+    var flash: (icon: String, text: String, level: Double?)? { hudShown ? hudItem.map { ($0.icon, $0.text, $0.level) } : nil }
+
+    /// A short message or a level in the HUD below the notch: "Downloaded", "Copied", the volume… VoiceOver says the messages
+    /// (not volume and brightness levels: they change in steps while a key is held). `display`: the screen it is about (the
+    /// display whose brightness changed); nil = wherever the user is (see hudRoute).
+    func flashNotice(_ icon: String, _ text: String, level: Double? = nil, display: CGDirectDisplayID? = nil) {
         if level == nil { A11y.announce(text) }
-        flashWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.flash = nil }
+        let target = hudRoute(display)
+        if hudYields(target) { return }                  // that island is open: the HUD doesn't come down under it
+        if target != hudScreen { hudScreen = target }
+        hudTimeline.post(HUDItem(icon: icon, text: text, level: level), now: now())
+        publishHUD()
+    }
+
+    /// The island opened (or the HUD's screen went away with nowhere to go): the HUD goes up at once and stays up.
+    func yieldHUD() {
+        hudTimeline.dismiss()
+        publishHUD()
+    }
+
+    /// The pure timeline's state onto the view, and a wake-up at its next deadline (one work item, never one per change).
+    private func publishHUD() {
+        if hudItem != hudTimeline.item { hudItem = hudTimeline.item }
+        if hudShown != hudTimeline.shown { hudShown = hudTimeline.shown }
+        flashWork?.cancel(); flashWork = nil
+        guard let deadline = hudTimeline.nextDeadline else { return }
+        let w = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.hudTimeline.tick(now: self.now())
+            self.publishHUD()
+        }
         flashWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + (level == nil ? 3.2 : 1.6), execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, deadline - now()), execute: w)
     }
     static let maxWing: CGFloat = 130
     var relayoutNow: () -> Void = {}
     /// Is something worth a mark right of the notch? (The bag on the left is always there.)
     var rightActive: Bool {
-        flash != nil || focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.stayActive ?? false) || (pm?.presenceActive ?? false)
+        focus.active || mic.active || music.playing || (pm?.on ?? false) || (pm?.stayActive ?? false) || (pm?.presenceActive ?? false)
             || (pm?.board.contains { $0.state == "waiting" || $0.state == "error" || $0.state == "working" } ?? false)
             || !(pm?.approvals.isEmpty ?? true)
     }
-    var leftW: CGFloat { flash != nil ? 130 : Island.wing }
-    var rightW: CGFloat { rightActive ? (flash != nil ? 130 : Island.wing) : 0 }
+    /// The wings no longer widen for a message: messages and bars are in the HUD below the notch (2.5.0 put them right of it).
+    var leftW: CGFloat { Island.wing }
+    var rightW: CGFloat { rightActive ? Island.wing : 0 }
     var hover: (Bool) -> Void = { _ in }
     var toggleOpen: () -> Void = {}
     /// Opens (or closes) the island with the keyboard in it: ⌃⌥⌘I, or VoiceOver's press on the closed island.

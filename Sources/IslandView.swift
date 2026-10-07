@@ -28,8 +28,14 @@ struct IslandView: View {
     @ObservedObject var usage: UsageWatch
     @ObservedObject var dialogs = DialogCenter.shared
     @ObservedObject var display = DisplayOptions.shared
+    /// The screen this island is on (one island per screen, IslandController); nil = the model's own geometry (render tools).
+    var place: IslandPlace? = nil
 
-    private var g: NotchGeometry { model.geometry }
+    private var g: NotchGeometry { place?.geometry ?? model.geometry }
+    /// This island is the open one (only one is open at a time: the pointer is on one screen).
+    private var isOpen: Bool { model.open && (place == nil || model.openScreen == place!.display) }
+    /// The HUD was sent to this island.
+    private var hudHere: Bool { place == nil || model.hudScreen == place!.display || model.hudScreen == 0 }
     var files: FileShelf { model.files }
     var clipboard: ClipboardHistory { model.clipboard }
     var calendar: CalendarWatch { model.calendar }
@@ -39,7 +45,7 @@ struct IslandView: View {
     /// Closed and open are one view: a single progress (0 closed … 1 open, sprung) drives the outline, its clip and every icon,
     /// so the bag, the live item and the tabs travel and change into each other instead of fading between two layouts.
     var body: some View {
-        let open = model.open
+        let open = isOpen
         let pose = IslandPose(p: model.renderProgress ?? (open ? 1 : 0), leftW: model.leftW, rightW: model.rightW)
         let l = IslandLayout(notch: g.notchWidth, notchH: g.height)
         ZStack(alignment: .topLeading) {
@@ -58,6 +64,7 @@ struct IslandView: View {
             }
             .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
             .mask(IslandOutline(pose: pose, layout: l))                            // nothing ever shows outside the black
+            IslandHUDView(model: model, layout: l, notchH: g.height, pose: pose, here: hudHere, islandOpen: open)   // below the notch
             if !open { closedElement(l) }
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
@@ -112,7 +119,7 @@ struct IslandView: View {
                 .frame(width: cell, height: g.height).contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(L("Settings")).accessibilityLabel(L("Settings"))
-        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
+        .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
         .modifier(StripSlide(pose: s, layout: l, from: .gear, to: right1 - cell / 2, width: cell, order: 0, fade: .gear))
     }
 
@@ -125,16 +132,13 @@ struct IslandView: View {
                     .modifier(CellMorph(pose: s, kind: .highlight))
                 BagIcon(bag: m.bag, size: 20).frame(width: 20, height: 20)       // only it redraws while the powder pours
                     .modifier(CellMorph(pose: s, kind: .bag(dim: selected ? 1 : 0.6)))
-                if let f = model.flash {
-                    Image(systemName: f.icon).foregroundStyle(Island.accent).modifier(CellMorph(pose: s, kind: .flashIcon))
-                }
             }
             .frame(width: cell, height: g.height)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
+        .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
     }
 
     /// The closed island for VoiceOver: one element, "Cocaine", saying what the wings show; its action opens the island with the
@@ -166,18 +170,9 @@ struct IslandView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// Right of the notch: what is going on, by importance.
+    /// Right of the notch: what is going on, by importance. (Messages and volume/brightness bars are in the HUD below the notch.)
     @ViewBuilder private var rightWing: some View {
-        if let f = model.flash {
-            if let l = f.level {
-                Capsule().fill(Color.white.opacity(0.2)).frame(width: 78, height: 5)
-                    .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: 78 * min(1, max(0, l)), height: 5) }
-            } else {
-                // The start of a file name says which file it is; the end is cut (".dmg" isn't news).
-                Text(f.text).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1).truncationMode(.tail).padding(.horizontal, Space.m)
-            }
-        }
-        else if focus.running {
+        if focus.running {
             TimelineView(.periodic(from: .now, by: 1)) { _ in       // the countdown redraws itself, not the whole island
                 Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
             }
@@ -246,7 +241,7 @@ struct IslandView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(t.title).accessibilityLabel(t.title)
-        .allowsHitTesting(model.open).accessibilityHidden(!model.open)
+        .allowsHitTesting(isOpen).accessibilityHidden(!isOpen)
         .accessibilityAddTraits(model.tab == t.id ? .isSelected : [])
     }
 

@@ -17,11 +17,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
-/// Volume and brightness changes (the keys, the menu bar, Control Center) as a message in the island: CoreAudio tells us about
+/// Volume and brightness changes (the keys, the menu bar, Control Center) as a bar in the island's HUD below the notch: CoreAudio tells us about
 /// the volume itself; the brightness of every backlit display is read four times a second. Automatic brightness drifts on its own,
 /// so a change is shown only right after a brightness key, or when it is bigger than that drift.
 final class HUDWatch {
-    var onChange: ((String, String, Double) -> Void)?
+    /// icon, label, level, and the display it is about (brightness; nil for the volume): the island's HUD goes to that screen.
+    var onChange: ((String, String, Double, CGDirectDisplayID?) -> Void)?
     var suppressBrightness: () -> Bool = { false }
     private var timer: Timer?
     private var started = false
@@ -108,7 +109,7 @@ final class HUDWatch {
         let muted = AudioObjectGetPropertyData(device, &ma, 0, nil, &msize, &mute) == noErr && mute != 0
         if report, lastVolume != nil, abs((lastVolume ?? v) - v) > 0.001 || (lastMute != nil && lastMute != muted) {
             let icon = muted || v == 0 ? "speaker.slash.fill" : v < 0.34 ? "speaker.wave.1.fill" : v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-            onChange?(icon, L("Volume"), muted ? 0 : Double(v))
+            onChange?(icon, L("Volume"), muted ? 0 : Double(v), nil)
         }
         lastVolume = v; lastMute = muted
     }
@@ -123,7 +124,7 @@ final class HUDWatch {
             guard let b = screens.brightness(id) else { continue }
             seen[id] = b
             if let l = lastBrightness[id], Self.reports(delta: b - l, sinceKey: sinceKey), !suppressBrightness() {
-                onChange?("sun.max.fill", L("Brightness"), Double(b))
+                onChange?("sun.max.fill", L("Brightness"), Double(b), id)
             }
         }
         lastBrightness = seen
