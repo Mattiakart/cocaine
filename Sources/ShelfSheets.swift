@@ -112,7 +112,7 @@ struct ShelfSheetCard: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s), GridItem(.flexible(), spacing: Space.s), GridItem(.flexible())],
                   alignment: .leading, spacing: Space.s) {
             ForEach(rows, id: \.id) { r in
-                ChoiceRow(title: r.title, leading: .symbol(r.symbol), selectable: false, destructive: r.destructive, font: UI.value, action: r.action)
+                ChoiceRow(title: r.title, leading: .symbol(r.symbol), selectable: false, destructive: r.destructive, lines: 2, font: UI.value, action: r.action)
             }
         }
     }
@@ -257,7 +257,7 @@ struct ShelfRenameForm: View {
             }
             HStack(alignment: .top, spacing: Space.l) {
                 VStack(alignment: .leading, spacing: Space.s) {
-                    Segments(selection: $form.tab, values: [0, 1, 2, 3], name: L("Rename"), label: { [L("Replace"), L("Add"), L("Number"), L("Case")][$0] })
+                    Segments(selection: $form.tab, values: [0, 1, 2, 3], name: L("Rename"), label: { [L("Replace"), L("Add text"), L("Number"), L("Letter case")][$0] })
                     fields
                 }
                 .frame(width: 270)
@@ -289,7 +289,7 @@ struct ShelfRenameForm: View {
                          label: { $0 == .none ? L("Off") : $0 == .before ? L("Before") : L("After") }).frame(width: 170)
             }
         default:
-            Segments(selection: rule.letterCase, values: RenameRule.LetterCase.allCases, name: L("Case"),
+            Segments(selection: rule.letterCase, values: RenameRule.LetterCase.allCases, name: L("Letter case"),
                      label: { [.keep: L("Keep"), .lower: "abc", .upper: "ABC", .title: "Abc"][$0] ?? "" },
                      spoken: { [.keep: L("Keep"), .lower: L("lowercase"), .upper: L("UPPERCASE"), .title: L("Title Case")][$0] })
             ShelfLabeledField(title: L("New name"), text: rule.newBase, autofocus: true)
@@ -407,7 +407,7 @@ struct ShelfLabeledField: View {
     var autofocus = false
     var body: some View {
         HStack(spacing: Space.s) {
-            Text(title).font(UI.value).foregroundStyle(UI.secondary).frame(width: 84, alignment: .leading).lineLimit(1)
+            Text(title).font(UI.value).foregroundStyle(UI.secondary).frame(width: 104, alignment: .leading).lineLimit(1).minimumScaleFactor(0.85)
             ShelfField(text: $text, placeholder: title, autofocus: autofocus).shelfFieldLook()
         }
     }
