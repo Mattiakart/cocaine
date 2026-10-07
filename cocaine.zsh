@@ -3,6 +3,7 @@
 # that override is ON, keeps the display from idle-sleeping (or, in "screen off" mode, lets it sleep).
 #
 #   cocaine on [duration]     on; with a duration (90, 90m, 2h, 1h30m; 1 min…24 h) it turns off then (Cocaine.app, or the hold helper)
+#   cocaine on until 18:30    on until that time (the next 18:30; "18:30 tomorrow", or 2026-10-07T18:30; within 24 h)
 #   cocaine off
 #   cocaine status [--json]   ON/OFF (first line), then the display hold; --json for scripts and Shortcuts
 #   cocaine mode screen-off|normal|status   screen off: the Mac stays awake but its displays may sleep (and lock)
@@ -84,6 +85,37 @@ dur_minutes() {
   else return 1; fi
   (( m >= 1 && m <= MAXMIN )) || return 1
   print -r -- $m
+}
+
+# A clock time → epoch seconds, in the future and at most 24 h ahead; fails on anything else. The same rules as the app's
+# UntilTime (Sources/AwakeTime.swift): 18:30 (the next one: today, or tomorrow once passed), 18:30 today|tomorrow,
+# 2026-10-07T18:30[:SS] (local; refused if that local time doesn't exist). Local time through mktime (zsh strftime -r), so
+# DST is counted right; a time the clocks skip (02:30 on the jump day) is read as if they hadn't jumped (03:30).
+# COCAINE_NOW (tests only) stands for the current time.
+until_at() {
+  local s=${1:l} now=${COCAINE_NOW:-$EPOCHSECONDS} d e back noon h m day
+  [[ $now == <-> ]] || now=$EPOCHSECONDS
+  if [[ $s =~ '^([0-9]{1,2})[:.]([0-9]{2})( +(today|tomorrow))?$' ]]; then
+    h=$(( 10#${match[1]} )) m=$(( 10#${match[2]} )) day=${match[4]}
+    (( h <= 23 && m <= 59 )) || return 1
+    strftime -s d '%Y-%m-%d' $now
+    next_day() { strftime -r -s noon '%Y-%m-%d %H:%M:%S' "$d 12:00:00" && strftime -s d '%Y-%m-%d' $(( noon + 86400 )); }
+    [[ $day == tomorrow ]] && { next_day || return 1; }
+    strftime -r -s e '%Y-%m-%d %H:%M:%S' "$d $(printf '%02d:%02d' $h $m):00" 2>/dev/null || return 1
+    if [[ -z $day ]] && (( e <= now )); then
+      next_day || return 1
+      strftime -r -s e '%Y-%m-%d %H:%M:%S' "$d $(printf '%02d:%02d' $h $m):00" 2>/dev/null || return 1
+    fi
+  elif [[ $s =~ '^([0-9]{4})-([0-9]{2})-([0-9]{2})t([0-9]{2}):([0-9]{2})(:([0-9]{2}))?$' ]]; then
+    d="${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[7]:-00}"
+    strftime -r -s e '%Y-%m-%d %H:%M:%S' "$d" 2>/dev/null || return 1
+    strftime -s back '%Y-%m-%d %H:%M:%S' $e
+    [[ $back == $d ]] || return 1                     # 31 April, or a minute the clocks skip: refused, not guessed
+  else
+    return 1
+  fi
+  (( e > now && e - now <= MAXMIN * 60 )) || return 1
+  print -r -- $e
 }
 
 # The deadline Cocaine.app keeps (epoch seconds), if any.
@@ -306,10 +338,15 @@ status_json() {
 zmodload zsh/datetime
 case "$1" in
   hold)   hold; exit 0 ;;
-  on)     (( $# <= 2 )) || { print -ru2 -- "usage: cocaine on [duration]"; exit 64; }
-          mins=
-          if (( $# == 2 )); then
-            mins=$(dur_minutes "$2") || { print -ru2 -- "bad duration '$2' (1 min to 24 h: 90, 90m, 2h, 1h30m)"; exit 64; }
+  on)     mins= at=
+          if [[ ${2:-} == until ]]; then        # on until 18:30 [today|tomorrow] | on until 2026-10-07T18:30
+            (( $# == 3 || $# == 4 )) || { print -ru2 -- "usage: cocaine on until HH:MM [today|tomorrow]"; exit 64; }
+            at=$(until_at "${*[3,-1]}") || { print -ru2 -- "bad time '${*[3,-1]}' (HH:MM, HH:MM tomorrow or YYYY-MM-DDTHH:MM; within 24 h)"; exit 64; }
+          else
+            (( $# <= 2 )) || { print -ru2 -- "usage: cocaine on [duration] | on until HH:MM"; exit 64; }
+            if (( $# == 2 )); then
+              mins=$(dur_minutes "$2") || { print -ru2 -- "bad duration '$2' (1 min to 24 h: 90, 90m, 2h, 1h30m)"; exit 64; }
+            fi
           fi
           lock
           cur=$(read_flag) || { unlock; print -ru2 -- "can't read sleep settings"; exit 4; }
@@ -320,9 +357,10 @@ case "$1" in
           fi
           set_state 1 || { (( wrote )) && /bin/rm -f "$CLAIM"; unlock; print -ru2 -- "not authorized to change sleep settings"; exit 2; }
           # -int: a -float is 32-bit, off by up to a minute at today's epoch (the app reads either as a number)
-          if [[ -n $mins ]]; then
-            /usr/bin/defaults write "$DOMAIN" onUntil -int $(( EPOCHSECONDS + mins * 60 ))
-            print -r -- $(( EPOCHSECONDS + mins * 60 )) >| "$UNTIL"   # the helper ends it if Cocaine.app isn't running then
+          [[ -n $mins ]] && at=$(( EPOCHSECONDS + mins * 60 ))
+          if [[ -n $at ]]; then
+            /usr/bin/defaults write "$DOMAIN" onUntil -int $at
+            print -r -- $at >| "$UNTIL"   # the helper ends it if Cocaine.app isn't running then
           fi
           start_hold; r=$?
           unlock
@@ -360,5 +398,5 @@ case "$1" in
           [ -x "$app" ] || { print -ru2 -- "cocaine shelf: needs the engine inside Cocaine.app"; exit 69; }
           (( $# >= 1 )) || { print -ru2 -- "usage: cocaine shelf add <file>…|list [--all] [--json]|clear"; exit 64; }
           exec "$app" --shelf "$@" ;;
-  *)      print -ru2 -- "usage: cocaine on [duration]|off|status [--json]|mode …|release|forget|remote …|shelf …"; exit 64 ;;
+  *)      print -ru2 -- "usage: cocaine on [duration]|on until HH:MM|off|status [--json]|mode …|release|forget|remote …|shelf …"; exit 64 ;;
 esac

@@ -22,7 +22,7 @@ elif [ ! -f "$HOME/.cocaine-signing/cocaine-signing.keychain" ]; then
 fi
 
 R="$T/repo"; mkdir -p "$R"
-for f in build.sh make-signing-identity.sh Info.plist Cocaine.entitlements main.swift cocaine.zsh remote.zsh Leggimi.txt ReadMe.txt tools Sources Localization; do
+for f in build.sh make-signing-identity.sh Info.plist Cocaine.sdef Cocaine.entitlements main.swift cocaine.zsh remote.zsh Leggimi.txt ReadMe.txt tools Sources Localization; do
   cp -R "$ROOT/$f" "$R/"
 done
 sed -i '' -E 's|(publicKeyBase64 = )"[^"]*"|\1""|' "$R/Sources/UpdateKey.swift"

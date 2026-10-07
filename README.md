@@ -285,12 +285,17 @@ paused on battery at 20% or less, and is cancelled when you quit Cocaine. If it 
 Cocaine on. It can be turned on only once an iPhone is paired. (`cocaine remote wake-info` still prints what a Wake-on-LAN app
 needs, for use on your home network.)
 
-**Also from Shortcuts and scripts on the Mac.** Cocaine has no native Shortcuts actions: they need metadata that only Xcode's build
-tools produce, and the app is built with the Command Line Tools. Instead: links (`cocaine://on?minutes=90`, `off`, `toggle`, `timer`,
-`status` with an x-callback answer; also `pause`, `resume`, `panel`) and the bundled command (`cocaine on 90m`, `off`,
-`status --json`, usable from *Run Shell Script*). Links that change something work only after you allow it (a one-time question, or
-General → *Shortcuts app and links*), because any app or web page can open a link. See
-[Power and triggers](docs/power-and-triggers.en.md).
+**Also from Shortcuts and scripts on the Mac.** Cocaine has no native Shortcuts actions in its releases: Shortcuts runs those only
+for apps signed with an Apple-issued identity (a Team ID), and Cocaine is signed locally (the code is ready behind a build flag:
+[docs/maintainers/app-intents.md](docs/maintainers/app-intents.md)). Instead: an **AppleScript dictionary** (`tell application
+"Cocaine" to keep awake for 90`, `keep awake until "18:30"`, `stop keeping awake`, `toggle`, and `awake`, `awake until`, `remaining
+minutes`… to read), usable from Shortcuts' *Run AppleScript*; four **ready-made Mac Shortcuts** (Keep Awake…, Off, Toggle, Status
+returning a Dictionary) that Automation → *Shortcuts and scripts* builds, signs and opens in Shortcuts; links (`cocaine://on?minutes=90`,
+`on?until=18:30`, `on?timer=off`, `off`, `toggle`, `timer`, `status` with an x-callback answer; also `pause`, `resume`, `panel`) and
+the bundled command (`cocaine on 90m`, `cocaine on until 18:30`, `off`, `status --json`). What changes something works only after you
+allow it (a one-time question, or General → *Shortcuts app and links*), because any app, script or web page could ask. See
+[Scripting](docs/scripting.en.md), [Keep awake](docs/keep-awake.en.md) (until a time, more triggers, keep awake while a program runs
+or downloads finish, turn off when unplugged, pause while locked) and [Power and triggers](docs/power-and-triggers.en.md).
 
 ### Automation
 

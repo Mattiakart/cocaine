@@ -32,13 +32,16 @@ struct TimeWindow: Equatable {
 
 enum TriggerKind: String, CaseIterable {
     case agents, apps, power, display, schedule
+    // More reasons (Sources/AwakeTriggers.swift): a VPN, the CPU busy (or idle), an audio output, a volume, a USB device.
+    case vpn, cpu, audio, volume, usb
 
     /// How long Cocaine stays on after the reason goes away: agents and apps pause between steps, a cable can wiggle,
     /// and a schedule ends when it says.
     var grace: TimeInterval {
         switch self {
         case .agents, .apps: return 180
-        case .power, .display: return 30
+        case .power, .display, .vpn, .audio, .volume, .usb: return 30
+        case .cpu: return 60                 // the load already had to hold for its minutes: a short dip doesn't end it
         case .schedule: return 0
         }
     }
@@ -210,15 +213,17 @@ struct ControlRequest: Equatable {
     var action: ControlAction
     var success: URL?        // x-callback-url targets, only ever shortcuts://
     var failure: URL?
+    /// `on?until=18:30` (or an ISO time): a deadline instead of a length. Never together with `minutes`.
+    var until: Date? = nil
 }
 
 enum ControlURL {
     static let minutes = 1...1440
 
-    enum Failure: Error, Equatable { case notOurs, unknown(String), badMinutes }
+    enum Failure: Error, Equatable { case notOurs, unknown(String), badMinutes, badUntil }
 
-    /// `cocaine://on?minutes=90`, `cocaine://x-callback-url/status?x-success=shortcuts://…`, …
-    static func parse(_ url: URL) -> Result<ControlRequest, Failure> {
+    /// `cocaine://on?minutes=90`, `cocaine://on?until=18:30`, `cocaine://x-callback-url/status?x-success=shortcuts://…`, …
+    static func parse(_ url: URL, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> Result<ControlRequest, Failure> {
         guard url.scheme?.lowercased() == "cocaine" else { return .failure(.notOurs) }
         let host = (url.host ?? "").lowercased()
         let name = host == "x-callback-url" ? (url.pathComponents.dropFirst().first ?? "").lowercased() : host
@@ -232,6 +237,15 @@ enum ControlURL {
             }
             mins = n
         }
+        if let raw = value("timer") {           // on?timer=off: until turned off, whatever the panel's timer says
+            guard raw.lowercased() == "off", mins == nil, name == "on" else { return .failure(.badMinutes) }
+            mins = 0
+        }
+        var until: Date?
+        if let raw = value("until") {        // only "on" takes a deadline, and never together with minutes
+            guard mins == nil, name == "on", let d = UntilTime.parse(raw, now: now, calendar: calendar) else { return .failure(.badUntil) }
+            until = d
+        }
         let action: ControlAction
         switch name {
         case "on": action = .on(minutes: mins)
@@ -244,7 +258,7 @@ enum ControlURL {
         case "status": action = .status
         default: return .failure(.unknown(String(name.prefix(20))))
         }
-        return .success(ControlRequest(action: action, success: success, failure: failure))
+        return .success(ControlRequest(action: action, success: success, failure: failure, until: until))
     }
 
     /// Shortcuts' own commands that DO something: a callback must never be one of them, or a link from a web page could make

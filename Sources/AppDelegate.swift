@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var batteryFloor = BatteryFloor()
     private var autoOn = AutoOn() { didSet { if autoOn.owned != oldValue.owned { settings.triggerOwned = autoOn.owned } } }
     private var triggerActive = false
+    private let awake = AwakeCenter()                // keep-awake extras (Sources/AwakeCenter.swift)
     private var arbiter = TriggerArbiter()
     private var triggerGrace: TimeInterval = 180
     private var requestedOn: Bool?                   // what Cocaine itself last applied; any other change came from outside
@@ -108,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.timerChanged = { [weak self] in self?.timerChanged() }
         model.hotkeysChanged = { [weak self] in self?.applyHotkeys() }
         model.triggersChanged = { [weak self] in self?.evaluateTriggers(System.cocaineOn) }
+        setUpAwake()
         model.screenModeChanged = { [weak self] in self?.syncScreenMode() }
         model.screenOffNow = { [weak self] in
             self?.hidePanel()
@@ -286,8 +288,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
             return
         }
-        // Opening the app turns Cocaine on; a link that started it decides by itself (cocaine://off must not turn it on first).
-        if !System.cocaineOn && pendingCommands.isEmpty { toggleCocaine() }
+        // Opening the app turns Cocaine on (as chosen: always, not as a login item, never); a link that started it decides by
+        // itself (cocaine://off must not turn it on first).
+        if LaunchPolicy.turnOn(settings.launchTurnsOn, atLogin: LaunchPolicy.launchedAtLogin(NSAppleEventManager.shared().currentAppleEvent),
+                               alreadyOn: System.cocaineOn, pendingLinks: !pendingCommands.isEmpty) { toggleCocaine() }
+        awake.restore(on: System.cocaineOn || wantOn == true)
         startApprovals()                             // not in an instance started just for an alert: it quits in 6 s
         startDetectors()
         Updater.shared.start()                       // leftovers of an update, then a check at most once a day
@@ -387,7 +392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.notice("command refused: \(String(describing: f), privacy: .public)")
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             if let e = items.first(where: { $0.name == "x-error" })?.value.flatMap(ControlURL.callback),
-               let r = ControlURL.reply(e, [("errorMessage", f == .badMinutes ? "minutes must be 1 to 1440" : "unknown command")]) {
+               let r = ControlURL.reply(e, [("errorMessage", f == .badMinutes ? "minutes must be 1 to 1440"
+                                                 : f == .badUntil ? "until must be a time within 24 hours (HH:MM or ISO 8601), with on only" : "unknown command")]) {
                 NSWorkspace.shared.open(r)
             }
             return
@@ -407,7 +413,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runCommand(_ req: ControlRequest) {
         defer { linkFeedback(req.action) }
         switch req.action {
-        case .on(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes)
+        case .on(let minutes):
+            autoOn.userToggled(to: true, triggerActive: triggerActive)
+            setCocaine(true, forMinutes: req.until != nil ? 0 : minutes)
+            if let u = req.until { settings.onUntil = u; model.onUntil = u }       // on?until=18:30
+
         case .off: autoOn.userToggled(to: false, triggerActive: triggerActive); setCocaine(false)
         case .toggle: toggleCocaine()
         case .timer(let minutes): autoOn.userToggled(to: true, triggerActive: triggerActive); setCocaine(true, forMinutes: minutes ?? (settings.timerMinutes > 0 ? settings.timerMinutes : 60))
@@ -438,11 +448,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Links may change things when the switch is on; otherwise ask, in the panel (one question at a time, and after a "Don't
     /// Allow" links are ignored for 10 minutes, so a page can't flood the screen with questions). Return, Esc and a click
     /// elsewhere are Don't Allow (see Dialogs.links). `done` runs once, at once when there's nothing to ask.
-    private func linksAllowed(_ url: URL, _ done: @escaping (Bool) -> Void) {
+    private func linksAllowed(_ url: URL, spec: DialogSpec? = nil, _ done: @escaping (Bool) -> Void) {
         if settings.allowLinks { done(true); return }
         guard !asking, Date() >= linksRefusedUntil else { done(false); return }
         asking = true
-        DialogCenter.shared.present(Dialogs.links(url)) { [weak self] r in
+        DialogCenter.shared.present(spec ?? Dialogs.links(url)) { [weak self] r in   // (a script's own question: Sources/Scripting.swift)
             guard let self else { return }
             self.asking = false
             guard r.buttonID == "allow" else {
@@ -785,6 +795,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel() {
+        // "Left-click turns Cocaine on/off": a left click toggles, a right click (or ⌃-click) opens the panel.
+        let e = NSApp.currentEvent
+        if StatusClick.act(leftToggles: settings.leftClickToggles, right: e?.type == .rightMouseUp, control: e?.modifierFlags.contains(.control) ?? false,
+                           panelOpen: panel.isVisible) == .toggle {
+            toggleCocaine()
+            A11y.announce(model.on ? L("Cocaine is on") : L("Cocaine is off"))
+            return
+        }
         if panel.isVisible { hidePanel() } else { showPanel(fromClick: true) }
     }
 
@@ -953,9 +971,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if Self.isOutsideChange(last: lastOn, now: on, requested: requestedOn, pending: wantOn) {
                 log.notice("turned \(on ? "on" : "off", privacy: .public) from outside")
                 autoOn.userToggled(to: on, triggerActive: triggerActive)
+                awake.userChanged()                  // …and a pause for the lock doesn't undo it at the unlock
                 requestedOn = on
             }
             if lastOn == true && !on { DispatchQueue.global().async { engine("forget") } }   // OFF from anywhere ends our claim
+            if lastOn != nil { awake.changed(on: on, reason: on ? model.triggeredBy : nil) }   // the optional notice
             lastOn = on
             refreshIcon(on: on)
             if on { superviseHold() }
@@ -1121,6 +1141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let until = settings.onUntil
         if model.onUntil != until { model.onUntil = until }
         guard wantOn == nil else { return }
+        awake.tick(on: on, onAC: System.battery?.onAC)                 // turn off when unplugged; "keep awake while…"
         if on, let until, Date() >= until {
             settings.onUntil = nil
             model.onUntil = nil
@@ -1194,8 +1215,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        minimum: PowerRule.batteryFloor(guardLevel: settings.batteryThreshold))
         states[.display] = DisplayRule.met(rule: settings.triggerDisplay, external: PowerState.externalDisplays)
         if settings.triggerSchedule { states[.schedule] = settings.schedule.contains(Date(), calendar: .autoupdatingCurrent) }
+        states.merge(awake.triggerStates()) { $1 }              // VPN, CPU, audio output, volume, USB (Sources/AwakeTriggers.swift)
         let floorBlocked = b.map { batteryFloor.blocks(percent: $0.percent, onAC: $0.onAC) } ?? false
-        let blocked = lowBattery || heatGuard.tripped || floorBlocked
+        let blocked = lowBattery || heatGuard.tripped || floorBlocked || awake.blocksTriggers   // (or the screen locked, paused)
         let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: blocked)
         if !active { triggerGrace = grace }
         triggerActive = active
@@ -1207,7 +1229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // What the panel says about it: which are true now, who turned Cocaine on, why they can't.
         let live = Set(states.filter { $0.value == true }.map(\.key.rawValue))
         if model.liveTriggers != live { model.liveTriggers = live }
-        let by: String? = autoOn.owned && active ? TriggerWords.reason(states, apps: openApps, power: settings.triggerPower) : nil
+        let words = [TriggerWords.reason(states, apps: openApps, power: settings.triggerPower)].compactMap { $0 } + awake.words(states)
+        let by: String? = autoOn.owned && active && !words.isEmpty ? words.joined(separator: ", ") : nil
 
         if model.triggeredBy != by { model.triggeredBy = by }
         let hold: String? = !blocked || states.values.allSatisfy({ $0 != true }) ? nil
@@ -1483,7 +1506,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func redrawStatusItem() {
-        statusItem.button?.image = Baggie.image(level: model.bagLevel, pouring: model.bagPouring, pink: model.bagPink)
+        statusItem.button?.image = awake.iconImage(on: model.on)        // a chosen icon style (the island keeps the baggie)
+            ?? Baggie.image(level: model.bagLevel, pouring: model.bagPouring, pink: model.bagPink)
+    }
+
+    /// The keep-awake extras (Sources/AwakeCenter.swift): what they ask of the app goes through setCocaine and AutoOn here.
+    private func setUpAwake() {
+        awake.state = { [weak self] in
+            guard let self else { return (false, false, nil) }
+            return (System.cocaineOn || self.wantOn == true, self.autoOn.owned, self.settings.onUntil)
+        }
+        awake.notice = { [weak self] icon, text in
+            guard let self else { return }
+            if self.settings.island && self.island.showing { self.island.model.flashNotice(icon, text) } else { A11y.announce(text) }
+        }
+        awake.perform = { [weak self] r in
+            guard let self else { return }
+            switch r {
+            case .startByHand(let until):
+                self.autoOn.userToggled(to: true, triggerActive: self.triggerActive)
+                self.setCocaine(true, forMinutes: 0)
+                if let until { self.settings.onUntil = until; self.model.onUntil = until }
+            case .resume(let until):
+                self.setCocaine(true, auto: true)
+                self.settings.onUntil = until; self.model.onUntil = until
+            case .stopByHand(let text):
+                self.autoOn.userToggled(to: false, triggerActive: self.triggerActive)
+                self.setCocaine(false, auto: true)
+                self.awake.notice("moon.zzz.fill", text)
+            case .pause:
+                self.setCocaine(false, auto: true)
+            }
+        }
+        let m = awake.model
+        m.triggersChanged = { [weak self] in self?.evaluateTriggers(System.cocaineOn) }
+        m.iconChanged = { [weak self] in self?.redrawStatusItem() }
+        m.startWhile = { [weak self] t in self?.awake.startWhile(t) }
+        m.stopWhile = { [weak self] in self?.awake.endWhile(nil) }
+        m.addShortcuts = { AwakeShortcuts.present(m) }
+        m.keepAwakeUntil = { [weak self] d in
+            guard let self else { return }
+            self.autoOn.userToggled(to: true, triggerActive: self.triggerActive)
+            self.setCocaine(true, forMinutes: 0)
+            self.settings.onUntil = d; self.model.onUntil = d
+        }
+        awake.start()
+        // AppleScript (Cocaine.sdef, Sources/Scripting.swift): the same gate and the same commands as cocaine:// links.
+        let sc = ScriptingCenter.shared
+        sc.status = { [weak self] in
+            guard let self else { return ScriptStatus() }
+            return ScriptStatus(on: self.wantOn ?? System.cocaineOn, until: self.settings.onUntil, screenOff: self.screenOffMode, trigger: self.triggerActive)
+        }
+        sc.target = { [weak self] in self.map { $0.wantOn ?? System.cocaineOn } }
+        sc.perform = { [weak self] req, done in
+            guard let self else { done(false); return }
+            log.notice("script \(String(describing: req.action), privacy: .public)")
+            guard req.action.guarded else { self.runCommand(req); done(true); return }
+            self.linksAllowed(URL(string: "cocaine://script")!, spec: ScriptingDialog.spec(req)) { allowed in
+                if allowed { self.runCommand(req) }
+                done(allowed)
+            }
+        }
     }
 
     /// While Cocaine is on, make sure the script's display helper runs (it doesn't after a restart).

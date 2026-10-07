@@ -41,6 +41,23 @@ step "property lists"
 run "plutil -lint Info.plist" plutil -lint -s Info.plist
 run "plutil -lint Cocaine.entitlements" plutil -lint -s Cocaine.entitlements
 for f in Localization/*.lproj/*.strings; do run "plutil -lint $f" plutil -lint -s "$f"; done
+run "xmllint Cocaine.sdef (the AppleScript dictionary)" xmllint --noout Cocaine.sdef
+run "Info.plist: scripting enabled with Cocaine.sdef" zsh -c "[ \"\$(/usr/libexec/PlistBuddy -c 'Print :OSAScriptingDefinition' Info.plist)\" = Cocaine.sdef ]"
+
+step "native App Intents (behind --app-intents; generated in a temporary folder, nothing registered)"
+AI=$(mktemp -d)
+run "tools/gen-appintents-metadata.py parses" python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" tools/gen-appintents-metadata.py
+if swiftc -typecheck -swift-version 5 -target arm64-apple-macos14.0 -module-name Cocaine -D COCAINE_APP_INTENTS main.swift Sources/*.swift Sources/AppIntents/*.swift \
+     -Xfrontend -const-gather-protocols-list -Xfrontend tools/appintents-protocols.json \
+     -Xfrontend -emit-const-values-path -Xfrontend "$AI/Cocaine.swiftconstvalues" >/dev/null 2>&1; then
+  ok "the App Intents sources compile with the flag (Command Line Tools, no macros)"
+  run "metadata generated from the compiler's const values" python3 -I tools/gen-appintents-metadata.py generate "$AI/Cocaine.swiftconstvalues" "$AI"
+  run "metadata well-formed (Metadata.appintents schema 3.0)" python3 -I tools/gen-appintents-metadata.py check "$AI/Metadata.appintents"
+else
+  bad "the App Intents sources compile with the flag"
+fi
+rm -rf "$AI"
+run "build.sh refuses --app-intents for a release or an install" zsh -c "! ./build.sh --app-intents --dmg 2>/dev/null && ! ./build.sh --app-intents 2>/dev/null"
 run "Info.plist: bundle id local.cocaine.toggle" test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Info.plist)" = local.cocaine.toggle
 BUILDNO=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
@@ -93,6 +110,9 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--shelf-test (temporary folders, generated files)" "$ISO" --shelf-test
   run "--dialogs-test" "$ISO" --dialogs-test
   run "--remote-test" "$ISO" --remote-test
+  run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test
+  if [ "${CI:-}" = true ]; then skipped "--scripting-selftest" "CI: Apple Events in a headless session"
+  else run "--scripting-selftest (real AppleScript sent to the copy itself; fake state)" "$ISO" --scripting-selftest; fi
   run "--recovery-test (its own temporary copy, stand-ins, temporary folders)" "$ISO" --recovery-test
   run "tests/engine-test.zsh (engine and remote.zsh on stubs)" zsh tests/engine-test.zsh
   run "--layout-test" zsh -c "out=\$('$ISO' --layout-test) && print -r -- \"\$out\" | grep -c 'inside that screen: true' | grep -qx 4 && ! print -r -- \"\$out\" | grep -q '^FAIL'"
