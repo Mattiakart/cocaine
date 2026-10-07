@@ -34,6 +34,7 @@ func displaySelfTest(_ check: (String, Bool) -> Void) {
     screensSelfTest(check)
     batteryFloorSelfTest(check)
     ddcSelfTest(check)
+    islandSelfTest(check)          // Sources/IslandTests.swift
 }
 
 private func dimSelfTest(_ check: (String, Bool) -> Void) {
