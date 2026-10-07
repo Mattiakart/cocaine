@@ -50,6 +50,7 @@ if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--ai-environme
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" { cliPermissions() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--camera-test" { cliCameraTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--presence-test" { cliPresenceTest() }
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--clip" { cliClip() }   // `cocaine clip …` (Sources/ClipboardCLI.swift)
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--clipboard-test" {
     exit(ClipboardTests.run() == 0 ? 0 : 1)
 }

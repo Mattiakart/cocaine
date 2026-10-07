@@ -170,9 +170,13 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   It holds references, not copies, and is kept across restarts (files gone meanwhile are left out).
 - **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash with the file's name says when a
   new one arrives. The two folders are watched, not re-read every few seconds.
-- **Clipboard**: what you copied lately (text, images, file references), with search and favorites; click to copy again. Kept in
-  memory only unless you turn on *Save on this Mac* (encrypted, with retention limits, exclusions and *Delete everything*);
-  never from password managers. [Details and limits](docs/clipboard.en.md).
+- **Clipboard**: what you copied lately (text with its formatting, images, file references), with search and filters; double-click
+  or Return pastes into the app you were using (with the Accessibility permission; otherwise it copies), ⌘1–9 quick paste,
+  multi-select, Paste Stack, merge, edit, rename, previews, text in images, suggestions for the app in front, copies from other
+  devices labelled, and `cocaine clip` (off by default). **Pinboards** (named collections) and **snippets** with placeholders are
+  always saved, encrypted; the rest is kept in memory only unless you turn on *Save on this Mac* (encrypted, with retention
+  limits, exclusions and *Delete everything*); never from password managers. [Details and limits](docs/clipboard.en.md),
+  [pinboards](docs/pinboards.en.md).
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices (refreshed at most once a minute), and the usage of
   Codex (its limits, from the newest sessions that report them) and Claude Code (tokens in the last 5 hours and 7 days), read from
   their own local files. Claude Code's files are read once, then only what was added; a first count over a large history says
@@ -205,7 +209,7 @@ the volume and brightness and the island shows them.
 
 **From the keyboard and with VoiceOver.** ⌃⌥⌘I (General → *Keyboard shortcuts*, changeable) opens the island with the keyboard
 in it: it stays open until Esc, the shortcut again or a click elsewhere; ← and → change tabs, Tab moves between controls (with
-Full Keyboard Access), and on the Clipboard page ↑, ↓ and Return copy an item. For VoiceOver the closed island is one element,
+Full Keyboard Access), and on the Clipboard page ↑, ↓ and Return paste an item. For VoiceOver the closed island is one element,
 "Cocaine", that says what it shows and opens the island; while VoiceOver runs, the menu-bar icon stays too. Flashes, an AI starting
 work, alerts and requests, and what a shortcut or a link did are announced. Cocaine follows Increase Contrast, Differentiate
 Without Colour and Reduce Motion (no pouring bag, no springs, still visualizer).

@@ -10,6 +10,7 @@ final class FakePasteboard: ClipPasteboard {
     var dataReads = 0
     var emptyReadsLeft = 0          // content declared but not there yet, for this many reads
     var written: [ClipItem] = []
+    var writtenRich: [ClipRich?] = []
 
     func put(_ s: ClipSnapshot) { changeCount += 1; content = s }
 
@@ -18,26 +19,30 @@ final class FakePasteboard: ClipPasteboard {
         guard !s.ours, allowed(s.types, s.source) else { return s }
         if emptyReadsLeft > 0 { emptyReadsLeft -= 1; return s }
         dataReads += 1
-        s.text = content.text; s.files = content.files; s.image = content.image
+        s.text = content.text; s.files = content.files; s.image = content.image; s.rich = content.rich
         s.width = content.width; s.height = content.height
         if let i = s.image, i.count > maxImageBytes { s.image = nil; s.imageTooBig = true }
         return s
     }
 
-    func write(_ item: ClipItem, payload: Data?) -> Int? {
+    func write(_ item: ClipItem, payload: Data?, rich: ClipRich?) -> Int? {
         if item.kind == .files && !item.paths.contains(where: { FileManager.default.fileExists(atPath: $0) }) { return nil }
         if item.kind == .image && payload == nil { return nil }
         changeCount += 1
         content = ClipSnapshot(types: [ClipRules.ownType], ours: true, text: item.kind == .text ? item.text : nil)
         written.append(item)
+        writtenRich.append(rich)
         return changeCount
     }
+
+    func currentText() -> String? { content.text }
 }
 
 enum ClipboardTests {
     /// Runs every clipboard check (temporary folders, a fake Keychain, a fake or uniquely named pasteboard: never the user's
     /// clipboard, files or Keychain). Prints PASS/FAIL lines; returns the number of failures.
     static func run() -> Int {
+        setvbuf(stdout, nil, _IOLBF, 0)                    // each line as it comes (a crash still shows how far it got)
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  clipboard: " + name); if !ok { failed += 1 } }
         let fm = FileManager.default
@@ -221,7 +226,7 @@ enum ClipboardTests {
             try? ClipCrypto.seal(Data(json.utf8), key: k, context: "index").write(to: s2.index)
             let partial = s2.load()
             check("store: a bad item is dropped, the others load", partial.items.map(\.text) == ["good one"] && partial.problem == .droppedItems(1))
-            let newer = "{\"v\":2,\"items\":[]}"
+            let newer = "{\"v\":\(ClipStore.schema + 1),\"items\":[]}"
             try? ClipCrypto.seal(Data(newer.utf8), key: k, context: "index").write(to: s2.index)
             check("store: a newer schema isn't misread", s2.load().problem == .unreadableIndex)
         } else { check("store: key present", false) }
@@ -341,6 +346,13 @@ enum ClipboardTests {
         check("persistence: off and kept, the files stay (encrypted), the key too", !later.saving && fm.fileExists(atPath: pdir.path) && pk.key != nil)
         later.setPersist(true)
         later.setPersist(false, wipe: true)
+        later.flush()
+        check("persistence: off and wiped with something pinned: the history's files go, the pinboards and the key stay",
+              !fm.fileExists(atPath: pdir.appendingPathComponent("index.ccl").path) && fm.fileExists(atPath: pdir.appendingPathComponent("boards.ccl").path)
+              && pk.key != nil && !later.settings.persist && later.items.map(\.text) == ["before saving"])
+        later.togglePin(later.items[0].id)
+        later.setPersist(true)
+        later.setPersist(false, wipe: true)
         check("persistence: off and wiped, files and key are gone", !fm.fileExists(atPath: pdir.path) && pk.key == nil && !later.settings.persist)
 
         let fk = MemoryKeyStore(); fk.failing = true
@@ -393,6 +405,7 @@ enum ClipboardTests {
 
         failed += realPasteboard()
         failed += realKeychain(root)
+        failed += PasteTests.run(root)                     // schema 2, pinboards, pasting, search… (Sources/PasteTests.swift)
         return failed
     }
 

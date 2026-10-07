@@ -909,6 +909,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }) { panelMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
             if ShortcutCenter.shared.handleRecorderKey(e) { return nil }       // a shortcut being recorded takes every key
+            if ClipShortcutRecorder.shared.handle(keyCode: e.keyCode, flags: e.modifierFlags) { return nil }   // …a clipboard one too
             if DialogCenter.shared.isShowing(on: .panel), DialogCenter.shared.handleKey(e) { return nil }   // Return/Esc: the dialog's
             if PickerCenter.shared.isOpen(on: .panel), PickerCenter.shared.handleKey(e) { return nil }     // ↑↓, Return, Space, Esc: the dropdown's
             if e.keyCode == 53 {                                   // Esc: closes the panel
