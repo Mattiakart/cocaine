@@ -207,8 +207,10 @@ enum AIHooks {
     static func assumeClaudeVersion(_ v: [Int]?) { claudeVersionCache = .some(v) }   // tests: not the Mac's own Claude Code
     static func claudeVersion(atLeast need: [Int]) -> Bool {
         if claudeVersionCache == nil {
-            // A login shell finds it as Terminal does; one that waits for input (a prompt in .zprofile) is given up after 10 s.
-            let out = Proc.run("/bin/zsh", ["-lc", "claude --version"], timeout: 10, capture: true, limit: 4096).text
+            // A login shell finds it as Terminal does; one that waits for input (a prompt in .zprofile) is given up after 30 s.
+            let r = Proc.run("/bin/zsh", ["-lc", "claude --version"], timeout: 30, capture: true, limit: 4096)
+            if r.timedOut { return false }                    // not known this time (asked again next time), never cached as "old"
+            let out = r.text
             var parsed: [Int]?
             if let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) { parsed = out[r].split(separator: ".").compactMap { Int($0) } }
             claudeVersionCache = .some(parsed)

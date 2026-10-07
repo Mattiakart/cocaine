@@ -241,7 +241,8 @@ final class MusicWatch: ObservableObject {
             }
             DispatchQueue.main.async {
                 self.busy = false
-                guard let (t, playing, pos, shuffle) = found else { self.clear(); return }
+                // Nothing from the scripts: stopped, or scripting refused (then what the apps announced stays).
+                guard let (t, playing, pos, shuffle) = found else { if !self.denied { self.clear() }; return }
                 self.position = pos; self.fetched = Date()
                 if self.playing != playing { self.playing = playing }
                 if self.shuffle != shuffle { self.shuffle = shuffle }
