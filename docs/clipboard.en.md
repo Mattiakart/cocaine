@@ -29,10 +29,12 @@ Nothing ever leaves the Mac.
 **Limits** (Settings): how many items (25–500), how long (1 hour to 30 days, or no limit), total space (10–250 MB) and the
 largest single item (1–25 MB). They are applied as you copy, when the history is loaded, and about once a minute.
 
-**Limits of this feature**: the clipboard is checked a little more than once a second; the app in front is taken as the
+**Limits of this feature**: the clipboard is checked a little more than once a second (not while the screens or the Mac sleep); the app in front is taken as the
 source when the copying app doesn't say, so an app copying in the background may be attributed to another one. With an
 ad-hoc signed build (no local signing identity), macOS asks again for Keychain access after each update; if you refuse,
 nothing is saved. Deleting files can't guarantee the bytes are erased on an SSD: what makes the deleted history unreadable
-is that its encryption key is deleted too. The search field takes the keyboard while the Clipboard page is open.
+is that its encryption key is deleted too. The search field takes the keyboard while the Clipboard page is open: ↑ and ↓ move
+through the items and Return copies one (also with the island opened by ⌃⌥⌘I). With VoiceOver each item offers Delete and
+favorite actions. With *Save on this Mac* on, images are kept only in their encrypted files, not also in memory.
 
 **If the saved history can't be read** (damaged, written with another key or by a newer version), Cocaine moves the index and its images together into an `unreadable-<time>` folder next to it, starts empty and never deletes them; if even that fails, nothing is saved. If the Keychain refuses access at launch, saving pauses for that launch only.

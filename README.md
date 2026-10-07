@@ -15,8 +15,9 @@ A tiny, free, open-source menu bar app for macOS.</p>
   it turns on.
 - **Screen dimming.** While Cocaine is on, it can dim the built-in display to a level you choose after a few idle minutes.
   The screen never goes fully off, and it comes back the moment you touch the keyboard or trackpad.
-- **External monitors too.** Apple displays dim their backlight, any other monitor dims in software, and with the lid
-  closed only the external screens dim. The panel opens under the icon you click, on whichever screen.
+- **External monitors too.** Apple displays dim their backlight, any other monitor dims in software. Closing the lid while
+  Cocaine is on affects only the built-in display: external screens keep their brightness and dim only after the idle time,
+  like the rest. With the island on, the panel hangs from the notch; with the menu-bar icon, it opens under the icon you click.
 - Universal (Apple Silicon and Intel), macOS 14 Sonoma or later, about 600 KB.
 
 - **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
@@ -46,8 +47,8 @@ on Touch ID for sudo, it's a fingerprint instead. That's all: no pop-ups, no "Op
    That's expected.
 
 Either way, that authorization installs a sudo rule that allows exactly `pmset -a disablesleep 1`,
-`pmset -a disablesleep 0`, and deleting the rule itself (plus `pmset schedule wake`/`cancel wake`, tagged `cocaine`, if you turn on
-*Wake for iPhone*). Nothing else. [See the code](cocaine.zsh).
+`pmset -a disablesleep 0`, `pmset schedule wake`/`schedule cancel wake` tagged `cocaine` (used only by *Wake for iPhone*), and
+deleting the rule itself. Nothing else. [See the code](cocaine.zsh).
 
 **Signature.** Current releases are signed with Cocaine's own self-signed certificate ("local" tier): free, but not verified
 by Apple and not notarized, hence "Open Anyway". The panel shows your copy's tier under *Permissions*. macOS keeps the
@@ -64,12 +65,12 @@ Leave the Mac working, and Cocaine calls you back when an AI agent finishes or n
 the screens, restores the brightness, flashes them and shows who's calling and in which project. When you're at the Mac,
 the baggie in the menu bar just refills.
 
-Open **AI alerts** in the panel. Its four groups each show a one-line summary and open one at a time:
-**Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at
-the Mac, or just once per session, when nothing is left running, instead of for every agent or task that finishes; and
-**Answer from the island**, off by default), **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5 or 10 minutes while
-you're away, and a test) and **Pause** (30 minutes, an hour, or until tomorrow). Below them, apart from the settings,
-**Recent alerts** lists the latest ones, with the project each came from.
+The **AI alerts** tab of the panel appears once Cocaine finds a supported AI tool on the Mac. At its top, **Agents** lists the
+sessions at work (or, when none is, **Recent alerts**: the three latest, with the project each came from). Then three cards:
+**Connected AIs** (a switch for each, with what it reports), **When** (it finishes, it needs you, also while you're at the Mac,
+just once per session when nothing is left running, **Answer from the island**, off by default, and **Pause**: 30 minutes, an
+hour, or until tomorrow) and **How** (flash, sound, voice and which one, how long the alert stays on screen, reminders every 2, 5
+or 10 minutes while you're away, and a test). With VoiceOver, every alert is also read out.
 
 **Every session, in the notch.** The island's Home tab and the panel list all your AI sessions (scrolling when there are many;
 up to 100), the ones that need you first. The list is saved and comes back after a restart (marked ↺ with its age); a session
@@ -80,7 +81,7 @@ you what it did. An IDE's built-in terminal, JetBrains, Ghostty, kitty and Warp 
 sessions started before this version don't say where they run.
 
 **Allow or deny from the island** (off by default; Claude Code 2.0.45+ and Codex): permission requests, and Claude Code's MCP
-questions with simple answers, appear with **Allow** / **Deny** / **In the terminal**. It uses only the tools' documented hooks
+questions with simple answers (Claude Code 2.1.78+), appear with **Allow** / **Deny** / **In the terminal**. It uses only the tools' documented hooks
 (`PermissionRequest`, `Elicitation`) over a private socket, with answers signed and tied to one request. Nothing is approved on
 its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Claude Code's
 `AskUserQuestion` has no hook for answers, so it is only announced. Other tools in the table only alert. Details:
@@ -117,8 +118,8 @@ open -g "cocaine://alert?from=My%20script&event=done"     # event=done or input;
 - **Automation apps:** Shortcuts ("Open URLs"), Keyboard Maestro, Hammerspoon, BetterTouchTool, launchd `WatchPaths`,
   Mail rules.
 
-Cocaine's hooks start with `pgrep -qx Cocaine`, so a closed Cocaine stays closed: alerts only go out while the app is
-running.
+Cocaine's alert hooks start with `pgrep -qx Cocaine`, so a closed Cocaine stays closed: alerts only go out while the app is
+running. The Allow/Deny hook runs Cocaine's own binary instead, which gives no answer (the terminal asks) when the app isn't running.
 
 ## Feedback and help
 
@@ -127,22 +128,33 @@ in. Bugs and ideas are also welcome as [GitHub issues](https://github.com/Mattia
 
 ## Island
 
-Cocaine also lives in the notch (or, on a screen without one, in a slim pill at the top). Closed, it shows what is live beside
-the notch: Cocaine on and until when, a focus countdown, an AI waiting for you, AIs at work (✦ and how many), the microphone in use, the song playing, and
-short messages ("Downloaded", "Screenshot", "Copied", and the volume and brightness bars). Point at it, or click it, and it
-opens, with these pages:
+Cocaine also lives in the notch (or, on a screen without one, in a slim bar at the top; the switch is then called *Show at the top
+of the screen*). Closed, the bag sits left of the notch and the most important live thing right of it, one at a time: a short
+message (a new download's file name, "Screenshot", "Copied", the volume and brightness bars), a focus countdown, an AI waiting for
+you, the microphone in use, AIs at work (✦ and how many), the song playing, Cocaine on and until when, or *Stay available*. Point at
+it, or click it, and it opens at once (and closes as soon as the pointer leaves), with these pages:
 
-- **Home**: the switch, the timer, the AI agents at work.
+- **Home**: the switch, the timer, *Stay available*, the AI agents at work.
 - **Music**: Apple Music and Spotify, with artwork, scrubber, play/pause/next/previous/shuffle and, if you switch them on,
-  synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent). Needs the Automation permission.
-- **Calendar**: today and your next events, two weeks ahead (asks for Calendar access when you press the button).
-- **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake.
+  synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent; a network problem is said as such). What
+  plays comes from the apps' own announcements; their scripting (the Automation permission) is used for the artwork and, while
+  this page is open, the position.
+- **Calendar**: today and your next events, two weeks ahead (asks for Calendar access the first time; if it was refused, a
+  button opens System Settings).
+- **Focus**: a focus/break timer with a minute ruler; starting a focus keeps the Mac awake for its length, *Reset* turns Cocaine
+  off again only if the focus turned it on, the end is announced (a sound, a flash, an alert when you're away), and a running
+  focus survives a restart or an update.
 - **Shelf**: drop files on the island (it opens by itself) and keep them there, then drag them out or send them all by AirDrop.
-- **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash says when a new one arrives.
+  It holds references, not copies, and is kept across restarts (files gone meanwhile are left out).
+- **Files**: recent downloads and screenshots, to drag out (to any app, Mail, AirDrop…); a flash with the file's name says when a
+  new one arrives. The two folders are watched, not re-read every few seconds.
 - **Clipboard**: what you copied lately (text, images, file references), with search and favorites; click to copy again. Kept in
   memory only unless you turn on *Save on this Mac* (encrypted, with retention limits, exclusions and *Delete everything*);
   never from password managers. [Details and limits](docs/clipboard.en.md).
-- **Status**: the batteries of the Mac, AirPods and other Bluetooth devices, and the usage of Codex (its limits) and Claude Code (tokens), read from their own local files.
+- **Status**: the batteries of the Mac, AirPods and other Bluetooth devices (refreshed at most once a minute), and the usage of
+  Codex (its limits, from the newest sessions that report them) and Claude Code (tokens in the last 5 hours and 7 days), read from
+  their own local files. Claude Code's files are read once, then only what was added; a first count over a large history says
+  *Still counting* until it is complete.
 - **Media**: Apple Music, Spotify, YouTube Music, Netflix, Prime Video, YouTube, Disney+, Apple TV, Twitch, DAZN: a tap opens the app if it
   is installed, else the website in your default browser.
 - **Mirror**: the camera live, on only while that page is open; a switch flips it like a mirror (or shows you as others see you), and
@@ -154,7 +166,16 @@ Plugging the charger in or out is announced too. The island replaces the menu-ba
 pink powder: Cocaine is off but *Stay available* is on, with or without a chat app open). Turn the island off and the icon comes back. It opens and closes by following the
 lines of the notch, with a light tap on the trackpad where it helps (timers, switches, tabs; General → *Haptic feedback* turns it off; with Reduce Motion on in
 macOS's Accessibility settings it appears and goes without the morph, and alerts tint the screen once instead of flashing). The gear opens the settings panel;
-General → *Show in the notch* turns it off. It hides during full-screen video and games. With Island → *Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
+General → *Show in the notch* turns it off. It hides during full-screen video and games.
+
+**From the keyboard and with VoiceOver.** ⌃⌥⌘I (General → *Keyboard shortcuts*, changeable) opens the island with the keyboard
+in it: it stays open until Esc, the shortcut again or a click elsewhere; ← and → change tabs, Tab moves between controls (with
+Full Keyboard Access), and on the Clipboard page ↑, ↓ and Return copy an item. For VoiceOver the closed island is one element,
+"Cocaine", that says what it shows and opens the island; while VoiceOver runs, the menu-bar icon stays too. Flashes, an AI starting
+work, alerts and requests, and what a shortcut or a link did are announced. Cocaine follows Increase Contrast, Differentiate
+Without Colour and Reduce Motion (no pouring bag, no springs, still visualizer).
+
+With Island → *Replace system HUD* on, volume and brightness appear only in the island: macOS's own HUD is silenced (its helper process is kept frozen) and
 returns as soon as you turn the option off or quit Cocaine; if Cocaine crashes or is killed, a small watchdog gives it back within a
 couple of seconds ([details](docs/recovery.en.md)). Silencing it needs no permission, but for Cocaine to handle the volume and
 brightness *keys* itself (fine steps with ⌥⇧) it needs the **Accessibility** permission, which it asks for when you turn the option
@@ -186,7 +207,7 @@ reconnection, a wake-up or a restart are dropped, and commands older than two mi
 future are refused. *Revoke* forgets every paired iPhone at once (a command already running gets no answer); a pairing expires
 after 180 days. Every command goes through a fixed allow-list: the default level allows status, on/off and listing projects;
 *Also start and steer AI agents* adds starting agents and typing into them, which amounts to running code as you, so grant it
-knowingly. At most 20 commands a minute run, and every one is logged in
+knowingly. At most 20 messages a minute are looked at (more are dropped unread), and every command is logged in
 `~/Library/Application Support/Cocaine/remote-phone.log`. Treat the Shortcut like a key: it holds the key, syncs through iCloud
 like any Shortcut, and anyone who gets it can use it.
 
@@ -225,10 +246,11 @@ terminal). Projects are the folders with a `.git` under `~/Developer`, `~/Projec
 back to how it was when the last run ends.
 
 **Knowing what's going on.** The AI alerts hooks also tell Cocaine when an agent starts working, waits for you, finishes
-or fails, and the panel lists them. `remote status` shows the same, and **Phone alerts** send every alert to you: run
-`cocaine remote notify shortcut "Name"` and Cocaine runs that Shortcut (with the alert text as its input; build one that
-sends you a message or notification), or `cocaine remote notify ntfy https://ntfy.sh/your-secret-topic` for a
-push notification (that sends the alert text to that service). `cocaine remote notify test` tries it.
+or fails, and the panel lists them. `remote status` shows the same, and **Phone alerts** send the alerts that come while you're
+away to your phone: in *Remote work → Phone alerts → Set up…* (or `cocaine remote notify shortcut "Name"`) Cocaine runs that
+Shortcut on the Mac with the alert text as its input (build one that sends you a message or notification), or (`notify ntfy
+https://ntfy.sh/your-secret-topic`) posts it to an ntfy topic as a push notification (the text leaves the Mac). *Test* (or
+`cocaine remote notify test`) tries it and the row says what happened.
 
 **Waking the Mac.** Cocaine on is what keeps it reachable. A Mac that has already gone to sleep can't hear the relay, and
 nothing on the internet can wake a sleeping MacBook with the lid closed. So, in *Remote work*, turn on **Wake for iPhone**:
@@ -237,7 +259,8 @@ your iPhone sent meanwhile (up to 20 minutes old), answers, and lets the Mac sle
 Mac is answered within about 15 minutes: send it, then use *Last reply* later. It asks for your permission once (it extends
 Cocaine's sudo rule with `pmset schedule wake`/`cancel wake`, tagged `cocaine`, nothing else), costs a little battery, is
 paused on battery at 20% or less, and is cancelled when you quit Cocaine. If it matters that the answer is immediate, keep
-Cocaine on. (`cocaine remote wake-info` still prints what a Wake-on-LAN app needs, for use on your home network.)
+Cocaine on. It can be turned on only once an iPhone is paired. (`cocaine remote wake-info` still prints what a Wake-on-LAN app
+needs, for use on your home network.)
 
 **Also from Shortcuts and scripts on the Mac.** Cocaine has no native Shortcuts actions: they need metadata that only Xcode's build
 tools produce, and the app is built with the Command Line Tools. Instead: links (`cocaine://on?minutes=90`, `off`, `toggle`, `timer`,
@@ -250,13 +273,16 @@ General → *Shortcuts app and links*), because any app or web page can open a l
 
 **Stay available** (Automation tab): Teams, Slack, Zoom and similar apps mark you "Away" from the Mac's idle time. While you are
 idle, with one of the chosen apps open (or always), Cocaine sends an invisible mouse event now and then, which restarts that
-clock, and keeps the display awake. It needs the Accessibility permission; check that your workplace allows it.
+clock, and keeps the display awake. Since the idle time never builds up, the screen meanwhile doesn't dim, sleep or **lock** by
+itself (screen saver included): lock it with ⌃⌘Q. It needs the Accessibility permission; check that your workplace allows it.
 
-The panel's tabs sit left and right of the notch: *General* (the **Timer**: ∞, 30 minutes … 8 hours, or any length you set in
+The panel's tabs sit left and right of the notch: *General* (**Keep awake for**: ∞, 30 minutes … 8 hours, or any length you set in
 steps of 15 minutes up to 24 hours, then it turns off; picking a length while Cocaine is off turns it on for that long; **When idle**:
-nothing, dim or screen off; **Battery Guard**: on battery, at 10–30 % turn Cocaine off or just warn; the Cocaine card with login,
-updates, language, *Show in the notch*, haptics, global shortcuts ⌃⌥⌘C on/off, ⌃⌥⌘O panel, ⌃⌥⌘P pause alerts, and *Shortcuts app
-and links*), *AI alerts* (the agents at work or the latest alerts, then the AIs, when and how), *Automation* (**Smart Triggers**: on
+nothing, dim or screen off, and *Screens off now*; **Battery Guard**: on battery, at 10–30 % turn Cocaine off or just warn; the
+Cocaine card with login, updates, language, *Show in the notch*, haptics and *Shortcuts app and links*; **Keyboard shortcuts**: on
+by default, ⌃⌥⌘C on/off, ⌃⌥⌘O the panel, ⌃⌥⌘P pause alerts, ⌃⌥⌘I the island; click one and type a new combination (Esc
+cancels, Delete removes it, *Reset to defaults*); they need no permission, a combination macOS or another app already uses is
+refused or marked *Used by another app*, and the names follow your keyboard layout), *AI alerts* (the agents at work or the latest alerts, then the AIs, when and how), *Automation* (**Smart Triggers**: on
 while an AI works or waits for you, while chosen programs run, on the charger or on battery down to Battery Guard's level, with an
 external display connected or not, or in a weekly time window; any or all must hold; off again after a short grace period; turning
 it off by hand wins; the header says which one turned Cocaine on, and a green dot marks the ones true now; then *Stay available* and
@@ -280,6 +306,10 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
   turned it on, or you changed it meanwhile, that is respected. Limits: after a power cut or forced restart sleep stays disabled
   until Cocaine opens again (or run `cocaine off`), and if Cocaine and its watchdog are killed together nothing can act until
   the next launch. [Details](docs/recovery.en.md).
+- Permissions, each asked only when a feature needs it: **Accessibility** (Stay available, and the volume/brightness keys with
+  *Replace system HUD*), **Automation** (Music and Spotify; Terminal and iTerm2 to go back to a session's tab), **Camera** (Mirror),
+  **Calendars** (Calendar), **Files and folders** (Downloads and the screenshot folder, for Files). What is missing is listed under
+  *Permissions* in the panel with an *Allow* button.
 - Questions, messages and the share list appear inside Cocaine's own panel or island, in the same design. What macOS owns stays
   macOS's: the admin-password prompt, the privacy permission questions, System Settings, and the windows AirDrop, Messages and
   Mail open after you pick them (Apple doesn't allow embedding those).
