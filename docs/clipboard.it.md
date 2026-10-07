@@ -1,44 +1,106 @@
 ### Appunti (isola)
 
-La pagina Appunti dell'isola tiene quello che copi: **testo** (il testo formattato diventa testo semplice), **immagini**
-(salvate come PNG, con anteprima) e **file** (come riferimenti a dove si trovano, mai copie; un file spostato o eliminato
-viene segnalato e non si può ricopiare). Clicca un elemento per rimetterlo negli appunti con il tipo giusto (testo,
-immagine o i file stessi per il Finder): sale in cima e non viene registrato di nuovo. Copiare due volte la stessa cosa
-non crea doppioni.
+La pagina Appunti dell'isola tiene ciò che copi: **testo** (con la sua formattazione, RTF e HTML, tenuta fino a 1 MB),
+**immagini** (salvate come PNG, con miniatura) e **file** (come riferimenti a dove si trovano, mai copie; un file spostato o
+eliminato viene segnalato e non si può più incollare). Copiare due volte la stessa cosa non crea mai doppioni.
 
-- **Cerca** filtra mentre scrivi (maiuscole e accenti indifferenti; testo, nomi e cartelle dei file, dimensioni delle
-  immagini, app di provenienza).
-- **Preferiti**: la stella tiene un elemento; i preferiti non contano nei limiti e non vengono mai tolti da questi. La
-  stella nella barra mostra solo i preferiti.
-- **Pausa** smette di registrare; quello che copi in pausa non viene tenuto, nemmeno dopo aver ripreso.
-- **Eliminare**: un elemento (×, o clic destro), *Svuota cronologia* (tiene i preferiti) o *Elimina tutto* (anche
-  preferiti, file salvati e la loro chiave nel Portachiavi).
+**Incollare.** Un clic seleziona un elemento; **doppio clic o A capo lo incollano nell'app che stavi usando** (Cocaine lo mette
+negli appunti, chiude l'isola e invia ⌘V a quell'app). Con ⇧ lo incolla nell'altro modo: senza formattazione, oppure con, se
+*Incolla senza formattazione* è attivo. ⌘1…⌘9 incollano i primi nove elementi mostrati (⇧⌘ per l'altra formattazione).
+Inviare ⌘V richiede il permesso **Accessibilità** che Cocaine già chiede (Resta attivo, i tasti dell'HUD); senza, l'elemento
+viene solo copiato e la pagina dice "Solo copia" con un pulsante *Consenti…*. Cocaine invia ⌘V e nient'altro, solo all'app
+che era in primo piano (se nel frattempo è passata in primo piano un'altra app, copia soltanto), e non osserva mai ciò che
+digiti.
 
-**Mai tenuti**: i contenuti che i gestori di password e altre app segnano come nascosti, temporanei o generati
-(marcatori di nspasteboard.org, quello di 1Password); quello che copi mentre in primo piano c'è un gestore di password
-(1Password, Bitwarden, KeePassXC, LastPass, Dashlane, Enpass, Strongbox, NordPass, Proton Pass, Accesso Portachiavi,
-Password); le app che escludi nelle Impostazioni; e, se non lo disattivi, il testo che sembra un numero di carta (con
-cifra di controllo valida) o una chiave/un token (blocchi di chiavi private, JWT, prefissi noti di chiavi API, stringhe
-lunghe e casuali). Puoi aggiungere espressioni regolari tue. Sono controlli euristici: prendono i casi comuni, non ogni
-segreto.
+**Più elementi insieme.** ⌘-clic e ⇧-clic (⇧↑ ⇧↓, ⌘A da tastiera) ne selezionano altri; la barra in basso offre allora
+*Incolla tutto* (nell'ordine in cui li hai scelti, uniti dal separatore scelto nelle Impostazioni: a capo, riga vuota, spazio,
+virgola, tab o niente; le immagini restano fuori), *Pila*, *Unisci* (un nuovo elemento di testo; gli originali restano),
+*Fissa*, *Elimina*. **Pila Incolla**: *Pila* mette in fila gli elementi; ogni pressione di **Incolla il prossimo** (⌃⌥⌘V di
+default, una sua scorciatoia globale, attiva solo mentre una pila aspetta) incolla il successivo. Nessun keylogger che osserva
+⌘V: è una scorciatoia di Cocaine.
 
-**Solo in memoria, di base.** La cronologia sta in memoria e sparisce quando esci da Cocaine o spegni l'isola.
-In Impostazioni → Isola → Appunti (la scheda Isola c’è quando l’isola è attiva) puoi attivare **Salva su questo Mac**: la cronologia viene allora tenuta in
-`~/Library/Application Support/Cocaine/clipboard`, cifrata (AES-GCM) con una chiave casuale nel tuo Portachiavi di login
-(solo questo Mac, mai sincronizzata), file leggibili solo da te. Se il Portachiavi non si può usare, non viene salvato
-nulla e la pagina lo dice. Disattivandolo ti chiede se eliminare la copia salvata (con la sua chiave) o tenerla cifrata
-per dopo. Niente esce mai dal Mac.
+**Dettagli** (Spazio, la ⓘ di una riga, o *Dettagli*): l'elemento in grande. Il testo scorre (a spaziatura fissa per codice e
+JSON); un colore (`#rrggbb`, `rgb()`) mostra un campione; un link mostra il suo dominio (nulla viene scaricato: niente titoli o
+icone dalla rete); un'immagine si adatta o si mostra a grandezza reale, con **Copia testo** (il testo che contiene, letto su
+questo Mac da Vision); i file mostrano nome, dimensione, cartella e icona, con **Quick Look** e Mostra nel Finder. Da lì:
+*Incolla*, *Copia*, **Modifica** (⌘E: salva come nuovo elemento o sostituisci; ⌘Z nell'editor, e ⌘Z nell'elenco rimette un
+testo sostituito), **Rinomina** (⌘R: un nome mostrato al posto del contenuto), *Incolla come…* (MAIUSCOLO, minuscolo, Iniziali
+Maiuscole, togli spazi, unisci righe, ordina, togli righe doppie, formatta o compatta JSON, codifica/decodifica URL e Base64,
+togli il tracciamento dai link), *Fissa in…*, *Elimina*. Un testo formattato ha un selettore *Formattato / Semplice* per
+quell'incolla. Su macOS 15.1 e successivi con Apple Intelligence l'editor offre gli Strumenti di scrittura.
 
-**Limiti** (Impostazioni): quanti elementi (25–500), per quanto tempo (da 1 ora a 30 giorni, o nessun limite), spazio
-totale (10–250 MB) ed elemento più grande (1–25 MB). Si applicano mentre copi, al caricamento e circa una volta al minuto.
+**Bacheche**: raccolte con nome (Preferiti è la stella); vedi [pinboards.it.md](pinboards.it.md). Le etichette in cima alla pagina
+mostrano una bacheca (⌥1…⌥9, ⌘[ ⌘]) o un tipo (testo, immagini, file, link, colori); trascina gli elementi su un'etichetta per
+fissarli.
 
-**Limiti della funzione**: gli appunti vengono controllati poco più di una volta al secondo (non mentre schermi o Mac dormono); se l'app che copia non lo
-dichiara, come provenienza si usa l'app in primo piano, quindi un'app che copia in background può essere attribuita a
-un'altra. Con una build firmata ad hoc (senza identità di firma locale) macOS richiede di nuovo l'accesso al
-Portachiavi dopo ogni aggiornamento; se lo rifiuti, non viene salvato nulla. Eliminare i file non garantisce che i byte
-siano cancellati da un SSD: a rendere illeggibile la cronologia eliminata è il fatto che viene eliminata anche la sua
-chiave. Il campo di ricerca prende la tastiera mentre la pagina Appunti è aperta: ↑ e ↓ scorrono gli elementi e A capo ne
-copia uno (anche con l’isola aperta da ⌃⌥⌘I). Con VoiceOver ogni elemento offre le azioni Elimina e preferito. Con *Salva su
-questo Mac* attivo, le immagini restano solo nei loro file cifrati, non anche in memoria.
+**Cerca** filtra mentre scrivi (maiuscole e accenti indifferenti; testo, nomi, nomi di file e cartelle, dimensione delle
+immagini, testo trovato nelle immagini, app di origine) e capisce alcuni filtri: `type:image|text|file|link|color`,
+`app:Safari`, `from:device` o `from:mac`, `board:Prompts` (virgolette per gli spazi: `board:"La mia bacheca"`),
+`date:today|yesterday|3h|7d|2w`. Anche digitare mentre l'elenco ha la tastiera lo filtra.
 
-**Se la cronologia salvata non si può leggere** (danneggiata, scritta con un'altra chiave o da una versione più recente), Cocaine sposta l'indice e le sue immagini insieme in una cartella `unreadable-<ora>` accanto, riparte vuota e non le cancella mai; se nemmeno questo riesce, non salva nulla. Se il Portachiavi rifiuta l'accesso all'avvio, il salvataggio si ferma solo per quell'avvio.
+**Suggerimenti.** Senza nulla digitato, fino a due elementi segnati ✦ vengono per primi: ciò che hai già incollato nell'app in
+primo piano, ciò che vi hai copiato e la bacheca che le hai associato (Impostazioni → Isola → Bacheche → *Suggerito per primo
+in*). Cocaine usa solo ciò che già sa; non legge nulla dalle altre app e non serve Registrazione schermo.
+
+**Altri dispositivi.** Una copia che arriva da iPhone, iPad o un altro Mac tramite Appunti universali è indicata come *Un altro
+dispositivo* (mai l'app che per caso era in primo piano); *Copie da altri dispositivi* le può escludere.
+
+**Testo nelle immagini.** Spento di default: con *Trova testo nelle immagini* ogni nuova immagine viene letta su questo Mac
+(Vision, in background, non in Modalità risparmio energetico) e il suo testo resta con lei per la ricerca, con ciò che sembra
+una chiave, un token o un numero di carta mascherato, al massimo 4.000 caratteri. *Copia testo* funziona comunque, su richiesta.
+
+**Annulla.** Eliminare un elemento, una selezione o *Svuota cronologia* si può annullare per qualche secondo (*Annulla* in
+basso, o ⌘Z). **Pausa** smette di registrare, per 15 minuti, un'ora, fino a domani o finché riprendi.
+
+**Mai tenuto**: ciò che i gestori di password e altre app segnano come nascosto, temporaneo o generato (indicatori di
+nspasteboard.org, l'indicatore di 1Password); qualsiasi cosa copiata mentre un gestore di password è in primo piano; le app che
+escludi nelle Impostazioni; e, a meno che lo spegni, testo che sembra un numero di carta o una chiave/token. Puoi aggiungere le
+tue espressioni regolari. Sono euristiche: colgono i casi comuni, non ogni segreto.
+
+**Solo in memoria di default.** La cronologia vive in memoria e sparisce quando Cocaine si chiude o l'isola si spegne; ciò che
+**fissi in una bacheca è sempre salvato** (vedi bacheche). Con **Salva su questo Mac** tutta la cronologia è salvata in
+`~/Library/Application Support/Cocaine/clipboard`, cifrata (AES-GCM) con una chiave casuale tenuta nel tuo Portachiavi di login
+(solo questo Mac, mai sincronizzata), file leggibili solo da te. Se il Portachiavi non si può usare, nulla viene salvato e la
+pagina lo dice. Spegnerlo chiede se eliminare la cronologia salvata (le bacheche restano) o tenerla cifrata per dopo. Nulla
+lascia mai il Mac.
+
+**Limiti** (Impostazioni): quanti elementi (25–500), per quanto tempo (da 1 ora a 30 giorni, o senza limite), spazio totale
+(10–250 MB) e il singolo elemento più grande (1–25 MB; la formattazione che non ci sta viene tolta, non il testo). Gli
+elementi fissati non contano mai.
+
+**Nascondi dalla condivisione schermo** (spento di default) segna la finestra dell'isola come non catturabile mentre mostra gli
+appunti. macOS lo rispetta per le istantanee e la maggior parte delle app di registrazione e condivisione; qualche strumento di
+cattura potrebbe registrarla comunque, quindi non affidartici per i segreti.
+
+**Riga di comando**: `cocaine clip list|get|put|paste` (Terminale, script, *Esegui script shell* di Comandi Rapidi). Spenta
+di default (Impostazioni → Isola → Appunti → *Riga di comando*): *Solo aggiunta* permette `put`; *Completo* anche la lettura
+(`list`, `get`) e `paste`. Parla con l'app aperta tramite un socket che esiste solo finché è permesso (0600, in una cartella
+privata, solo lo stesso utente, ogni richiesta firmata con una chiave propria dell'installazione e mai accettata due volte).
+Non c'è un link `cocaine://` per gli appunti: una pagina web non può mai leggerli né incollarli.
+
+    cocaine clip list [--board NOME] [--limit N] [--json]
+    cocaine clip get [N | --id ID] [--board NOME]
+    cocaine clip put [--board NOME] [--title TITOLO] [--copy] [TESTO…]     (senza TESTO: lo standard input)
+    cocaine clip paste [N | --id ID] [--board NOME] [--plain]
+
+Il filtro dei segreti e i tuoi pattern valgono anche per `put`.
+
+**Tastiera** (con l'isola aperta da ⌃⌥⌘I, o il campo di ricerca attivo): ↑ ↓ si spostano, A capo / ⇧A capo incollano, ⌘1…9
+incolla rapido, ⇧↑ ⇧↓ ⌘A selezionano, Spazio dettagli, ⌘C copia, ⌘E modifica, ⌘R rinomina, Elimina elimina (o corregge ciò che
+hai digitato), ⌘Z annulla, ⌥0…9 e ⌘[ ⌘] bacheche, Esc toglie la selezione, esce dai dettagli o chiude. VoiceOver: attivare una
+riga la incolla; le sue azioni sono Copia, Dettagli, Seleziona, Fissa in…, Elimina. Il modulo può essere S (gli elementi più
+recenti), M (ricerca ed elenco) o L.
+
+**Limiti di questa funzione**: gli appunti vengono controllati poco più di una volta al secondo (non mentre gli schermi o il Mac
+dormono); quando l'app che copia non lo dice, l'origine è l'app in primo piano. Alcune app (desktop remoti, giochi, qualche app
+Electron) ignorano un ⌘V sintetico: allora premi ⌘V tu. Quick Look apre il pannello di sistema; con l'isola potrebbe non
+prendere la tastiera finché non ci clicchi. Con una build firmata ad hoc, macOS chiede di nuovo l'accesso al Portachiavi dopo
+ogni aggiornamento; se rifiuti, nulla viene salvato. Eliminare file non garantisce che i byte vengano cancellati da un SSD: ciò
+che rende illeggibile una cronologia eliminata è che anche la sua chiave viene eliminata. Gli Appunti universali (di Apple)
+richiedono i dispositivi vicini con Handoff attivo; se le copie scritte da Cocaine vengano offerte all'iPhone non è stato
+verificato su un dispositivo.
+
+**Se la cronologia salvata non si può leggere** (danneggiata, un'altra chiave o una versione più recente), Cocaine la sposta con
+i suoi file in una cartella `unreadable-<ora>` accanto, riparte vuota e non li elimina mai; lo stesso per il file delle bacheche.
+Le cronologie salvate più vecchie (2.6 e precedenti, schema 1) vengono lette così come sono e riscritte nel nuovo formato al
+salvataggio successivo; i loro preferiti diventano la bacheca Preferiti.
