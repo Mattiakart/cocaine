@@ -1,5 +1,9 @@
 # Build and verify on every push and pull request; verify published release artifacts on demand or when a release is
 # published. Nothing here signs with a real identity, notarizes, uploads or publishes anything.
+#
+# Toolchain: pinned. The macos-14 image's default Xcode 15.4 (Swift 5.10) gave up type-checking an expression in 2.3.0 and
+# 2.4.0 ("unable to type-check this expression in reasonable time"), so every app suite was skipped. The job selects one
+# named Xcode and fails at once, saying so, if the image doesn't have it (update XCODE below when GitHub retires it).
 name: CI
 
 on:
@@ -18,17 +22,22 @@ on:
 permissions:
   contents: read
 
+env:
+  XCODE: /Applications/Xcode_16.4.app
+
 jobs:
   verify:
-    runs-on: macos-14
-    timeout-minutes: 30
+    runs-on: macos-15
+    timeout-minutes: 45
     env:
       CI: "true"
       VERIFY_SIGN: adhoc   # the runner has no signing identity; tests needing one print SKIP (CI)
     steps:
       - uses: actions/checkout@v4
-      - name: Toolchain
+      - name: Toolchain (pinned)
         run: |
+          test -d "$XCODE" || { echo "::error::$XCODE isn't on this runner image: pick one from 'ls /Applications | grep Xcode' and update XCODE in ci.yml"; ls /Applications | grep Xcode; exit 1; }
+          sudo xcode-select -s "$XCODE"
           sw_vers
           swiftc --version
       - name: verify.sh
@@ -36,11 +45,14 @@ jobs:
 
   release-verification:
     # Manual, or when a release (its v* tag) is published; not on the bare tag push, which usually comes before the assets
-    # are uploaded. Downloads the release's DMG and signed manifest (read-only) and checks them against the public key in
-    # the tagged source and against the declared signing tier.
+    # are uploaded. Downloads the release's DMG and, when there is one, its signed manifest (read-only) and checks them
+    # against the public key in the tagged source and against the declared signing tier.
+    # Releases published without a manifest (2.3.0 and 2.4.0: their source has no update key, so their copies can't update
+    # themselves anyway) are checked as far as they can be and reported with a warning; a release whose source HAS a key
+    # but no manifest was published fails (installed copies couldn't install it).
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
     needs: verify
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       CI: "true"
@@ -50,20 +62,37 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+      - name: Toolchain (pinned)
+        run: |
+          test -d "$XCODE" || { echo "::error::$XCODE isn't on this runner image"; exit 1; }
+          sudo xcode-select -s "$XCODE"
       - name: Tag matches Info.plist
         run: |
           v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
           test "v$v" = "$TAG" || { echo "Info.plist says $v but the tag is $TAG"; exit 1; }
       - name: Build (ad hoc; only to get this commit's verifier and embedded key)
-        run: ./build.sh --no-install --sign adhoc
+        run: COCAINE_NO_NEW_IDENTITY=1 ./build.sh --no-install --sign adhoc
       - name: Download the published release assets
-        id: dl
         run: |
           mkdir -p dist
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG isn't published yet: run this job again (workflow_dispatch) after publishing."
             exit 1
           fi
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "Cocaine-*.dmg" --pattern "Cocaine-*.dmg.manifest.json"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "Cocaine-*.dmg"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "Cocaine-*.dmg.manifest.json" || true
       - name: Verify DMG, signed manifest and declared tier
-        run: zsh tools/check-release.sh "dist/Cocaine-${TAG#v}.dmg"
+        run: |
+          DMG="dist/Cocaine-${TAG#v}.dmg"
+          BIN=build.noindex/Cocaine.app/Contents/MacOS/Cocaine
+          [ -x "$BIN" ] || BIN=build/Cocaine.app/Contents/MacOS/Cocaine            # tags older than build.noindex
+          if [ -f "$DMG.manifest.json" ]; then
+            COCAINE_BIN="$BIN" zsh tools/check-release.sh "$DMG"
+          elif grep -q 'publicKeyBase64 = ""' Sources/UpdateKey.swift; then
+            echo "::warning::$TAG was published without a signed manifest (its source has no update key): its copies can't update themselves."
+            if grep -q COCAINE_NO_MANIFEST tools/check-release.sh; then COCAINE_BIN="$BIN" COCAINE_NO_MANIFEST=1 zsh tools/check-release.sh "$DMG"
+            else hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/mnt" "$DMG" && codesign --verify --deep --strict "$RUNNER_TEMP/mnt/Cocaine.app"; fi
+          else
+            echo "::error::$TAG's source embeds an update key but the release has no $DMG.manifest.json: run tools/release-sign.sh and upload the manifest."
+            exit 1
+          fi

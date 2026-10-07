@@ -61,21 +61,26 @@ struct SemVer: Comparable, CustomStringConvertible {
 
 /// The file published next to each DMG (`Cocaine-<version>.dmg.manifest.json`). The Ed25519 signature covers every other
 /// field, so a manifest can't be moved to another DMG, version or build, and an old one can't pass for a new release.
+/// Format 2 also signs the designated requirement of the app inside (`requirement`), so a copy signed with another
+/// certificate learns before downloading that this release can't replace it (macOS would refuse it as another app).
 struct UpdateManifest: Codable, Equatable {
-    var format = 1
+    var format = 2
     var version: String
     var build: Int
     var sha256: String          // lowercase hex of the DMG
     var size: Int64             // bytes of the DMG
     var tier: String            // SigningTier raw value of the app inside, as found by release-sign.sh
     var asset: String           // the DMG's file name
+    var requirement: String? = nil   // format 2: the app's designated requirement (`codesign -d -r-`), as text
     var signature: String = ""  // base64 Ed25519 over `signedMessage`
 
     static let maxDMGSize: Int64 = 300 * 1024 * 1024
     static let maxManifestSize = 16 * 1024
 
     var signedMessage: Data {
-        Data("cocaine-update-v1\nversion=\(version)\nbuild=\(build)\nsha256=\(sha256)\nsize=\(size)\ntier=\(tier)\nasset=\(asset)\n".utf8)
+        let base = "version=\(version)\nbuild=\(build)\nsha256=\(sha256)\nsize=\(size)\ntier=\(tier)\nasset=\(asset)\n"
+        if format == 1 { return Data(("cocaine-update-v1\n" + base).utf8) }
+        return Data(("cocaine-update-v2\n" + base + "requirement=\(requirement ?? "")\n").utf8)
     }
 
     func signed(with key: Curve25519.Signing.PrivateKey) throws -> UpdateManifest {
@@ -101,6 +106,7 @@ enum UpdateRejection: Error, Equatable {
     case malformed(String)
     case badSignature            // tampered, or signed with another key
     case notNewer(String)        // a downgrade, or an old release replayed
+    case staleBuild(String)      // a newer version whose build number isn't higher: a release mistake, never "up to date"
     case mismatch(String)        // signed fields don't match the release it came with
 }
 
@@ -114,7 +120,8 @@ enum UpdateVerifier {
     static func check(_ m: UpdateManifest, key: Curve25519.Signing.PublicKey?, currentVersion: String, currentBuild: Int,
                       release: ReleaseInfo? = nil) -> Result<SemVer, UpdateRejection> {
         guard let key else { return .failure(.noKey) }
-        guard m.format == 1 else { return .failure(.malformed("format \(m.format)")) }
+        guard m.format == 1 || m.format == 2 else { return .failure(.malformed("format \(m.format)")) }
+        guard m.format == 2 || m.requirement == nil else { return .failure(.malformed("format 1 with a requirement")) }
         guard let sig = Data(base64Encoded: m.signature), sig.count == 64 else { return .failure(.badSignature) }
         guard key.isValidSignature(sig, for: m.signedMessage) else { return .failure(.badSignature) }
         // Only signed fields from here on.
@@ -124,7 +131,7 @@ enum UpdateVerifier {
         guard m.asset == "Cocaine-\(m.version).dmg" else { return .failure(.mismatch("asset \(m.asset)")) }
         guard let cur = SemVer(currentVersion) else { return .failure(.malformed("running version \(currentVersion)")) }
         guard v > cur else { return .failure(.notNewer("\(v) is not newer than \(cur)")) }
-        guard m.build > currentBuild else { return .failure(.notNewer("build \(m.build) is not newer than \(currentBuild)")) }
+        guard m.build > currentBuild else { return .failure(.staleBuild("\(v) has build \(m.build), not newer than \(currentBuild)")) }
         if let release {
             guard release.version == v else { return .failure(.mismatch("release \(release.version) carries a manifest for \(v)")) }
             guard release.dmg.name == m.asset, release.dmg.size == m.size else { return .failure(.mismatch("DMG asset name or size")) }

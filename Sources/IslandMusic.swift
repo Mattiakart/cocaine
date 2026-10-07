@@ -63,7 +63,7 @@ final class MusicWatch: ObservableObject {
     @Published var lyrics: [Line] = []
     @Published var lyricsState = LyricsState.idle
     @Published var denied = false
-    @Published var lyricsOn = UserDefaults.standard.bool(forKey: "islandLyrics")
+    @Published var lyricsOn = AppDefaults.store.bool(forKey: "islandLyrics")
     private(set) var position = 0.0
     private(set) var fetched = Date()
     private var timer: Timer?
@@ -130,7 +130,7 @@ final class MusicWatch: ObservableObject {
 
     func setLyrics(_ on: Bool) {
         lyricsOn = on
-        UserDefaults.standard.set(on, forKey: "islandLyrics")
+        AppDefaults.store.set(on, forKey: "islandLyrics")
         lyricsFor = ""
         if on, let t = track { loadLyrics(t) } else { lyrics = []; lyricsState = .idle }
     }

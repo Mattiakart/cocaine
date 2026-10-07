@@ -181,7 +181,8 @@ enum Installer {
     }
 
     /// Leftovers of an update that finished (the running app is fine) or was interrupted: rollback copies, staging folders,
-    /// stale mounts. Called at launch.
+    /// stale mounts. Called at launch, except while a new version still has to prove it runs (UpdateHealth): its rollback
+    /// copy is the relauncher's to keep or delete.
     static func cleanupLeftovers(near installed: URL) {
         let fm = FileManager.default
         let parent = installed.deletingLastPathComponent()
@@ -194,29 +195,84 @@ enum Installer {
         }
     }
 
-    /// The helper that starts the new version once this process has quit, and puts the previous version back (and starts
-    /// that) if the new one can't be opened. Gives up after 60 s if this process doesn't quit (the update stays installed).
+    /// The helper that starts the new version once this process has quit and waits for it to prove it runs (UpdateHealth's
+    /// mark, written 20 s after it starts or when it quits earlier). If it can't be opened, crashes, or hasn't written the
+    /// mark within `wait` s, the new version is ended (if it still runs), the previous one is put back and opened (exit 4).
+    /// Once the mark is there the rollback copy is deleted (exit 0). It waits up to 10 min for this process to quit (exit 3).
     static let relaunchScript = """
-    pid="$1"; app="$2"; backup="$3"; opener="$4"; i=0
-    while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && exit 3; sleep 0.1; done
-    "$opener" "$app" && exit 0
-    if [ -d "$backup" ]; then
-      /bin/mv "$app" "$app.failed.$$" && /bin/mv "$backup" "$app" && /bin/rm -rf "$app.failed.$$"
-    fi
-    "$opener" "$app"
-    exit 4
+    pid="$1"; app="$2"; backup="$3"; opener="$4"; mark="$5"; build="$6"; wait="$7"; i=0
+    while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 6000 ] && exit 3; sleep 0.1; done
+    rollback() {
+      exe="$app/Contents/MacOS/Cocaine"
+      for p in $(/usr/bin/pgrep -U "$(id -u)" -xf "$exe( .*)?"); do kill -TERM "$p" 2>/dev/null; done
+      sleep 1
+      if [ -d "$backup" ]; then
+        /bin/mv "$app" "$app.failed.$$" && /bin/mv "$backup" "$app" && /bin/rm -rf "$app.failed.$$"
+      fi
+      "$opener" "$app"
+      exit 4
+    }
+    /bin/rm -f "$mark"
+    "$opener" "$app" || rollback
+    i=0
+    while [ "$i" -lt $((wait * 10)) ]; do
+      if [ -f "$mark" ] && [ "$(/bin/cat "$mark")" = "build=$build" ]; then
+        case "$backup" in */.cocaine-update-*/*) /bin/rm -rf "${backup%/*}" ;; esac
+        exit 0
+      fi
+      i=$((i+1)); sleep 0.1
+    done
+    rollback
     """
 
+    /// Starts the relauncher in its own session (it must outlive this app, whose quit it waits for). Returns its pid.
     @discardableResult
-    static func launchRelauncher(pid: Int32, app: URL, backup: URL, opener: String = "/usr/bin/open") -> Process? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", relaunchScript, "cocaine-relaunch", String(pid), app.path, backup.path, opener]
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        return p
+    static func launchRelauncher(pid: Int32, app: URL, backup: URL, build: Int, opener: String = "/usr/bin/open",
+                                 wait: Int = UpdateHealth.timeout) -> pid_t? {
+        Detached.spawn(["/bin/sh", "-c", relaunchScript, "cocaine-relaunch", String(pid), app.path, backup.path, opener,
+                        UpdateHealth.markFile.path, String(build), String(wait)])
+    }
+}
+
+/// After an in-app update the new version proves it runs: the old one writes health-pending ("build=<new>") before it
+/// quits; the new one writes health-ok with its build 20 s after it starts (or when it quits sooner); the relauncher waits
+/// for that and otherwise puts the old version back. The old version, finding a pending build newer than itself and no
+/// mark, knows it was put back and says so.
+enum UpdateHealth {
+    static var pendingFile: URL { UpdateFiles.directory.appendingPathComponent("health-pending") }
+    static var markFile: URL { UpdateFiles.directory.appendingPathComponent("health-ok") }
+    static var delay: Double { Double(ProcessInfo.processInfo.environment["COCAINE_HEALTH_DELAY"] ?? "") ?? 20 }
+    static var timeout: Int { Int(ProcessInfo.processInfo.environment["COCAINE_HEALTH_TIMEOUT"] ?? "") ?? 120 }
+
+    static func read(_ url: URL) -> Int? {
+        guard let s = try? String(contentsOf: url, encoding: .utf8), s.hasPrefix("build=") else { return nil }
+        return Int(s.dropFirst(6).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// The old version, right before it quits for the new one.
+    static func expect(build: Int) {
+        try? UpdateFiles.makePrivate(UpdateFiles.directory)
+        try? FileManager.default.removeItem(at: markFile)
+        try? Data("build=\(build)".utf8).write(to: pendingFile, options: .atomic)
+    }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: pendingFile)
+    }
+
+    enum Launch: Equatable { case normal, proveHealth, rolledBack }
+    /// What this launch is, from the pending file: the new version still on probation, the old one put back, or neither.
+    static func launch(currentBuild: Int, pending: Int?, mark: Int?) -> Launch {
+        guard let pending else { return .normal }
+        if pending == currentBuild { return mark == currentBuild ? .normal : .proveHealth }
+        if pending > currentBuild && mark != pending { return .rolledBack }
+        return .normal
+    }
+
+    /// The new version: it runs.
+    static func writeMark(build: Int) {
+        try? Data("build=\(build)".utf8).write(to: markFile, options: .atomic)
+        clear()
     }
 }
 
@@ -228,6 +284,7 @@ enum UpdateEligibility: Equatable {
     case unsignedBuild(SigningTier)
     case notInstalled            // running from the disk image, a translocated copy or the build folder
     case notWritable(String)
+    case otherSigner             // the release is signed with another certificate: it couldn't replace this copy
 
     static func of(bundle: URL, tier: SigningTier, hasKey: Bool, caskrooms: [String] = Homebrew.caskrooms) -> UpdateEligibility {
         if Homebrew.manages(bundle: bundle, caskrooms: caskrooms) { return .homebrew }
@@ -236,8 +293,21 @@ enum UpdateEligibility: Equatable {
         let path = bundle.path
         let readOnly = (try? bundle.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false   // the mounted .dmg
         if path.contains("/AppTranslocation/") || readOnly || !path.hasSuffix(".app") { return .notInstalled }
+        // A build folder (build.sh's, Xcode's) is a developer's copy, not an installed one.
+        let parts = bundle.deletingLastPathComponent().pathComponents
+        if parts.contains(where: { $0 == "build" || $0 == "build.noindex" || $0 == "DerivedData" || $0 == ".build" }) { return .notInstalled }
         let parent = bundle.deletingLastPathComponent().path
         if access(parent, W_OK) != 0 { return .notWritable(parent) }
+        // The swap moves the bundle itself to another folder, which needs write access to the bundle too.
+        if access(path, W_OK) != 0 { return .notWritable(path) }
         return .ok
+    }
+
+    /// A format-2 manifest names the release's designated requirement: one that isn't this copy's is a different signer
+    /// (another Mac's local certificate, or a switch to Developer ID), and installing would fail the identity check.
+    static func signerMatches(release: String?, running: String?) -> Bool {
+        guard let release, !release.isEmpty else { return true }       // format 1: decided after the download, as before
+        guard let running else { return false }
+        return release == running
     }
 }

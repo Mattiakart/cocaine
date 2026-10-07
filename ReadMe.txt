@@ -26,7 +26,7 @@ USE
   or trackpad), or turn the screens fully off while the Mac keeps running (General > When idle > Screen off).
 - "Open at login" starts Cocaine every time you log in. Opening the app turns Cocaine on, and quitting it
   (Quit, Cmd-Q, logging out, shutting down, kill or a crash) puts sleep back as it was before.
-  After a power cut, sleep stays disabled until Cocaine opens again.
+  After a power cut, sleep stays disabled until Cocaine opens again (or run: cocaine off).
 
 GOOD TO KNOW
 - While Cocaine is on your Mac doesn't lock by itself, even with the lid closed. Lock it with Control-Command-Q

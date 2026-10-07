@@ -29,14 +29,14 @@ enum PhoneLink {
 
     /// The relay server: ntfy.sh unless the `relayURL` default points to another (https) ntfy server.
     static var relay: String {
-        let v = UserDefaults.standard.string(forKey: "relayURL") ?? ""
+        let v = AppDefaults.store.string(forKey: "relayURL") ?? ""
         return v.hasPrefix("https://") ? v.trimmingCharacters(in: CharacterSet(charactersIn: "/")) : "https://ntfy.sh"
     }
 
     /// Until when old (plain-text, unauthenticated) Shortcuts are still answered — basic commands only. Off by default.
     static var legacyUntil: Date? {
-        get { let v = UserDefaults.standard.double(forKey: "remoteLegacyUntil"); return v > Date().timeIntervalSince1970 ? Date(timeIntervalSince1970: v) : nil }
-        set { if let n = newValue { UserDefaults.standard.set(n.timeIntervalSince1970, forKey: "remoteLegacyUntil") } else { UserDefaults.standard.removeObject(forKey: "remoteLegacyUntil") } }
+        get { let v = AppDefaults.store.double(forKey: "remoteLegacyUntil"); return v > Date().timeIntervalSince1970 ? Date(timeIntervalSince1970: v) : nil }
+        set { if let n = newValue { AppDefaults.store.set(n.timeIntervalSince1970, forKey: "remoteLegacyUntil") } else { AppDefaults.store.removeObject(forKey: "remoteLegacyUntil") } }
     }
 
     static func load(_ at: URL = file) -> [Pairing] { loadChecked(at) ?? [] }
@@ -140,7 +140,7 @@ enum WakeSchedule {
         let date = Date().addingTimeInterval(Double(minutes) * 60)
         RecoverySession.shared.noteWake(date.timeIntervalSince1970)   // before: a crash right after still cancels it
         guard pmset(["schedule", "wake", format(date), owner]) else { RecoverySession.shared.noteWake(nil); return false }
-        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: key)
+        AppDefaults.store.set(date.timeIntervalSince1970, forKey: key)
         return true
     }
 
@@ -175,10 +175,10 @@ enum WakeSchedule {
     }
 
     static func cancel() {
-        let t = UserDefaults.standard.double(forKey: key)
+        let t = AppDefaults.store.double(forKey: key)
         guard t > 0 else { RecoverySession.shared.noteWake(nil); return }
         _ = pmset(["schedule", "cancel", "wake", format(Date(timeIntervalSince1970: t)), owner])
-        UserDefaults.standard.removeObject(forKey: key)
+        AppDefaults.store.removeObject(forKey: key)
         RecoverySession.shared.noteWake(nil)
     }
 }

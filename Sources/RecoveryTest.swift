@@ -3,8 +3,10 @@ import Darwin
 
 // Tests for Sources/Recovery.swift: the pure decisions (in --selftest) and --recovery-test, which runs the real engine,
 // the real watchdog and real processes against stand-ins in a temporary folder: a fake pmset/sudo keeping SleepDisabled
-// in a file, a fake brightness file, and a copy of /bin/sleep standing in for OSDUIHelper. Nothing on this Mac changes
-// (the real OSDUIHelper, pmset, brightness and the user's Cocaine are never touched).
+// in a file, a fake caffeinate, a fake brightness file, and a copy of this binary standing in for OSDUIHelper. It first
+// copies the app bundle it was started from into that folder and runs from the copy, so every process it starts, finds or
+// kills is one of its own (engine paths, support folder and helper pids all inside the temporary folder): the user's
+// Cocaine, watchdog and display-hold helper are never touched, nor the real OSDUIHelper, pmset, caffeinate or brightness.
 
 enum RecoveryTest {
     /// Pure decisions and the lease file; one `check` line each.
@@ -42,6 +44,13 @@ enum RecoveryTest {
         check("recovery: brightness the user lowered is kept (the old rule restored it)",
               !Recovery.shouldRestoreBrightness(current: 0.05, from: 0.8, to: 0.2) && Float(0.05) < 0.8)
         check("recovery: brightness already back is left alone", !Recovery.shouldRestoreBrightness(current: 0.8, from: 0.8, to: 0.2))
+        check("recovery: release status 0 is done, 4 later, anything else keeps the lease (69)",
+              RecoveryCLI.released(0) == 0 && RecoveryCLI.released(4) == 75 && RecoveryCLI.released(2) == 69 && RecoveryCLI.released(127) == 69)
+        // A wake is written in the time zone of the moment pmset reads it: the same instant reads differently elsewhere.
+        let t = 1_800_000_000.0
+        check("recovery: the wake time follows the time zone (pmset reads local time)",
+              Recovery.wakeString(t, timeZone: TimeZone(identifier: "UTC")) == "01/15/27 08:00:00"
+              && Recovery.wakeString(t, timeZone: TimeZone(identifier: "America/New_York")) == "01/15/27 03:00:00")
         // The lease file: round trip and permissions, in a temporary folder.
         let dir = NSTemporaryDirectory() + "cocaine-lease-\(getpid())"
         mkdir(dir, 0o700)
@@ -54,21 +63,65 @@ enum RecoveryTest {
         var st = stat()
         check("recovery: the lease file is private (0600)", stat(path, &st) == 0 && st.st_mode & 0o777 == 0o600)
         let json = String(decoding: FileManager.default.contents(atPath: path) ?? Data(), as: UTF8.self)
-        check("recovery: the lease has the fields the zsh fallback reads", json.contains("\"owner\":42,") && json.contains("\"hudFrozen\":true") && json.contains("\"ownsSleep\":true"))
+        check("recovery: the lease has the fields the zsh fallback reads", json.contains("\"owner\":42,") && json.contains("\"hudFrozen\":true")
+              && json.contains("\"ownsSleep\":true") && json.contains("\"wake\":1800000900"))
         check("recovery: no temporary file is left next to it", (try? FileManager.default.contentsOfDirectory(atPath: dir))?.filter { $0.hasPrefix("recovery.json.") }.isEmpty == true)
+        let older = "{\"owner\":42,\"ownerStart\":1,\"ownsSleep\":true,\"hudFrozen\":true,\"dim\":[]}"
+        try? older.write(toFile: path, atomically: true, encoding: .utf8)
+        check("recovery: a lease written by an older version (no hudPids) still reads", Recovery.readLease()?.hudPids == nil && Recovery.readLease()?.owner == 42)
         Recovery.removeLease()
         check("recovery: a missing lease reads as none", Recovery.readLease() == nil)
         try? FileManager.default.removeItem(atPath: dir)
         if let saved { setenv("COCAINE_SUPPORT", saved, 1) } else { unsetenv("COCAINE_SUPPORT") }
+        // The bundle watch: same file, gone, or another file at the same path.
+        let f = NSTemporaryDirectory() + "cocaine-bundle-\(getpid())"
+        FileManager.default.createFile(atPath: f, contents: Data("a".utf8))
+        var s0 = stat(); stat(f, &s0)
+        let stamp = (dev: s0.st_dev, ino: s0.st_ino)
+        let same = RecoverySession.bundleState(path: f, stamp: stamp)
+        FileManager.default.createFile(atPath: f + ".new", contents: Data("b".utf8)); rename(f + ".new", f)
+        let replaced = RecoverySession.bundleState(path: f, stamp: stamp)
+        unlink(f)
+        check("recovery: the app notices its own bundle replaced or deleted",
+              same == .same && replaced == .replaced && RecoverySession.bundleState(path: f, stamp: stamp) == .gone)
+
+        // Settings: this flag runs on memory-only settings, and nothing written there reaches a preferences domain.
+        check("settings: test flags run with memory-only settings (AppDefaults)", AppDefaults.isolated && AppDefaults.store is MemoryDefaults
+              && Settings().d === AppDefaults.store)
+        let m = MemoryDefaults(), key = "cocaineSelftest\(getpid())"
+        m.set("s", forKey: key + "s"); m.set(7, forKey: key + "i"); m.set(Float(1.5), forKey: key + "f"); m.set(2.5, forKey: key + "d")
+        m.set(true, forKey: key + "b"); m.set(URL(fileURLWithPath: "/tmp"), forKey: key + "u"); m.set(["a"], forKey: key + "a")
+        let reachedDomain = ["s", "i", "f", "d", "b", "u", "a"].contains { UserDefaults.standard.object(forKey: key + $0) != nil
+            || CFPreferencesCopyAppValue((key + $0) as CFString, kCFPreferencesCurrentApplication) != nil }
+        check("settings: every kind of value set in memory stays there", !reachedDomain && m.string(forKey: key + "s") == "s" && m.integer(forKey: key + "i") == 7
+              && m.float(forKey: key + "f") == 1.5 && m.double(forKey: key + "d") == 2.5 && m.bool(forKey: key + "b") && m.url(forKey: key + "u")?.path == "/tmp"
+              && m.stringArray(forKey: key + "a") == ["a"])
+        check("settings: only the flags that act for real keep the real store",
+              AppDefaults.realFlags.contains("--agent-request") && AppDefaults.realFlags.contains("--uninstall-cleanup") && !AppDefaults.realFlags.contains("--render-panel")
+              && !AppDefaults.realFlags.contains("--selftest"))
     }
 
     // MARK: - The stand-in app for --recovery-test
 
-    /// `--recovery-owner [on] [hud] [wake <epoch>] [dim id:from:to]…`: behaves like the app's session (instance lock, lease,
-    /// real watchdog, heartbeat) and quits like the app on SIGTERM.
+    /// `--recovery-owner [on] [hud] [nowatch] [takeover] [wake <epoch>] [dim id:from:to]…`: behaves like the app's session
+    /// (instance lock, lease, real watchdog, heartbeat, bundle watch) and quits like the app on SIGTERM or when its bundle
+    /// goes away. `nowatch`: doesn't notice its bundle going (a hung or older instance); `takeover`: claims the instance lock
+    /// as a normal launch does (ending an instance whose app was deleted, asking a running one to show its panel).
     static func owner(_ args: [String]) -> Never {
         let wait = Double(Recovery.env["COCAINE_INSTANCE_WAIT"] ?? "") ?? 10
-        guard Recovery.claimSingleInstance(wait: wait, runningApps: false) else { exit(3) }
+        let dir = Recovery.env["COCAINE_TEST_DIR"] ?? "/tmp"
+        guard Recovery.claimSingleInstance(wait: wait, runningApps: false, takeOver: args.contains("takeover")) else { exit(3) }
+        func quit() {
+            RecoverySession.shared.noteHUD(false); RecoverySession.shared.noteDim([]); RecoverySession.shared.noteWake(nil)
+            RecoverySession.shared.end()
+            exit(0)
+        }
+        RecoverySession.shared.expectingReplacement = args.contains("nowatch")
+        RecoverySession.shared.onBundleGone = { _ in
+            FileManager.default.createFile(atPath: dir + "/bundle-gone.\(getpid())", contents: nil)
+            quit()
+        }
+        RecoverySession.shared.onShowPanel = { FileManager.default.createFile(atPath: dir + "/shown.\(getpid())", contents: nil) }
         RecoverySession.shared.start(ownsSleep: true)
         var i = 0, dims: [RecoveryLease.Dim] = []
         while i < args.count {
@@ -87,56 +140,88 @@ enum RecoveryTest {
         if !dims.isEmpty { RecoverySession.shared.noteDim(dims) }
         signal(SIGTERM, SIG_IGN)
         let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        src.setEventHandler {
-            RecoverySession.shared.noteHUD(false); RecoverySession.shared.noteDim([]); RecoverySession.shared.noteWake(nil)
-            RecoverySession.shared.end()
-            exit(0)
-        }
+        src.setEventHandler { quit() }
         src.resume()
-        FileManager.default.createFile(atPath: (Recovery.env["COCAINE_TEST_DIR"] ?? "/tmp") + "/ready.\(getpid())", contents: nil)
+        FileManager.default.createFile(atPath: dir + "/ready.\(getpid())", contents: nil)
         withExtendedLifetime(src) { RunLoop.main.run() }
         exit(0)
     }
 
     // MARK: - --recovery-test
 
+    /// Copies the app bundle into a temporary folder and runs the test from there (see the top of this file).
     static func run() -> Int32 {
-        var failed = 0
-        func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); fflush(stdout); if !ok { failed += 1 } }
-        guard let bin = Bundle.main.executablePath, FileManager.default.fileExists(atPath: Recovery.enginePath) else {
+        guard Recovery.env["COCAINE_RECOVERY_TEST_COPY"] == nil else { return runHere() }
+        let bundle = Bundle.main.bundleURL
+        guard bundle.pathExtension == "app", Bundle.main.path(forResource: "cocaine", ofType: nil) != nil else {
             print("FAIL  recovery: run it from the built app (needs Contents/Resources/cocaine)"); return 1
         }
+        var tbuf = Array("/tmp/cocaine-recovery-copy.XXXXXX".utf8CString)
+        guard mkdtemp(&tbuf) != nil else { return 1 }
+        let T0 = URL(fileURLWithPath: String(cString: tbuf)).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: T0) }
+        let copy = T0.appendingPathComponent(bundle.lastPathComponent)
+        guard runTool("/usr/bin/ditto", [bundle.path, copy.path], timeout: 60) == 0, let exe = Bundle(url: copy)?.executableURL else {
+            print("FAIL  recovery: couldn't copy the app into \(T0.path)"); return 1
+        }
+        let p = Process()
+        p.executableURL = exe
+        p.arguments = ["--recovery-test"]
+        p.environment = ProcessInfo.processInfo.environment.merging(["COCAINE_RECOVERY_TEST_COPY": "1"]) { $1 }
+        do { try p.run() } catch { print("FAIL  recovery: couldn't start the copy"); return 1 }
+        p.waitUntilExit()
+        return p.terminationStatus
+    }
+
+    private static func runHere() -> Int32 {
+        var failed = 0
+        func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); fflush(stdout); if !ok { failed += 1 } }
+        guard let bin = Bundle.main.executablePath, let bundled = Recovery.bundledEngine else {
+            print("FAIL  recovery: run it from the built app (needs Contents/Resources/cocaine)"); return 1
+        }
+        let fm = FileManager.default
         var tbuf = Array("/tmp/cocaine-recovery-test.XXXXXX".utf8CString)
         guard mkdtemp(&tbuf) != nil else { return 1 }
         let T = URL(fileURLWithPath: String(cString: tbuf)).resolvingSymlinksInPath().path
         let support = T + "/support", flagFile = T + "/flag", bright = T + "/bright", pmlog = T + "/pmset.log"
         mkdir(support, 0o700); mkdir(T + "/bin", 0o755)
         func put(_ path: String, _ text: String, mode: Int = 0o644) {
-            FileManager.default.createFile(atPath: path, contents: Data(text.utf8), attributes: [.posixPermissions: mode])
+            fm.createFile(atPath: path, contents: Data(text.utf8), attributes: [.posixPermissions: mode])
         }
+        // pmset: -a writes the flag; with FAKE_PMSET_BARRIER set, writing 0 then waits for $T/go (the race test's barrier).
         put(T + "/bin/pmset", """
         #!/bin/zsh
+        zmodload zsh/zselect
         F=\(T)/flag
         case "$1" in
           -g) [[ -e \(T)/unreadable ]] && exit 1; print "System-wide power settings:"; print " SleepDisabled\\t\\t$(<$F)" ;;
           -a) [[ $2 == disablesleep && ( $3 == 0 || $3 == 1 ) ]] || exit 1
               print -r -- $3 > $F
-              v=FAKE_PMSET_DELAY_$3; /bin/sleep ${(P)v:-0} ;;
+              if [[ -n $FAKE_PMSET_BARRIER && $3 == 0 ]]; then
+                : > \(T)/reached; i=0; while [[ ! -e \(T)/go ]] && (( i++ < 1000 )); do zselect -t 1; done
+              fi
+              exit 0 ;;
           schedule) print -r -- "$*" >> \(pmlog) ;;
           *) exit 1 ;;
         esac
 
         """, mode: 0o755)
         put(T + "/bin/sudo", "#!/bin/zsh\n[[ $1 == -n ]] && shift\n[[ -e \(T)/noauth ]] && exit 1\nexec \"$@\"\n", mode: 0o755)
+        // caffeinate: lives while the -w process does (never the real one: no power assertion is taken).
+        put(T + "/bin/caffeinate", "#!/bin/zsh\nzmodload zsh/zselect\nw=\nwhile (( $# )); do [[ $1 == -w ]] && { w=$2; shift }; shift; done\n"
+            + "while [[ -n $w ]] && kill -0 $w 2>/dev/null; do zselect -t 20; done\n", mode: 0o755)
         let standInName = "OSDStandIn"
         // A copy of this binary (`--recovery-standin` just sleeps): a copied /bin/sleep is killed by macOS (platform binary).
-        _ = try? FileManager.default.copyItem(atPath: bin, toPath: T + "/" + standInName)
+        _ = try? fm.copyItem(atPath: bin, toPath: T + "/" + standInName)
         let env: [String: String] = ["COCAINE_SUPPORT": support, "COCAINE_PMSET": T + "/bin/pmset", "COCAINE_SUDO": T + "/bin/sudo",
+                                     "COCAINE_CAFFEINATE": T + "/bin/caffeinate", "COCAINE_DOMAIN": T + "/prefs",
                                      "COCAINE_HUD_NAME": standInName, "COCAINE_FAKE_BRIGHTNESS": bright, "COCAINE_TEST_DIR": T,
-                                     "COCAINE_HEARTBEAT": "0.5", "COCAINE_WATCH_STALL": "4"]
+                                     "COCAINE_HEARTBEAT": "0.5", "COCAINE_WATCH_STALL": "4", "COCAINE_WATCH_MISSING": "3"]
         for (k, v) in env { setenv(k, v, 1) }              // before Recovery.env is first read; children inherit them
-        let engine = Recovery.enginePath
-        let engineRE = engine.replacingOccurrences(of: "([\\[\\]\\\\.^$*+?(){}|])", with: "\\\\$1", options: .regularExpression)
+        let engine = bundled, copyEngine = Recovery.engineCopyDirectory + "/cocaine"
+        func literal(_ s: String) -> String { s.replacingOccurrences(of: "([\\[\\]\\\\.^$*+?(){}|])", with: "\\\\$1", options: .regularExpression) }
+        // Engines the processes of this test may run from: this copy's, the support copy, and the bundles copied below.
+        let engineRE = "(\(literal(engine))|\(literal(copyEngine))|\(literal(T))/[a-z0-9]+/Cocaine\\.app/Contents/Resources/cocaine)"
 
         func flag() -> String { ((try? String(contentsOfFile: flagFile, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
         func setFlag(_ v: String) { put(flagFile, v + "\n") }
@@ -148,7 +233,7 @@ enum RecoveryTest {
             do { try p.run() } catch { return -1 }
             p.waitUntilExit(); return p.terminationStatus
         }
-        func eng(_ a: String, env extra: [String: String] = [:]) -> Int32 { sh(["/bin/zsh", engine, a], env: extra) }
+        func eng(_ a: String, env extra: [String: String] = [:], engine e: String? = nil) -> Int32 { sh(["/bin/zsh", e ?? engine, a], env: extra) }
         func pids(_ pattern: String) -> [pid_t] {
             let p = Process(), out = Pipe()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep"); p.arguments = ["-U", String(getuid()), "-xf", pattern]
@@ -156,7 +241,7 @@ enum RecoveryTest {
             try? p.run(); p.waitUntilExit()
             return String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").compactMap { pid_t($0) }
         }
-        func holdRunning() -> Bool { !pids("/bin/zsh \(engineRE) hold").isEmpty }
+        func holdRunning() -> Bool { System.holdLockOwner(support + "/hold.lock") != nil }   // this test's helper only
         func watchdogs(_ owner: pid_t? = nil) -> [pid_t] { pids("/bin/zsh \(engineRE) watch \(owner.map(String.init) ?? "[0-9]+") .*") }
         func alive(_ pid: pid_t) -> Bool {
             var info = proc_bsdinfo()
@@ -181,14 +266,21 @@ enum RecoveryTest {
             if stop { sig(p.processIdentifier, SIGSTOP); waitFor(2) { stopped(p.processIdentifier) } }
             return p.processIdentifier
         }
-        func owner(_ args: [String], env extra: [String: String] = [:], ready: Bool = true) -> Process {
+        func owner(_ args: [String], env extra: [String: String] = [:], ready: Bool = true, binary: String? = nil) -> Process {
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: bin); p.arguments = ["--recovery-owner"] + args
+            p.executableURL = URL(fileURLWithPath: binary ?? bin); p.arguments = ["--recovery-owner"] + args
             p.environment = ProcessInfo.processInfo.environment.merging(extra) { $1 }
             p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
             try? p.run(); spawned.append(p)
-            if ready { waitFor(15) { FileManager.default.fileExists(atPath: T + "/ready.\(p.processIdentifier)") } }
+            if ready { waitFor(15) { fm.fileExists(atPath: T + "/ready.\(p.processIdentifier)") } }
             return p
+        }
+        /// A copy of this app bundle at $T/<name>/Cocaine.app (to delete or break while an owner runs from it); its binary.
+        func bundleCopy(_ name: String) -> String {
+            let dst = T + "/" + name + "/Cocaine.app"
+            try? fm.createDirectory(atPath: T + "/" + name, withIntermediateDirectories: true)
+            _ = runTool("/usr/bin/ditto", [Bundle.main.bundlePath, dst], timeout: 60)
+            return dst + "/Contents/MacOS/Cocaine"
         }
         func lease() -> RecoveryLease? { Recovery.readLease() }
         func claim() -> String? { (try? String(contentsOfFile: support + "/sleep-claim", encoding: .utf8)).map { String($0.prefix(7)) } }
@@ -197,13 +289,14 @@ enum RecoveryTest {
             _ = eng("off")
             for p in spawned where p.isRunning { sig(p.processIdentifier, SIGKILL) }
             spawned.removeAll()
-            for f in ["recovery.json", "sleep-claim"] { unlink(support + "/" + f) }
+            if let h = System.holdLockOwner(support + "/hold.lock") { sig(h, SIGKILL) }   // a helper `off` couldn't reach
+            for f in ["recovery.json", "sleep-claim", "until"] { unlink(support + "/" + f) }
             setFlag("0"); put(pmlog, "")
-            unlink(T + "/unreadable"); unlink(T + "/noauth")
+            for f in ["unreadable", "noauth", "go", "reached"] { unlink(T + "/" + f) }
         }
         defer {
             reset()
-            try? FileManager.default.removeItem(atPath: T)
+            try? fm.removeItem(atPath: T)
         }
         setFlag("0")
 
@@ -235,20 +328,25 @@ enum RecoveryTest {
         }
 
         // 2. on/off from two places at once (app and iPhone): an OFF that writes first but stops the hold late must not
-        //    kill the hold of an ON that ran in between. Fails without the lock.
+        //    kill the hold of an ON that ran in between. Deterministic: the OFF's pmset waits at a barrier until the ON has
+        //    finished (without the lock) or has had 2 s to (with it, it waits for the lock instead). Fails without the lock.
         do {
             func race(nolock: Bool) -> Bool {   // true = consistent end state
                 reset()
-                var extra = ["FAKE_PMSET_DELAY_0": "1.0"]
+                var extra = ["FAKE_PMSET_BARRIER": "1"]
                 if nolock { extra["COCAINE_NOLOCK"] = "1" }
                 let off = Process(); off.executableURL = URL(fileURLWithPath: "/bin/zsh"); off.arguments = [engine, "off"]
                 off.environment = ProcessInfo.processInfo.environment.merging(extra) { $1 }
                 setFlag("1")
                 try? off.run()
-                usleep(150_000)
-                _ = eng("on", env: extra)
-                off.waitUntilExit()
-                usleep(300_000)
+                waitFor(10) { fm.fileExists(atPath: T + "/reached") }          // OFF has written 0 and is inside pmset
+                let on = Process(); on.executableURL = URL(fileURLWithPath: "/bin/zsh"); on.arguments = [engine, "on"]
+                on.environment = ProcessInfo.processInfo.environment.merging(extra) { $1 }
+                try? on.run()
+                waitFor(nolock ? 10 : 2) { !on.isRunning }
+                put(T + "/go", "")
+                off.waitUntilExit(); on.waitUntilExit()
+                waitFor(1) { false }
                 return (flag() == "1") == holdRunning()
             }
             check("engine: without the lock the race is real (ON's hold killed by a concurrent OFF)", !race(nolock: true))
@@ -279,6 +377,18 @@ enum RecoveryTest {
             reset()
         }
 
+        // 3b. Only the HUD helpers Cocaine froze are ended: one another tool stopped is left alone.
+        do {
+            let mine = standIn(), theirs = standIn()
+            let o = owner(["on"])
+            // As SystemHUD does: note, then stop (the stand-ins are stopped already; the lease lists `mine` only).
+            Recovery.locked { if var l = lease() { l.hudFrozen = true; l.hudPids = [mine]; Recovery.writeLease(l) } }
+            sig(o.processIdentifier, SIGKILL)
+            check("hud: after a crash the helper Cocaine froze is ended, another tool's frozen one kept",
+                  waitFor(15) { lease() == nil } && waitFor(3) { !alive(mine) } && alive(theirs) && stopped(theirs))
+            reset()
+        }
+
         // 4. Sleep already disabled before Cocaine (by the user or another app): a crash leaves it disabled.
         do {
             setFlag("1")
@@ -293,9 +403,63 @@ enum RecoveryTest {
         // 5. Normal quit (SIGTERM, as from the Quit button or pkill): release, nothing left.
         do {
             let o = owner(["on"])
+            check("quit: the engine and the app are copied into the support folder",
+                  fm.isExecutableFile(atPath: support + "/engine/cocaine-app") && Recovery.sameContent(engine, support + "/engine/cocaine"))
             sig(o.processIdentifier, SIGTERM)
             check("quit: SleepDisabled back to 0, no lease, no helper, watchdog ends",
                   waitFor(10) { !o.isRunning } && flag() == "0" && lease() == nil && waitFor(4) { !holdRunning() } && waitFor(5) { watchdogs(o.processIdentifier).isEmpty })
+            reset()
+        }
+
+        // 5b. The app's bundle deleted while it runs (an install's rm, the Trash, an uninstall that couldn't quit it): it
+        //     notices and quits, releasing sleep through the engine copy; if it is quit (or killed) before it notices,
+        //     the quit or the watchdog still do. Before 2.4.x sleep stayed disabled for good here.
+        do {
+            let b1 = bundleCopy("del1")
+            let o1 = owner(["on"], binary: b1)
+            check("bundle deleted: the session runs from the copy", flag() == "1" && holdRunning() && lease()?.owner == o1.processIdentifier)
+            try? fm.removeItem(atPath: T + "/del1")
+            check("bundle deleted: the app notices and quits; sleep back, no helper, no lease",
+                  waitFor(10) { !o1.isRunning } && fm.fileExists(atPath: T + "/bundle-gone.\(o1.processIdentifier)")
+                  && flag() == "0" && lease() == nil && waitFor(4) { !holdRunning() })
+            reset()
+            let b2 = bundleCopy("del2")
+            let o2 = owner(["on", "nowatch"], binary: b2)
+            try? fm.removeItem(atPath: T + "/del2")
+            sig(o2.processIdentifier, SIGTERM)
+            check("bundle deleted, then quit at once: the quit releases through the engine copy",
+                  waitFor(10) { !o2.isRunning } && flag() == "0" && lease() == nil && waitFor(4) { !holdRunning() })
+            reset()
+            let b3 = bundleCopy("del3")
+            let s = standIn()
+            let o3 = owner(["on", "hud", "nowatch"], binary: b3)
+            try? fm.removeItem(atPath: T + "/del3")
+            sig(o3.processIdentifier, SIGKILL)
+            check("bundle deleted, then killed: the watchdog recovers through the app's copy in the support folder",
+                  waitFor(20) { lease() == nil } && flag() == "0" && waitFor(4) { !holdRunning() } && waitFor(3) { !alive(s) })
+            reset()
+        }
+
+        // 5c. The watchdog's own failures (P1-1): an app binary that crashes is not "done"; with no runnable copy at all the
+        //     watchdog does the essentials itself, even with its script file deleted.
+        do {
+            let b = bundleCopy("crash")
+            let o = owner(["on", "nowatch"], binary: b)
+            let broken = b + ".broken"
+            put(broken, "#!/bin/sh\nkill -ABRT $$\n", mode: 0o755)
+            rename(broken, b)                                    // the binary on disk now crashes (the running owner keeps its own)
+            sig(o.processIdentifier, SIGKILL)
+            check("watchdog: an app binary that crashes is retried, then the copy recovers",
+                  waitFor(20) { lease() == nil } && flag() == "0" && waitFor(4) { !holdRunning() })
+            reset()
+            let b2 = bundleCopy("gone")
+            let s = standIn()
+            let o2 = owner(["on", "hud", "nowatch"], binary: b2)
+            try? fm.removeItem(atPath: T + "/gone")                 // the app and the watchdog's script file
+            try? fm.removeItem(atPath: support + "/engine/cocaine-app")  // and no copy of the app either
+            sig(o2.processIdentifier, SIGKILL)
+            check("watchdog: with no app to run, the essentials (HUD, sleep, lease) are done by the watchdog itself",
+                  waitFor(20) { lease() == nil } && flag() == "0" && waitFor(4) { !holdRunning() } && waitFor(3) { !alive(s) })
             reset()
         }
 
@@ -326,6 +490,22 @@ enum RecoveryTest {
             waitFor(10) { !o.isRunning }
             check("update: an unclaimed hand-over keeps sleep only until it expires", flag() == "1")
             check("update: …then the watchdog releases it", waitFor(15) { lease() == nil } && flag() == "0")
+            reset()
+        }
+
+        // 7b. A release that fails at quit (not authorized) keeps the lease: the next launch adopts the session instead of
+        //     sleep staying disabled with nothing left that knows it.
+        do {
+            let o = owner(["on"])
+            put(T + "/noauth", "")
+            sig(o.processIdentifier, SIGTERM)
+            check("quit not authorized: sleep can't go back, so the lease stays for the next launch",
+                  waitFor(10) { !o.isRunning } && waitFor(12) { watchdogs(o.processIdentifier).isEmpty } && flag() == "1" && lease()?.owner == o.processIdentifier)
+            unlink(T + "/noauth")
+            let o2 = owner([])
+            check("quit not authorized: the next launch adopts it", lease()?.owner == o2.processIdentifier && lease()?.ownsSleep == true)
+            sig(o2.processIdentifier, SIGTERM)
+            check("quit not authorized: …and its quit releases", waitFor(10) { !o2.isRunning } && flag() == "0" && lease() == nil)
             reset()
         }
 
@@ -367,8 +547,6 @@ enum RecoveryTest {
             check("both killed: the next launch adopts sleep (the session goes on)", flag() == "1" && lease()?.owner == o2.processIdentifier && lease()?.ownsSleep == true)
             check("one at a time: a second instance gives up", owner([], env: ["COCAINE_INSTANCE_WAIT": "1"], ready: false).waitUntilExitStatus(8) == 3
                   && lease()?.owner == o2.processIdentifier)
-            check("uninstall: refused (75) while Cocaine runs; its lease and sleep untouched",
-                  sh([bin, "--uninstall-cleanup"], env: ["COCAINE_INSTANCE_WAIT": "1"]) == 75 && lease()?.owner == o2.processIdentifier && flag() == "1")
             let s2 = standIn()
             RecoveryTestHelpers.markHUD(support)                // as if o2 had frozen it
             for w in watchdogs(o2.processIdentifier) { sig(w, SIGKILL) }
@@ -376,8 +554,64 @@ enum RecoveryTest {
             usleep(300_000)
             check("uninstall: cleanup ends the frozen HUD helper, releases sleep, stops the helper",
                   sh([bin, "--uninstall-cleanup"]) == 0 && waitFor(3) { !alive(s2) } && flag() == "0" && waitFor(4) { !holdRunning() })
-            let left = ["recovery.json", "recovery.lock", "sleep-claim", "state.lock", "hold.lock", "instance.lock"].filter { FileManager.default.fileExists(atPath: support + "/" + $0) }
+            let left = ["recovery.json", "recovery.lock", "sleep-claim", "state.lock", "hold.lock", "hold.pid", "instance.lock", "engine"].filter { fm.fileExists(atPath: support + "/" + $0) }
             check("uninstall: no Cocaine state files left (\(left.joined(separator: ", ")))", left.isEmpty)
+            reset()
+        }
+
+        // 10b. Uninstall while Cocaine runs (Homebrew's quit gave up): the cleanup ends it (pid + start time), its quit undoes
+        //      everything, then the cleanup goes on. A hung one is killed after the wait and its watchdog recovers it.
+        do {
+            let o = owner(["on"])
+            check("uninstall with Cocaine running: it is asked to quit, then everything is cleaned up (0)",
+                  sh([bin, "--uninstall-cleanup"], env: ["COCAINE_INSTANCE_WAIT": "5"]) == 0 && waitFor(5) { !o.isRunning }
+                  && flag() == "0" && lease() == nil && waitFor(4) { !holdRunning() })
+            reset()
+            let o2 = owner(["on"])
+            sig(o2.processIdentifier, SIGSTOP)                  // hung: it can't act on SIGTERM
+            check("uninstall with Cocaine hung: it is killed after the wait and nothing is left (0)",
+                  sh([bin, "--uninstall-cleanup"], env: ["COCAINE_INSTANCE_WAIT": "2"]) == 0 && waitFor(5) { !o2.isRunning }
+                  && waitFor(15) { flag() == "0" && lease() == nil } && waitFor(4) { !holdRunning() })
+            reset()
+        }
+
+        // 10c. App and watchdog killed together and Cocaine not reopened (P1-4): the hold helper notices after its grace
+        //      period and recovers; after a restart (nothing running at all) `--boot-check` does.
+        do {
+            let s = standIn()
+            let o = owner(["on", "hud"], env: ["COCAINE_POLL": "1", "COCAINE_ORPHAN_GRACE": "2"])
+            for w in watchdogs(o.processIdentifier) { sig(w, SIGKILL) }
+            sig(o.processIdentifier, SIGKILL)
+            check("orphan: the hold helper undoes the dead app's session (sleep, HUD, lease) without a relaunch",
+                  waitFor(20) { lease() == nil } && flag() == "0" && waitFor(4) { !holdRunning() } && waitFor(3) { !alive(s) })
+            reset()
+            let o2 = owner(["on"])
+            for w in watchdogs(o2.processIdentifier) { sig(w, SIGKILL) }
+            sig(o2.processIdentifier, SIGKILL)
+            if let h = System.holdLockOwner(support + "/hold.lock") { sig(h, SIGKILL) }   // a restart: nothing of Cocaine runs
+            waitFor(2) { !holdRunning() }
+            check("boot check: sleep stays disabled after a restart until something acts", flag() == "1" && lease() != nil)
+            let o3 = owner([], env: ["COCAINE_INSTANCE_WAIT": "1"])
+            check("boot check: with Cocaine running it does nothing", sh([bin, "--boot-check"]) == 0 && lease()?.owner == o3.processIdentifier)
+            for w in watchdogs(o3.processIdentifier) { sig(w, SIGKILL) }
+            sig(o3.processIdentifier, SIGKILL)
+            usleep(300_000)
+            check("boot check: with no Cocaine running it puts sleep back and clears the lease", sh([bin, "--boot-check"]) == 0 && flag() == "0" && lease() == nil)
+            reset()
+        }
+
+        // 10d. Two instances (P1-6): a new launch ends an instance left from a deleted copy and starts; a running one is asked
+        //      to show its panel instead of the new one leaving silently.
+        do {
+            let b = bundleCopy("zombie")
+            let z = owner(["on", "nowatch"], binary: b)
+            try? fm.removeItem(atPath: T + "/zombie")
+            let n = owner(["takeover"], env: ["COCAINE_INSTANCE_WAIT": "10"])
+            check("two instances: an instance whose app was deleted is ended (its quit releases) and the new launch takes over",
+                  waitFor(10) { !z.isRunning } && n.isRunning && lease()?.owner == n.processIdentifier && flag() == "0")
+            let again = owner(["takeover"], env: ["COCAINE_INSTANCE_WAIT": "1"], ready: false)
+            check("two instances: opening Cocaine again asks the running one to show its panel",
+                  again.waitUntilExitStatus(8) == 3 && waitFor(5) { fm.fileExists(atPath: T + "/shown.\(n.processIdentifier)") })
             reset()
         }
 
@@ -388,7 +622,7 @@ enum RecoveryTest {
             _ = eng("on")
             put(support + "/recovery.json", "{\"owner\":", mode: 0o600)
             check("damaged lease: the watchdog ends the frozen HUD and releases sleep (claim prior=0)",
-                  sh([bin, "--recover-after", "99999"]) == 0 && waitFor(3) { !alive(s) } && flag() == "0" && !FileManager.default.fileExists(atPath: support + "/recovery.json"))
+                  sh([bin, "--recover-after", "99999"]) == 0 && waitFor(3) { !alive(s) } && flag() == "0" && !fm.fileExists(atPath: support + "/recovery.json"))
             reset()
             let s2 = standIn()
             put(support + "/recovery.json", "garbage", mode: 0o600)

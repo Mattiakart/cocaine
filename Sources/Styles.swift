@@ -82,13 +82,26 @@ private struct PressScale: ButtonStyle {
 
 private enum PowderLine {
     /// Grains along the track, left to right: position (0…1 of the line), vertical jitter, size, brightness.
-    static let grains: [(x: CGFloat, dy: CGFloat, r: CGFloat, a: CGFloat)] = {
+    typealias Grain = (x: CGFloat, dy: CGFloat, r: CGFloat, a: CGFloat)
+    // Spelled out step by step with explicit types: as one tuple expression in a closure, Swift 5.10 (CI) gave up on it
+    // ("unable to type-check this expression in reasonable time").
+    static let grains: [Grain] = {
         var seed: UInt64 = 0x2545_F491_4F6C_DD1D
         func rnd() -> CGFloat {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            return CGFloat(seed >> 33) / CGFloat(UInt64(1) << 31)
+            let top: UInt64 = seed >> 33
+            return CGFloat(top) / CGFloat(2_147_483_648.0)
         }
-        return (0..<44).map { i in (CGFloat(i) / 43, (rnd() - 0.5) * 3, 0.4 + rnd() * 0.5, 0.6 + rnd() * 0.4) }
+        var out: [Grain] = []
+        out.reserveCapacity(44)
+        for i in 0..<44 {
+            let x: CGFloat = CGFloat(i) / 43
+            let dy: CGFloat = (rnd() - 0.5) * 3
+            let r: CGFloat = 0.4 + rnd() * 0.5
+            let a: CGFloat = 0.6 + rnd() * 0.4
+            out.append((x: x, dy: dy, r: r, a: a))
+        }
+        return out
     }()
 
     /// The line runs from the track's left end to where the knob sits when on; `level` says how much of it is there.

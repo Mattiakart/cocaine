@@ -575,7 +575,7 @@ final class SystemPasteboard: ClipPasteboard {
 // MARK: - The history the island shows
 
 final class ClipboardHistory: ObservableObject {
-    static let shared = ClipboardHistory(defaults: .standard, dir: ClipStore.defaultDir, keys: KeychainKeyStore(), board: SystemPasteboard(.general))
+    static let shared = ClipboardHistory(defaults: AppDefaults.store, dir: ClipStore.defaultDir, keys: KeychainKeyStore(), board: SystemPasteboard(.general))
 
     @Published private(set) var items: [ClipItem] = []
     @Published private(set) var settings: ClipSettings

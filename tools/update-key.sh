@@ -11,7 +11,7 @@ ROOT="${0:A:h:h}"
 die() { print -u2 -- "update-key.sh: $*"; exit 1; }
 KEY="${COCAINE_UPDATE_KEY:-$HOME/.cocaine-signing/update-ed25519.key}"
 SWIFT="${COCAINE_UPDATE_KEY_SWIFT:-$ROOT/Sources/UpdateKey.swift}"
-BIN="${COCAINE_BIN:-$ROOT/build/Cocaine.app/Contents/MacOS/Cocaine}"
+BIN="${COCAINE_BIN:-$ROOT/build.noindex/Cocaine.app/Contents/MacOS/Cocaine}"
 [ -x "$BIN" ] || die "build the app first (./build.sh --no-install)"
 case "${KEY:A}" in "$ROOT"/*) die "the private key must live outside the repository" ;; esac
 

@@ -25,7 +25,7 @@ final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutp
     @Published var stalled = false
     @Published var cameras: [Camera] = []
     @Published var selected = ""
-    @Published var flip = UserDefaults.standard.object(forKey: "mirrorFlip") as? Bool ?? true { didSet { UserDefaults.standard.set(flip, forKey: "mirrorFlip") } }
+    @Published var flip = AppDefaults.store.object(forKey: "mirrorFlip") as? Bool ?? true { didSet { AppDefaults.store.set(flip, forKey: "mirrorFlip") } }
     let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "local.cocaine.mirror")

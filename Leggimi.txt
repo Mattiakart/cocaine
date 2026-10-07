@@ -36,7 +36,7 @@ ATTENZIONE
   i monitor esterni non vengono mai abbassati dal coperchio.
 - "Resta disponibile" (Automazioni), mentre agisce, impedisce anche che lo schermo si abbassi, si spenga e si blocchi da solo.
 - Quando chiudi l'app (Esci, Cmd-Q, disconnessione, spegnimento, kill o crash) lo stop torna com'era prima.
-  Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre.
+  Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre (o esegui: cocaine off).
 
 DISINSTALLAZIONE
 1. Nel pannello, Avvisi AI: togli le spunte alle tue AI (così gli hook di Cocaine escono dalle loro impostazioni).

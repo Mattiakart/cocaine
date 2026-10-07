@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Notarizes and staples a Developer ID–signed Cocaine.app or DMG, then checks it the way Gatekeeper does.
-#   COCAINE_NOTARY_PROFILE=<profile> tools/notarize.sh build/Cocaine.app | dist/Cocaine-<v>.dmg
+#   COCAINE_NOTARY_PROFILE=<profile> tools/notarize.sh build.noindex/Cocaine.app | dist/Cocaine-<v>.dmg
 # The profile is a keychain item made once with `xcrun notarytool store-credentials <profile>` (Apple ID + app-specific
 # password, or an App Store Connect API key); this script never sees the credentials. Anything short of "Accepted",
 # a valid staple and a passing spctl assessment is a failure: nothing is shipped as "notarized" on a guess.

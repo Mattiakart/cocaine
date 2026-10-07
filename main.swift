@@ -17,6 +17,8 @@ import AppKit
 
 // MARK: - Entry point
 
+// Test and render flags get memory-only settings before anything reads one: they never write the app's real domain.
+AppDefaults.isolateIfTestFlag(CommandLine.arguments)
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--agent-request" { cliAgentRequest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--agents-test" { cliAgentsTest() }
 if let code = RecoveryCLI.run(CommandLine.arguments) { exit(code) }   // --recover-after, --prepare-update, … (Sources/Recovery.swift)
@@ -58,11 +60,17 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-asset
     Assets.render(to: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)
 }
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1].hasPrefix("--") {    // a mistyped flag must not start the app
+    FileHandle.standardError.write(Data("Cocaine: unknown option \(CommandLine.arguments[1])\n".utf8))
+    exit(64)
+}
 // The app itself never takes the test overrides (COCAINE_SUDO, COCAINE_PMSET, COCAINE_SUPPORT…): set with `launchctl setenv`
 // they would have Cocaine, its engine and its watchdog run another program with Cocaine's permissions, or use other folders.
 TestOverrides.scrub()
-// One Cocaine at a time (another may still be quitting, e.g. during an update): this one leaves without touching anything.
-guard Recovery.claimSingleInstance() else { exit(0) }
+EarlyQuit.install()          // a SIGTERM while starting becomes a normal quit once the app runs (Sources/Recovery.swift)
+// One Cocaine at a time (another may still be quitting, e.g. during an update). A running one is asked to show its panel; one
+// left from a deleted copy of the app is ended and this one starts (Recovery.claimSingleInstance).
+guard Recovery.claimSingleInstance(takeOver: true) else { exit(0) }
 let app = NSApplication.shared
 private let delegate = AppDelegate()
 app.delegate = delegate

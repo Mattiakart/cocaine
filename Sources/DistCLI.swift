@@ -15,9 +15,22 @@ enum DistCLI {
         case "--signature-tier" where a.count == 3: return tier(a[2])
         case "--update-keygen" where a.count == 3: return keygen(a[2])
         case "--update-public-key" where a.count == 3: return publicKey(a[2])
-        case "--update-sign" where a.count == 8: return sign(key: a[2], dmg: a[3], version: a[4], build: a[5], tier: a[6], out: a[7])
+        case "--update-sign" where a.count == 8 || a.count == 9:     // optional last: the app's designated requirement (format 2)
+            return sign(key: a[2], dmg: a[3], version: a[4], build: a[5], tier: a[6], out: a[7], requirement: a.count == 9 ? a[8] : nil)
         case "--update-verify" where a.count >= 4: return verify(manifest: a[2], dmg: a[3], key: a.count > 4 ? a[4] : nil)
         case "--l10n-check" where a.count >= 3: return L10nCheck.run(dir: a[2], sources: Array(a.dropFirst(3)))
+        case "--update-standin" where a.count == 3:                 // --update-test's stand-in for a new version: crash|hang|<build>
+            switch a[2] {
+            case "crash": abort()
+            case "hang": while true { sleep(60) }
+            default:
+                usleep(300_000)
+                UpdateHealth.writeMark(build: Int(a[2]) ?? 0)
+                sleep(30); return 0
+            }
+        case "--version-newer" where a.count == 4:                   // 0 when a[2] > a[3] (semantic versions), for release tooling
+            guard let x = SemVer(a[2]), let y = SemVer(a[3]) else { err("not versions: \(a[2]) \(a[3])"); return 2 }
+            return x > y ? 0 : 1
         default: return nil
         }
     }
@@ -63,7 +76,7 @@ enum DistCLI {
         return 0
     }
 
-    private static func sign(key: String, dmg: String, version: String, build: String, tier: String, out: String) -> Int32 {
+    private static func sign(key: String, dmg: String, version: String, build: String, tier: String, out: String, requirement: String?) -> Int32 {
         guard let k = loadKey(key) else { return 1 }
         let embedded = UpdateKey.publicKeyBase64
         guard !embedded.isEmpty, k.publicKey.rawRepresentation.base64EncodedString() == embedded else {
@@ -76,7 +89,9 @@ enum DistCLI {
         guard let sha = UpdateFiles.sha256(of: url),
               let size = (try? FileManager.default.attributesOfItem(atPath: dmg))?[.size] as? NSNumber else { err("can't read \(dmg)"); return 1 }
         do {
-            let m = try UpdateManifest(version: version, build: b, sha256: sha, size: size.int64Value, tier: tier, asset: url.lastPathComponent).signed(with: k)
+            var unsigned = UpdateManifest(version: version, build: b, sha256: sha, size: size.int64Value, tier: tier, asset: url.lastPathComponent)
+            if let requirement, !requirement.isEmpty { unsigned.requirement = requirement } else { unsigned.format = 1 }
+            let m = try unsigned.signed(with: k)
             guard k.publicKey.isValidSignature(Data(base64Encoded: m.signature)!, for: m.signedMessage) else { err("self-check failed"); return 1 }
             try m.encoded().write(to: URL(fileURLWithPath: out), options: .atomic)
         } catch { err("\(error)"); return 1 }
@@ -93,7 +108,8 @@ enum DistCLI {
         }
         let size = ((try? FileManager.default.attributesOfItem(atPath: dmg))?[.size] as? NSNumber)?.int64Value
         guard size == m.size, UpdateFiles.sha256(of: URL(fileURLWithPath: dmg)) == m.sha256 else { err("the DMG doesn't match the manifest"); return 1 }
-        print("ok version=\(m.version) build=\(m.build) tier=\(m.tier)")
+        print("ok version=\(m.version) build=\(m.build) tier=\(m.tier) format=\(m.format)")
+        if let r = m.requirement { print("requirement=\(r)") }
         return 0
     }
 }

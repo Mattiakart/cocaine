@@ -1,4 +1,4 @@
-// Render tools: --render-panel, --render-island, --island-selfcheck; saved settings around renders, the island pixel checks, sample dialogs.
+// Render tools: --render-panel, --render-island, --island-selfcheck (memory-only settings, see AppDefaults), the island pixel checks, sample dialogs.
 
 import AppKit
 import AVFoundation
@@ -16,21 +16,6 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 import os
-
-/// The render tools fill a PanelModel with sample values, which writes some into the real settings: this puts back exactly what
-/// was there (removing them instead wiped the user's own Stay active, HUD and timer choices).
-struct SavedSettings {
-    static let keys = ["triggerSchedule", "scheduleDays", "scheduleStart", "scheduleEnd", "triggerPower", "triggerDisplay", "triggerAll", "dimEnabled", "screenOff",
-                       "timerMinutes", "batteryThreshold", "batteryTurnsOff", "triggerAgents", "triggerApps", "hotkeys", "onUntil", "wakeForPhone", "island",
-                       "stayActive", "stayActiveAlways", "stayActiveApps", "replaceHUD", "haptics", "alertDone", "alertInput", "alertFlash", "alertSpeak", "alertVoice",
-                       "alertPerSession", "agentApprovals", "alertWhenPresent", "alertRepeatMinutes", "alertDuration", "alertSound", "language",
-                       "shortcuts.v1", "focus.v1", "shelf.v1", "phoneShortcut", "phoneNtfy"]
-    let values: [String: Any] = Dictionary(uniqueKeysWithValues: keys.compactMap { k in UserDefaults.standard.object(forKey: k).map { (k, $0) } })
-    func restore() {
-        for k in Self.keys { if let v = values[k] { UserDefaults.standard.set(v, forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) } }
-        UserDefaults.standard.synchronize()
-    }
-}
 
 /// Offscreen checks of the island exactly as the live window holds it: the real IslandView in a hosting view of the real window
 /// frame (IslandController.windowFrame), so a canvas that ends up outside the window shows up as missing pixels.
@@ -71,9 +56,8 @@ enum IslandCheck {
     static func run() -> Int32 {
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  " + name); if !ok { failed += 1 } }
-        let saved = SavedSettings()
-        defer { saved.restore() }                                  // the checks must not leave anything in the real settings
-        UserDefaults.standard.set(false, forKey: "stayActive")     // the states below are the ones named, whatever the user has on
+        precondition(AppDefaults.isolated, "--island-selfcheck must run with memory-only settings (main.swift)")
+        AppDefaults.store.set(false, forKey: "stayActive")     // the states below are the ones named, whatever the user has on
         let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notchWidth: 185, height: 32, centerX: 756, hasNotch: true)
         let closed = IslandController.windowFrame(g, open: false), opened = IslandController.windowFrame(g, open: true)
         check("island: the closed window holds both wings", closed.minX <= g.centerX - g.notchWidth / 2 - IslandModel.maxWing
@@ -170,7 +154,7 @@ func cliIslandSelfcheck() {
 func cliRenderIsland() {
     // Draws the island offscreen to a PNG: --open, --tab <id>, --lang <code>, --focus (a running focus), --mic, --agents.
     _ = NSApplication.shared
-    let sampleSettings = SavedSettings()
+    precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
     let args = CommandLine.arguments
     let pm = PanelModel()
     pm.persistLanguage = false
@@ -231,7 +215,6 @@ func cliRenderIsland() {
         if let p = progress?.first { im.renderProgress = p; im.open = p > 0 }
         let rep = IslandCheck.render(im, pm, frame: IslandController.windowFrame(g, open: im.open))
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
-        sampleSettings.restore()
         exit(0)
     }
     let notch = args.contains("--notch") ? Color.black : args.contains("--xray") ? Color.red.opacity(0.45) : nil
@@ -268,7 +251,6 @@ func cliRenderIsland() {
         reps = [NSBitmapImageRep(data: sheet.tiffRepresentation!)!]
     }
     try? reps[0].representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
-    sampleSettings.restore()
     exit(0)
 }
 
@@ -276,7 +258,7 @@ func cliRenderIsland() {
 func cliRenderPanel() {
     // Draws the panel offscreen to a PNG, in the language picked by -AppleLanguages, to check translations fit.
     _ = NSApplication.shared
-    let sampleSettings = SavedSettings()
+    precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
     let model = PanelModel()
     model.persistLanguage = false
     let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
@@ -373,7 +355,6 @@ func cliRenderPanel() {
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
     if let pickerReport { print(pickerReport) }
-    sampleSettings.restore()                                // the sample values above must not stay in the real settings
     print(Bundle.main.preferredLocalizations.first ?? "?")
 
     exit(0)

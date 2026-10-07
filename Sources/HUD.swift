@@ -183,7 +183,7 @@ final class SystemHUD {
             }
             return
         }
-        if !Self.isStopped(pid) { kill(pid, SIGSTOP) }
+        if !Self.isStopped(pid) { RecoverySession.shared.noteFrozen(pid); kill(pid, SIGSTOP) }   // noted first
     }
 
     private static func name(_ pid: pid_t) -> String? {

@@ -18,23 +18,24 @@ import UniformTypeIdentifiers
 import os
 
 let log = Logger(subsystem: "local.cocaine.toggle", category: "app")
-let scriptPath = Bundle.main.path(forResource: "cocaine", ofType: nil) ?? "/nonexistent/cocaine"
+/// The engine: the bundle's, or the copy in Application Support once the bundle is gone (Sources/Recovery.swift).
+var scriptPath: String { Recovery.enginePath }
 private let anyInput = CGEventType(rawValue: ~0)!   // kCGAnyInputEventType
 
 /// The UI language: the Mac's (the default; English when it isn't one of ours) or one picked in the panel.
 enum Language {
     static let codes = ["en", "it", "zh-Hans", "zh-Hant", "es", "fr", "de", "ja"]
-    private static var bundle = makeBundle(UserDefaults.standard.string(forKey: "language"))
+    private static var bundle = makeBundle(AppDefaults.store.string(forKey: "language"))
     /// The language in use now (nil = the Mac's), also when it isn't saved (the render tools).
-    private static var active = UserDefaults.standard.string(forKey: "language")
+    private static var active = AppDefaults.store.string(forKey: "language")
 
     /// nil = same as the Mac.
-    static var chosen: String? { UserDefaults.standard.string(forKey: "language") }
+    static var chosen: String? { AppDefaults.store.string(forKey: "language") }
 
     static func set(_ code: String?, persist: Bool = true) {
         if persist {
-            if let code { UserDefaults.standard.set(code, forKey: "language") }
-            else { UserDefaults.standard.removeObject(forKey: "language") }
+            if let code { AppDefaults.store.set(code, forKey: "language") }
+            else { AppDefaults.store.removeObject(forKey: "language") }
         }
         bundle = makeBundle(code)
         active = code
@@ -125,11 +126,19 @@ enum System {
     /// The pmset `disablesleep` flag the cocaine script sets.
     static var cocaineOn: Bool { rootDomainFlag("SleepDisabled") }
     static var lidClosed: Bool { rootDomainFlag("AppleClamshellState") }
-    /// The script's display helper, matched by its exact argv just like the script does.
-    static var displayHeld: Bool {
-        let literal = scriptPath.replacingOccurrences(of: "([\\[\\]\\\\.^$*+?(){}|])", with: "\\\\$1",
-                                                      options: .regularExpression)
-        return run("/usr/bin/pgrep", ["-U", String(getuid()), "-xf", "/bin/zsh \(literal) hold"]) == 0
+    /// The engine's display-hold helper runs: it holds hold.lock (an fcntl lock) for its whole life, whichever copy of the
+    /// engine started it. A lock test, no process spawned (this runs every few seconds).
+    static var displayHeld: Bool { holdLockOwner() != nil }
+
+    /// The pid holding `$SUPPORT/hold.lock`, if any (F_GETLK reports it without taking the lock).
+    static func holdLockOwner(_ path: String = Recovery.directory + "/hold.lock") -> pid_t? {
+        let fd = open(path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var fl = flock()
+        fl.l_type = Int16(F_WRLCK); fl.l_whence = Int16(SEEK_SET); fl.l_start = 0; fl.l_len = 0
+        guard fcntl(fd, F_GETLK, &fl) == 0, fl.l_type != Int16(F_UNLCK) else { return nil }
+        return fl.l_pid
     }
     static var idleSeconds: Double {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
@@ -140,7 +149,7 @@ enum System {
 
 /// A light tap on the trackpad (Force Touch) when you change something; nothing on a mouse. Can be turned off in the panel.
 enum Haptic {
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "haptics") as? Bool ?? true }
+    static var enabled: Bool { AppDefaults.store.object(forKey: "haptics") as? Bool ?? true }
     static func tap(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
         guard enabled else { return }
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
@@ -152,6 +161,58 @@ enum Haptic {
 }
 
 // MARK: - Settings
+
+/// The one place the app's settings live. The app uses its preferences domain (UserDefaults.standard, local.cocaine.toggle);
+/// every test and render flag points it at memory first (main.swift), so a test never writes, and a crash in the middle of
+/// one never leaves, a value in the domain the running app reads every few seconds. Everything that keeps an app setting
+/// (Settings, Language, Haptic, the updater, the island's options, the phone, the clipboard) goes through `store`.
+enum AppDefaults {
+    private(set) static var store: UserDefaults = .standard
+    private(set) static var isolated = false
+
+    /// Flags that act for real (hooks run by AI tools, the watchdog, Homebrew, release tooling) keep the real store; every
+    /// other `--…` flag is a test or a render and gets memory-only settings.
+    static let realFlags: Set<String> = ["--agent-request", "--ai-alerts", "--recover-after", "--recover-hud", "--prepare-update",
+                                         "--uninstall-cleanup", "--boot-check", "--remove-rule"]
+
+    static func isolateIfTestFlag(_ args: [String]) {
+        guard args.count >= 2, args[1].hasPrefix("--"), !realFlags.contains(args[1]) else { return }
+        isolate()
+    }
+
+    static func isolate(_ d: UserDefaults = MemoryDefaults()) { store = d; isolated = true }
+}
+
+/// UserDefaults that live in memory only: nothing is read from or written to a preferences domain. Every accessor is
+/// overridden, so none can fall through to the real domain.
+final class MemoryDefaults: UserDefaults {
+    private var values: [String: Any] = [:]
+    private var registered: [String: Any] = [:]
+    init() { super.init(suiteName: nil)! }
+    override func object(forKey k: String) -> Any? { values[k] ?? registered[k] }
+    override func set(_ v: Any?, forKey k: String) { values[k] = v }
+    override func removeObject(forKey k: String) { values[k] = nil }
+    override func register(defaults: [String: Any]) { registered.merge(defaults) { $1 } }
+    override func string(forKey k: String) -> String? { object(forKey: k) as? String }
+    override func array(forKey k: String) -> [Any]? { object(forKey: k) as? [Any] }
+    override func dictionary(forKey k: String) -> [String: Any]? { object(forKey: k) as? [String: Any] }
+    override func data(forKey k: String) -> Data? { object(forKey: k) as? Data }
+    override func stringArray(forKey k: String) -> [String]? { object(forKey: k) as? [String] }
+    override func integer(forKey k: String) -> Int { (object(forKey: k) as? NSNumber)?.intValue ?? Int((object(forKey: k) as? String) ?? "") ?? 0 }
+    override func float(forKey k: String) -> Float { (object(forKey: k) as? NSNumber)?.floatValue ?? Float((object(forKey: k) as? String) ?? "") ?? 0 }
+    override func double(forKey k: String) -> Double { (object(forKey: k) as? NSNumber)?.doubleValue ?? Double((object(forKey: k) as? String) ?? "") ?? 0 }
+    override func bool(forKey k: String) -> Bool { (object(forKey: k) as? NSNumber)?.boolValue ?? ["yes", "true", "1"].contains((object(forKey: k) as? String)?.lowercased() ?? "") }
+    override func url(forKey k: String) -> URL? { object(forKey: k) as? URL ?? (object(forKey: k) as? String).map { URL(fileURLWithPath: $0) } }
+    override func set(_ v: Int, forKey k: String) { values[k] = v }
+    override func set(_ v: Float, forKey k: String) { values[k] = v }
+    override func set(_ v: Double, forKey k: String) { values[k] = v }
+    override func set(_ v: Bool, forKey k: String) { values[k] = v }
+    override func set(_ v: URL?, forKey k: String) { values[k] = v }
+    override func dictionaryRepresentation() -> [String: Any] { registered.merging(values) { $1 } }
+    override func synchronize() -> Bool { true }
+    override func removePersistentDomain(forName domainName: String) {}
+    override func setPersistentDomain(_ domain: [String: Any], forName domainName: String) {}
+}
 
 /// One alert, for the "Recent alerts" list.
 struct AlertRecord: Codable, Identifiable, Equatable {
@@ -165,7 +226,7 @@ struct AlertRecord: Codable, Identifiable, Equatable {
 }
 
 struct Settings {
-    let d = UserDefaults.standard
+    var d: UserDefaults { AppDefaults.store }
     static let delayChoices = [1, 2, 5, 10, 15, 30]   // minutes
 
     var dimEnabled: Bool {

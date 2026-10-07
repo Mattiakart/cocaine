@@ -40,31 +40,52 @@ When you press **Install**, Cocaine:
 2. verifies it before touching anything: the release's manifest must carry a valid Ed25519 signature made with the key
    built into Cocaine; the .dmg must match the signed SHA-256 and size; the version and build must be newer than yours
    (no downgrades, no replays of an old release); and the app inside must be signed with the **same certificate as the
-   copy you're running**;
-3. swaps the new app in with one atomic rename, keeping the previous one until the new one has started. If anything fails,
-   your installed copy stays exactly as it was; if the new version can't open, the previous one is put back and opened.
+   copy you're running** (newer manifests name that certificate, so a copy signed with another one is told before
+   anything is downloaded). The .dmg is hashed once more right before it is opened;
+3. swaps the new app in with one atomic rename and starts it. The previous version is kept until the new one has run for
+   20 seconds (or was quit before that): if the new version can't be opened, crashes or hangs, it is ended, the previous
+   one is put back and opened, and the panel says the update was undone. If anything fails before the swap, your
+   installed copy stays exactly as it was.
 
 It doesn't update itself, and tells you so, when:
 
 - you installed it with **Homebrew**: run `brew upgrade --cask cocaine` (the panel copies it for you), so Homebrew's
   records stay right;
-- it's signed ad hoc, or it's running from the .dmg or a quarantined location (move it to Applications first);
-- its folder isn't writable by you (for example a standard, non-admin account and /Applications): download it from GitHub.
+- it's signed ad hoc, or it's running from the .dmg, a quarantined location or a build folder (move it to Applications
+  first);
+- its folder, or the app itself, isn't writable by you (for example a standard, non-admin account and /Applications):
+  download it from GitHub;
+- the release is signed with a different certificate than your copy (download it from GitHub);
+- the release is broken: for example a newer version whose build number isn't higher (reported, never shown as "up to
+  date").
 
-Copies from before the in-app updater (2.2.3 and earlier) update the usual way, once.
+**Copies of 2.3.0 and 2.4.0 can't update themselves**: those releases were built without the update key and published
+without a signed manifest, so the panel only says that a new version exists. Update them with Homebrew or from GitHub,
+once. Copies from before the in-app updater (2.2.3 and earlier) also update the usual way, once.
 
 ### For maintainers
 
-- `./build.sh --sign local|developer-id|adhoc` picks the tier; it never falls back to another one. `--dmg --release`
-  refuses ad hoc, never creates a new local certificate, and needs the update key; `--notarize` (Developer ID only)
-  notarizes and staples the app and the .dmg with `COCAINE_NOTARY_PROFILE`.
-- `tools/update-key.sh init` makes the update key pair once (the private key stays in `~/.cocaine-signing/`, never in the
-  repository; back it up: without it no installed copy can verify a new release).
-- `tools/release-sign.sh dist/Cocaine-<v>.dmg <tier>` writes `Cocaine-<v>.dmg.manifest.json` after checking the declared
-  tier against the app itself. Upload both files to the release. Nothing is published by the scripts.
-- `./verify.sh` builds and runs every automatic check (also on GitHub Actions); `tools/check-release.sh` checks published
-  artifacts.
+- `./build.sh --sign local|developer-id|adhoc` picks the tier; it never falls back to another one. The build goes to
+  `build.noindex/` (`build` links to it). `--dmg` is always a release build: it refuses ad hoc, never creates a new local
+  certificate, and needs the update key embedded; `--allow-unsigned-updates` builds such a DMG anyway and says its copies
+  can't update themselves. `--notarize` (Developer ID only) notarizes and staples the app and the .dmg with
+  `COCAINE_NOTARY_PROFILE`.
+- **Before the next release (a one-time step for the maintainer, not automated):** `tools/update-key.sh init` makes the
+  update key pair (the private key goes to `~/.cocaine-signing/update-ed25519.key`, never in the repository; back it up
+  offline: without it no installed copy can verify a new release, and replacing it breaks updates for every copy) and
+  embeds the public key in `Sources/UpdateKey.swift`; commit that file.
+- `tools/release-sign.sh dist/Cocaine-<v>.dmg <tier>` writes `Cocaine-<v>.dmg.manifest.json` (format 2: it also signs the
+  app's designated requirement) after checking the declared tier against the app itself, and refuses a build number that
+  isn't higher than the last release's (`tools/last-release`, which it then updates: commit it). Upload both files to the
+  release. Nothing is published by the scripts.
+- `./build.sh` (install) puts the build in /Applications when there is a copy there (it says when that copy is
+  Homebrew's), else in ~/Applications, and removes the other copy: one Cocaine on the Mac. It quits only the Cocaine
+  running from those copies (by their path), waits for it, and never touches the installed app if something can't be done.
+- `./verify.sh` builds and runs every automatic check (also on GitHub Actions, with a pinned Xcode); its app suites run
+  from a copy with its own bundle id and it checks that no settings were written. `tools/check-release.sh` checks
+  published artifacts (`COCAINE_NO_MANIFEST=1` for the manifest-less 2.3.0/2.4.0).
 
 Limits: the Developer ID and notarization steps are written and tested against simulated tools, not yet against Apple's
-service (that needs a paid developer account). The updater's transfer, verification and installation are tested with a
-local server and throwaway keys; the first real update will happen with the first release that ships a signed manifest.
+service (that needs a paid developer account). The updater's transfer, verification, installation and rollback are tested
+with a local server, throwaway keys and stand-in apps; the first real update will happen with the first release that
+ships a signed manifest.
