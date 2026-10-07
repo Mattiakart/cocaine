@@ -239,7 +239,7 @@ final class DimController {
                 log("\(want.reason): display \(d) to \(want.level)")
             }
             // The built-in's own level, read while nothing of ours is on it: the lid's fallback original.
-            if held[d] == nil, io.isBuiltin(d), !lid, let b = io.brightness(d) { lastSeen[d] = (b, now) }
+            if held[d] == nil, inputs.on, io.isBuiltin(d), !lid, let b = io.brightness(d) { lastSeen[d] = (b, now) }
         }
         if !lid { lidOriginal = [:] }
         writeLease()                                      // before any lowering is applied: a crash right after still restores
