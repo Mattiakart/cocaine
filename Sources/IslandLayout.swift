@@ -40,13 +40,10 @@ enum Island {
     /// Cross-morph timing: what the closed island shows is gone by p 0.5, what replaces it arrives over p 0.15…0.6.
     static func meltOut(_ p: CGFloat) -> CGFloat { smooth(p / 0.5) }
     static func meltIn(_ p: CGFloat) -> CGFloat { smooth((p - 0.15) / 0.45) }
-    /// id, symbol, title. The first half goes left of the notch, the rest right of it.
-    static func tabs(external: Bool) -> [(id: String, icon: String, title: String)] {
-        var t = [("home", "house.fill", L("Home")), ("music", "music.note", L("Music")), ("media", "play.rectangle.fill", L("Media")), ("calendar", "calendar", L("Calendar")), ("focus", "timer", L("Focus")),
-                 ("files", "tray.full.fill", L("Files")), ("shelf", "tray.and.arrow.down.fill", L("Shelf")), ("clipboard", "doc.on.clipboard", L("Clipboard")),
-                 ("status", "gauge.with.needle", L("Status")), ("mirror", "person.crop.square", L("Mirror"))]
-        if external { t.append(("display", "display", L("Monitors"))) }
-        return t
+    /// id, symbol, title: the screens the user shows, in their order (ScreenLayout; the Monitors screen only with an external
+    /// monitor). The first half goes left of the notch, the rest right of it.
+    static func tabs(external: Bool, layout: ScreenLayout = ScreenLayoutStore.shared.layout) -> [(id: String, icon: String, title: String)] {
+        layout.visibleScreens(external: external).compactMap { s in ModuleCatalog.screen(s.id).map { (s.id, $0.icon, L($0.title)) } }
     }
 }
 

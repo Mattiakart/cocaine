@@ -26,17 +26,30 @@ extension IslandView {
         return L("Your Mac stays awake")
     }
 
-    var homeTab: some View {
-        HStack(alignment: .top, spacing: Space.gutter) {
+    /// Cocaine itself: the switch, how long it stays on, Stay active. M keeps the switch and Stay active, S the switch alone.
+    @ViewBuilder func cocaineModule(_ b: ModuleBox) -> some View {
+        let title = HStack(spacing: Space.l) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                Text("Cocaine").font(UI.pageTitle)
+                Text(statusText).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(b.size == .l ? 2 : 1)
+            }
+            Spacer(minLength: Space.s)
+            PowderSwitch(bag: m.bag, on: m.on) { m.toggleCocaine() }.accessibilityLabel(L("Cocaine, keeps the Mac awake"))
+        }
+        let stay = HStack(spacing: Space.m) {
+            Image(systemName: "person.crop.circle.badge.checkmark").font(UI.icon).foregroundStyle(m.presenceActive ? Island.accent : UI.hint)
+                .frame(width: UI.iconColumn)
+            Text(L("Stay active")).font(UI.value).foregroundStyle(UI.primary).lineLimit(1)
+            Spacer(minLength: Space.xs)
+            CocaineSwitch($m.stayActive).accessibilityLabel(L("Stay active"))
+        }
+        .help(L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away."))
+        switch b.size {
+        case .s: title
+        case .m: VStack(alignment: .leading, spacing: Space.m) { title; stay }
+        case .l:
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: Space.l) {
-                    VStack(alignment: .leading, spacing: Space.xxs) {
-                        Text("Cocaine").font(UI.pageTitle)
-                        Text(statusText).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(2)
-                    }
-                    Spacer(minLength: Space.s)
-                    PowderSwitch(bag: m.bag, on: m.on) { m.toggleCocaine() }.accessibilityLabel(L("Cocaine, keeps the Mac awake"))
-                }
+                title
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text(L("Stay on for")).font(UI.section).foregroundStyle(UI.secondary)
                     Segments(selection: $m.timerMinutes, values: Settings.timerChoices, name: L("Stay on for"), label: { Dur.short(minutes: $0) },
@@ -47,34 +60,29 @@ extension IslandView {
                             m.timerMinutes = c[min(c.count - 1, max(0, i + n))]
                         }
                 }
-                HStack(spacing: Space.m) {
-                    Image(systemName: "person.crop.circle.badge.checkmark").font(UI.icon).foregroundStyle(m.presenceActive ? Island.accent : UI.hint)
-                        .frame(width: UI.iconColumn)
-                    Text(L("Stay active")).font(UI.value).foregroundStyle(UI.primary).lineLimit(1)
-                    Spacer(minLength: Space.xs)
-                    CocaineSwitch($m.stayActive).accessibilityLabel(L("Stay active"))
-                }
-                .help(L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away."))
+                stay
             }
-            .frame(width: 250)
-            VStack(alignment: .leading, spacing: Space.m) {
-                HStack {
-                    Text(L("Agents")).font(UI.section).foregroundStyle(UI.secondary)
-                    if m.board.count + m.approvals.count > 3 {
-                        Text("\(m.board.count + m.approvals.count)").font(UI.section.monospacedDigit()).foregroundStyle(UI.hint)
-                    }
+        }
+    }
+
+    /// What the AIs are doing: every session, those that need you first, scrolling in whatever height it has.
+    func agentsModule(_ b: ModuleBox) -> some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack {
+                Text(L("Agents")).font(UI.section).foregroundStyle(UI.secondary)
+                if m.board.count + m.approvals.count > 3 {
+                    Text("\(m.board.count + m.approvals.count)").font(UI.section.monospacedDigit()).foregroundStyle(UI.hint)
                 }
-                .padding(.top, 3)                               // on the cap line of "Cocaine" beside it
-                if m.board.isEmpty && m.approvals.isEmpty && m.agentNotice == nil {
-                    Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(UI.value).foregroundStyle(UI.hint)
-                } else {                                    // all of them, scrolling; those that need you first
-                    AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: true, accent: Island.accent,
-                                  warning: warningColor, maxHeight: .infinity, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
-                        .padding(.horizontal, -AgentListView.inset)   // icons on the column's edge
-                }
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 3)                               // on the cap line of "Cocaine" beside it
+            if m.board.isEmpty && m.approvals.isEmpty && m.agentNotice == nil {
+                Text(m.ai.available ? L("No AI at work") : L("No AI tool found")).font(UI.value).foregroundStyle(UI.hint)
+            } else {                                    // all of them, scrolling; those that need you first
+                AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: true, accent: Island.accent,
+                              warning: warningColor, maxHeight: .infinity, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
+                    .padding(.horizontal, -AgentListView.inset)   // icons on the column's edge
+            }
+            Spacer(minLength: 0)
         }
     }
 

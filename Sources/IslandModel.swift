@@ -21,13 +21,23 @@ import os
 
 final class IslandModel: ObservableObject {
     @Published var open = false
-    @Published var tab = "home"
+    /// The screen shown (a ScreenLayout screen id). Asked for one that isn't shown (a hidden screen, or "shelf" while a file is
+    /// dragged in when the shelf was moved into another screen), it shows the screen that holds that module, else the start one.
+    @Published var tab = "home" {
+        didSet { if let t = shownScreen(for: tab), t != tab { tab = t } }
+    }
     @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
     /// Opened from the keyboard (⌃⌥⌘I): kept open, with the keys of IslandKeys.
     @Published var keyboard = false
-    /// The tabs (id, symbol, title), worked out once and again only when the screens or the language change (Island.tabs looks at
-    /// every screen; it used to run a dozen times per redraw).
-    @Published private(set) var tabs: [(id: String, icon: String, title: String)] = Island.tabs(external: Island.external)
+    /// The arrangement of the screens, shared by every island and the settings card.
+    let screens: ScreenLayoutStore
+    /// The layout as this island last took it (the store publishes before its value changes).
+    private(set) var layout: ScreenLayout
+    /// Whether an external monitor makes the Monitors screen show (worked out with the tabs).
+    private(set) var external = Island.external
+    /// The tabs (id, symbol, title), worked out once and again only when the screens, the layout or the language change
+    /// (Island.tabs looks at every screen; it used to run a dozen times per redraw).
+    @Published private(set) var tabs: [(id: String, icon: String, title: String)]
     /// The render tool only: draw this moment of the open/close morph (0…1) instead of following `open`.
     var renderProgress: CGFloat?
     weak var pm: PanelModel?
@@ -49,31 +59,71 @@ final class IslandModel: ObservableObject {
     private var forwards: [AnyCancellable] = []
     private var flashWork: DispatchWorkItem?
 
-    init() {
-        // A page's own data redraws the island only while that page is shown (the closed island draws none of it); what the closed
-        // island shows (a focus running, music playing) always does. The microphone is observed by the view itself.
-        func page(_ id: String, _ p: ObservableObjectPublisher) -> AnyCancellable {
-            p.sink { [weak self] _ in if let self, self.open, self.tab == id { self.objectWillChange.send() } }
+    init(screens: ScreenLayoutStore = .shared) {
+        self.screens = screens
+        layout = screens.layout
+        let ext = Island.external
+        external = ext
+        tabs = Island.tabs(external: ext, layout: screens.layout)
+        tab = screens.layout.startScreen(current: nil, external: ext) ?? "home"
+        // A module's own data redraws the island only while a screen holding it is shown (the closed island draws none of it);
+        // what the closed island shows (a focus running, music playing) always does. The microphone is observed by the view itself.
+        func page(_ kinds: [String], _ p: ObservableObjectPublisher) -> AnyCancellable {
+            p.sink { [weak self] _ in if let self, self.open, self.showsAny(kinds) { self.objectWillChange.send() } }
         }
-        forwards = [page("files", files.objectWillChange), page("clipboard", clipboard.objectWillChange), page("shelf", shelf.objectWillChange),
-                    page("calendar", calendar.objectWillChange), page("music", music.objectWillChange), page("mirror", mirror.objectWillChange),
-                    page("display", ddc.objectWillChange),
+        forwards = [page(["downloads", "screenshots"], files.objectWillChange), page(["clipboard"], clipboard.objectWillChange),
+                    page(["shelf"], shelf.objectWillChange), page(["calendar"], calendar.objectWillChange), page(["music"], music.objectWillChange),
+                    page(["mirror"], mirror.objectWillChange), page(["monitors"], ddc.objectWillChange),
                     focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() },
-                    music.$playing.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }]
+                    music.$playing.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() },
+                    // The layout changed (the settings card, on any display): the tabs follow, a hidden screen gives way.
+                    screens.$layout.dropFirst().sink { [weak self] l in self?.refreshTabs(l) },
+                    // A chosen start screen: the island opens on it every time (set once it has closed, so closing shows no jump).
+                    $open.removeDuplicates().dropFirst().sink { [weak self] isOpen in if !isOpen { self?.scheduleStart() } }]
     }
 
-    /// The tabs again (a screen came or went, the language changed).
-    func refreshTabs() {
-        let t = Island.tabs(external: Island.external)
+    /// The modules of the screen shown.
+    var shownModules: [String] { layout.config(tab)?.modules.map(\.kind) ?? [] }
+    func showsAny(_ kinds: [String]) -> Bool { shownModules.contains { kinds.contains($0) } }
+    /// Is this module on the screen shown? (Return copies on the clipboard module wherever it is.)
+    func shows(_ kind: String) -> Bool { showsAny([kind]) }
+
+    /// The screen to show when `id` is asked for: itself when shown, else the one holding that module, else the start screen.
+    private func shownScreen(for id: String) -> String? {
+        let l = layout
+        return l.screenShowing(id, external: external) ?? l.startScreen(current: nil, external: external)
+    }
+
+    private var startWork: DispatchWorkItem?
+    private func scheduleStart() {
+        startWork?.cancel()
+        guard layout.start != ScreenLayout.lastUsed else { return }
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, !self.open, let s = self.layout.startScreen(current: self.tab, external: self.external) else { return }
+            if s != self.tab { self.tab = s }
+        }
+        startWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)          // after the closing morph
+    }
+
+    /// The tabs again (a screen came or went, the language or the layout changed). The screen shown, if it is no longer
+    /// shown, gives way to the start screen with the screens' transition.
+    func refreshTabs(_ newLayout: ScreenLayout? = nil) {
+        let l = newLayout ?? screens.layout
+        if l != layout { layout = l; objectWillChange.send() }      // a screen's modules changed: the page redraws
+        external = Island.external
+        let t = Island.tabs(external: external, layout: l)
         if t.map({ $0.id }) != tabs.map({ $0.id }) || t.map({ $0.title }) != tabs.map({ $0.title }) { tabs = t }
-        if !tabs.contains(where: { $0.id == tab }) { tab = "home" }
+        if !t.contains(where: { $0.id == tab }), let next = l.screenShowing(tab, external: external) ?? l.startScreen(current: nil, external: external) {
+            withAnimation(ScreensMotion.change) { tab = next }
+        }
     }
 
     func tabTitle(_ id: String) -> String { tabs.first { $0.id == id }?.title ?? id }
 
     /// ← / →: the previous or next tab (no wrapping), said by VoiceOver.
     func stepTab(_ n: Int) {
-        guard let i = tabs.firstIndex(where: { $0.id == tab }) else { tab = "home"; return }
+        guard let i = tabs.firstIndex(where: { $0.id == tab }) else { tab = tabs.first?.id ?? "home"; return }
         let j = min(tabs.count - 1, max(0, i + n))
         guard j != i else { return }
         Haptic.tap(.alignment)

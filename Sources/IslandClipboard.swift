@@ -25,6 +25,8 @@ private struct ClipboardPage: View {
     @ObservedObject var h: ClipboardHistory
     let copyClip: (ClipItem) -> Void
     let keyable: (Bool) -> Void
+    var twoColumns = true                 // one column in the island's narrow column
+    var footnote = true                   // not at M: the list keeps the room
 
     var body: some View {
         let list = h.visible
@@ -60,12 +62,13 @@ private struct ClipboardPage: View {
                     .font(UI.value).foregroundStyle(UI.hint)
             }
             FadingScroll {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.l), GridItem(.flexible())], alignment: .leading, spacing: Space.s) {
+                LazyVGrid(columns: twoColumns ? [GridItem(.flexible(), spacing: Space.l), GridItem(.flexible())] : [GridItem(.flexible())],
+                          alignment: .leading, spacing: Space.s) {
                     ForEach(list) { c in row(c) }
                 }
             }
             Spacer(minLength: 0)
-            footer
+            if footnote { footer }
         }
         .onDisappear { keyable(false); h.hovered = nil }      // gives the keyboard back if the search field had it
     }
@@ -180,8 +183,10 @@ private struct ClipboardPage: View {
 extension IslandView {
     // MARK: clipboard
 
-    var clipboardTab: some View {
-        ClipboardPage(h: clipboard, copyClip: { model.copyClip($0) }, keyable: model.setKeyable)
+    /// The history: two columns of items on a wide box, one in the island's narrow column.
+    func clipboardModule(_ b: ModuleBox) -> some View {
+        ClipboardPage(h: clipboard, copyClip: { model.copyClip($0) }, keyable: model.setKeyable, twoColumns: b.width >= 400,
+                      footnote: b.size == .l)
     }
 
 }

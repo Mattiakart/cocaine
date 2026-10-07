@@ -185,12 +185,12 @@ private struct FileThumb: View {
 extension IslandView {
     // MARK: files
 
-    var filesTab: some View {
-        HStack(alignment: .top, spacing: Space.gutter) {
+    /// Recent downloads, a list that scrolls (as many rows as its height holds).
+    func downloadsModule(_ b: ModuleBox) -> some View {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Downloads")).font(UI.section).foregroundStyle(UI.secondary)
                 if files.downloads.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
-                FadingScroll(cap: 112) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
+                FadingScroll(cap: b.size == .l ? 112 : max(20, b.height - 24)) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
                     Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
                         HStack(spacing: Space.m) {
                             Image(nsImage: IconCache.icon(it.url.path)).resizable().frame(width: 20, height: 20)
@@ -208,7 +208,10 @@ extension IslandView {
                 } } }
                 Spacer(minLength: 0)
             }
-            .frame(width: 250, alignment: .leading)                  // template A: Downloads 250 pt, Screenshots the rest
+    }
+
+    /// Recent screenshots, side by side, scrolling sideways; drag one out to drop it anywhere.
+    func screenshotsModule(_ b: ModuleBox) -> some View {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Screenshots")).font(UI.section).foregroundStyle(UI.secondary)
                 if files.shots.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
@@ -226,8 +229,6 @@ extension IslandView {
                 Text(L("Drag a file out to drop it anywhere")).font(UI.detail).foregroundStyle(UI.hint)
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 
 }
