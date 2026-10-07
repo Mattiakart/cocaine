@@ -35,7 +35,7 @@ struct ApprovalReviewView: View {
             } else {
                 VStack(alignment: .leading, spacing: Space.m) {
                     header
-                    content.frame(maxHeight: 300)
+                    content
                     actions
                 }
                 .padding(AgentListView.inset)
@@ -66,20 +66,21 @@ struct ApprovalReviewView: View {
                     .font(UI.icon).foregroundStyle(warning).frame(width: UI.iconColumn).accessibilityHidden(true)
                 Text([r.from, r.project].compactMap { $0 }.joined(separator: " · ")).font(UI.itemTitle).lineLimit(1)
             }
-            Text(Self.subtitle(r)).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(2)
             HStack(spacing: Space.s) {
-                if count > 1 {
+                Text(Self.subtitle(r)).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
+                Spacer(minLength: Space.xs)
+                if count > 1 {                                      // the queue: which one of how many
                     Button { step(-1) } label: { Image(systemName: "chevron.left").font(UI.chevron) }
                         .buttonStyle(MotionGlyphStyle()).disabled(index == 0).accessibilityLabel(L("Previous request"))
-                    Text(String(format: L("%d of %d"), index + 1, count)).font(UI.detail.monospacedDigit()).foregroundStyle(UI.secondary)
+                    Text(String(format: L("%d of %d"), index + 1, count)).font(UI.detail.monospacedDigit()).foregroundStyle(UI.secondary).fixedSize()
                     Button { step(1) } label: { Image(systemName: "chevron.right").font(UI.chevron) }
                         .buttonStyle(MotionGlyphStyle()).disabled(index >= count - 1).accessibilityLabel(L("Next request"))
                 }
-                if r.answerable {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        Text(String(format: L("Back to the terminal in %@"), AgentListView.countdown(r.deadline, now: ctx.date)))
-                            .font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint).lineLimit(1)
-                    }
+            }
+            if r.answerable {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text(String(format: L("Back to the terminal in %@"), AgentListView.countdown(r.deadline, now: ctx.date)))
+                        .font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint).lineLimit(1).minimumScaleFactor(0.85)
                 }
             }
         }
@@ -96,14 +97,15 @@ struct ApprovalReviewView: View {
             }
             switch r.kind {
             case .plan:
-                FadingScroll { MarkdownView(r.plan ?? "") }
+                FadingScroll(cap: island ? nil : 260) { MarkdownView(r.plan ?? "") }
             case .question:
                 questionPage
             case .permission:
-                FadingScroll { DetailView(detail: r.detail, summary: r.summary) }
+                FadingScroll(cap: island ? nil : 260) { DetailView(detail: r.detail, summary: r.summary) }
                 if !r.suggestions.filter({ !$0.isEmpty }).isEmpty && !writing { suggestionRow }
             case .elicitation:
                 Text(r.summary).font(UI.value).fixedSize(horizontal: false, vertical: true)
+                if island { HStack(spacing: Space.s) { elicitationChoices } }
             }
         }
         .animation(Motion.animation(.expand), value: writing)
@@ -162,7 +164,7 @@ struct ApprovalReviewView: View {
                             .buttonStyle(MotionGlyphStyle()).disabled(page >= r.questions.count - 1).accessibilityLabel(L("Next question"))
                     }
                 }
-                FadingScroll {
+                FadingScroll(cap: island ? nil : 220) {
                     VStack(alignment: .leading, spacing: Space.s) {
                         Text(ApprovalRequest.clean(q.question, 2000)).font(UI.itemTitle).fixedSize(horizontal: false, vertical: true)
                         if q.multiSelect { Text(L("Pick one or more")).font(UI.detail).foregroundStyle(UI.hint) }
@@ -208,48 +210,58 @@ struct ApprovalReviewView: View {
 
     // MARK: actions
 
-    private func button(_ title: String, _ kind: CocaineButtonKind, key: String?, _ action: @escaping () -> Void) -> some View {
+    private func button(_ title: String, _ kind: CocaineButtonKind, key: String?, wide: Bool? = nil, _ action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .buttonStyle(CocaineButtonStyle(kind: kind, height: island ? CTL.hDialog : CTL.h, wide: island))
+            .buttonStyle(CocaineButtonStyle(kind: kind, height: island ? CTL.hDialog : CTL.h, wide: wide ?? island))
             .help(key.map { "\(title) (\($0))" } ?? title)
+            .accessibilityHint(key.map { String(format: L("Shortcut %@"), $0) } ?? "")
     }
 
+    /// At most three rows in the island's column (its page is 158 pt high): the granting answer and its alternative, then the
+    /// way to write, then the way out. Choices of an MCP question are listed with the question, on the right.
     @ViewBuilder private var actions: some View {
         let stack = island ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.s)) : AnyLayout(HStackLayout(spacing: Space.s))
         stack {
-            switch r.kind {
-            case .plan:
-                if r.allowable && !writing {
-                    button(L("Approve"), .primary, key: "⌘Y") { m.reply(r.id, ApprovalReply(decision: "approve")) }.shortcut(island ? nil : "y")
-                    if r.acceptEdits {
-                        button(L("Approve, accept edits"), .secondary, key: "⌘2") { m.reply(r.id, ApprovalReply(decision: "approve-edits")) }
+            if !writing {
+                switch r.kind {
+                case .plan:
+                    if r.allowable {
+                        HStack(spacing: Space.s) {
+                            button(L("Approve"), .primary, key: "⌘Y") { m.reply(r.id, ApprovalReply(decision: "approve")) }.shortcut(island ? nil : "y")
+                            if r.acceptEdits {
+                                button(L("+ accept edits"), .secondary, key: "⌘2") { m.reply(r.id, ApprovalReply(decision: "approve-edits")) }
+                                    .accessibilityLabel(L("Approve, accept edits"))
+                            }
+                        }
                     }
-                }
-                if !writing { button(L("Feedback…"), .secondary, key: "⌘N") { m.startWriting(r.id) }.shortcut(island ? nil : "n") }
-            case .question:
-                if !writing {
+                    button(L("Feedback…"), .secondary, key: "⌘N") { m.startWriting(r.id) }.shortcut(island ? nil : "n")
+                case .question:
                     button(L("Send answers"), .primary, key: "⌘↩") { m.submitAnswers(r) }
                         .disabled(m.answers(r) == nil).shortcut(island ? nil : .return)
                     button(L("Feedback…"), .secondary, key: "⌘N") { m.startWriting(r.id) }
-                }
-            case .permission:
-                if !writing {
-                    if r.allowable { button(L("Allow"), .primary, key: "⌘Y") { m.reply(r.id, ApprovalReply(decision: "allow")) }.shortcut(island ? nil : "y") }
-                    button(L("Deny"), .destructive, key: "⌘N") { m.reply(r.id, ApprovalReply(decision: "deny")) }.shortcut(island ? nil : "n")
-                    button(L("Deny with reason…"), .plain, key: nil) { m.startWriting(r.id) }
-                }
-            case .elicitation:
-                ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
-                    button(AgentListView.choiceName(c), AgentListView.kind(c, index: i), key: i < 9 ? "⌘\(i + 1)" : nil) {
-                        m.reply(r.id, ApprovalReply(decision: c.decision, content: c.content))
+                case .permission:
+                    HStack(spacing: Space.s) {
+                        if r.allowable { button(L("Allow"), .primary, key: "⌘Y") { m.reply(r.id, ApprovalReply(decision: "allow")) }.shortcut(island ? nil : "y") }
+                        button(L("Deny"), .destructive, key: "⌘N") { m.reply(r.id, ApprovalReply(decision: "deny")) }.shortcut(island ? nil : "n")
                     }
+                    button(L("Deny with reason…"), .secondary, key: nil) { m.startWriting(r.id) }
+                case .elicitation:
+                    if !island { elicitationChoices }
                 }
             }
-            HStack(spacing: Space.s) {
-                button(L("In the terminal"), .plain, key: nil) { m.release(r.id); m.focus(r.origin, r.from) }
+            HStack(spacing: Space.xs) {
+                button(L("In the terminal"), .plain, key: nil, wide: false) { m.release(r.id); m.focus(r.origin, r.from) }
                     .help(L("Hands the request back to the terminal and goes there"))
-                if island { button(L("Later"), .plain, key: "⌘L") { m.putAside(r.id) }.help(L("Back to the island's pages; the request keeps waiting")) }
-                else { button(L("Close"), .plain, key: nil) { m.expanded = nil } }
+                if island { button(L("Later"), .plain, key: "⌘L", wide: false) { m.putAside(r.id) }.help(L("Back to the island's pages; the request keeps waiting")) }
+                else { button(L("Close"), .plain, key: nil, wide: false) { m.expanded = nil } }
+            }
+        }
+    }
+
+    @ViewBuilder private var elicitationChoices: some View {
+        ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
+            button(AgentListView.choiceName(c), AgentListView.kind(c, index: i), key: i < 9 ? "⌘\(i + 1)" : nil, wide: false) {
+                m.reply(r.id, ApprovalReply(decision: c.decision, content: c.content))
             }
         }
     }

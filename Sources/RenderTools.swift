@@ -207,6 +207,7 @@ func cliRenderIsland() {
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     if args.contains("--shelf") { im.shelf.urls = [URL(fileURLWithPath: "/Applications/Cocaine.app"), URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")] }
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
+    ReviewFixtures.apply(args, pm: pm, usage: im.usage)          // --plan-fixture, --question-fixture, --diff-fixture, --quota-fixture
     // The morph: --progress 0.3 (or a list, 0,0.15,0.3…, drawn one under the other) draws those moments of opening; closing runs
     // the same frames backwards. --flash "text" / --level 0.6 shows a flash message, --pink the pink bag, --external the Monitors tab,
     // --notch covers the notch like the hardware does (what you really see), --xray shows it in translucent red instead.
@@ -325,6 +326,7 @@ func cliRenderPanel() {
     }
     if CommandLine.arguments.contains("--longsound") { model.alertDuration = 0; model.alertRepeatMinutes = 10 }
     if let i = CommandLine.arguments.firstIndex(of: "--timer"), i + 1 < CommandLine.arguments.count { model.timerMinutes = Int(CommandLine.arguments[i + 1]) ?? 0 }
+    ReviewFixtures.apply(CommandLine.arguments, pm: model, usage: nil)   // the review fixtures, in the panel
     renderSampleDialog(CommandLine.arguments, surface: .panel)          // --dialog <kind>: a dialog over the panel
     let checkOverflow = CommandLine.arguments.contains("--overflow-check")
     // The page with its dialog layer on top, as the panel's window stacks them (the dialog is over the visible area).

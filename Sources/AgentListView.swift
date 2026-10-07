@@ -28,7 +28,23 @@ struct AgentListView: View {
         return entries.filter { !asking.contains($0.id) }
     }
 
+    /// The request opened for review in the panel: drawn whole above the list (never cut by the list's height).
+    private var opened: ApprovalRequest? { island ? nil : approvals.first { $0.id == review.expanded } }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            if let r = opened {
+                ApprovalReviewView(request: r, index: approvals.firstIndex(of: r) ?? 0, count: approvals.count, island: false,
+                                   accent: accent, warning: warning,
+                                   step: { d in let i = (approvals.firstIndex(of: r) ?? 0) + d; if approvals.indices.contains(i) { review.expanded = approvals[i].id } })
+                    .motionAppear(edge: .top)
+            }
+            list
+        }
+        .animation(Motion.animation(.expand), value: review.expanded)
+    }
+
+    private var list: some View {
         FadingScroll(cap: maxHeight.isFinite ? maxHeight : nil) {
             LazyVStack(alignment: .leading, spacing: Space.s) {
                 if let notice {
@@ -41,21 +57,10 @@ struct AgentListView: View {
                     Text(Self.queueText(approvals)).font(UI.detail).foregroundStyle(UI.secondary).padding(.horizontal, Self.inset)
                         .accessibilityAddTraits(.isHeader)
                 }
-                ForEach(approvals) { r in
-                    Group {
-                        if !island && review.expanded == r.id {
-                            ApprovalReviewView(request: r, index: approvals.firstIndex(of: r) ?? 0, count: approvals.count, island: false,
-                                               accent: accent, warning: warning)
-                        } else {
-                            approvalRow(r)
-                        }
-                    }
-                    .motionAppear(edge: .top)
-                }
+                ForEach(approvals.filter { $0.id != opened?.id }) { r in approvalRow(r).motionAppear(edge: .top) }
                 ForEach(rows) { e in sessionRow(e).motionAppear(edge: nil) }
             }
             .animation(Motion.animation(.notice), value: approvals.map(\.id))
-            .animation(Motion.animation(.expand), value: review.expanded)
             .animation(Motion.animation(.notice), value: rows.map(\.id))
             .animation(Motion.animation(.crossfade), value: rows.map(\.state))
         }
