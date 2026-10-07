@@ -50,7 +50,7 @@ enum Island {
     }
 }
 
-/// Where the island sits: the real notch of a built-in display, or a slim pill at the top of any other screen.
+/// Where an island sits: the real notch of a display that has one, or a slim pill at the top of any other screen.
 struct NotchGeometry: Equatable {
     var frame: CGRect          // the screen's frame
     var notchWidth: CGFloat
@@ -60,9 +60,15 @@ struct NotchGeometry: Equatable {
     /// A screen without a notch whose menu bar hides itself: the closed pill stays out of the way until the pointer reaches the
     /// top edge (where the menu bar comes down too).
     var menuBarHidden = false
+    /// The screen's display (0 in the render tools).
+    var display: CGDirectDisplayID = 0
 
     /// The render tools (`--notch-width`): another Mac's notch, to see the panel and the island as they'd be there.
     static var override: NotchGeometry?
+    /// The screen whose island the user is working with (IslandController sets it when an island opens there, the island keys
+    /// are used there or the panel is asked for from there): the settings panel and its dialogs hang from that screen's notch.
+    /// nil = the main island (`choose`).
+    static var focus: CGDirectDisplayID?
 
     /// What the choice needs to know about one screen (NSScreen in the app, made-up screens in the tests).
     struct Screen: Equatable {
@@ -71,35 +77,73 @@ struct NotchGeometry: Equatable {
         var safeTop: CGFloat              // safeAreaInsets.top: the notch's height, 0 without one
         var auxLeft: CGFloat?, auxRight: CGFloat?    // the menu-bar areas left and right of the notch
         var builtin: Bool
+        var id: CGDirectDisplayID = 0
+        var mirrorOf: CGDirectDisplayID = 0          // CGDisplayMirrorsDisplay: the display this one mirrors (0: none)
     }
 
+    /// The screens as AppKit sees them now (a mirror set is one NSScreen).
+    static func screens() -> [Screen] {
+        NSScreen.screens.map { s in
+            let id = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? 0
+            return Screen(frame: s.frame, visibleTop: s.visibleFrame.maxY, safeTop: s.safeAreaInsets.top, auxLeft: s.auxiliaryTopLeftArea?.width,
+                          auxRight: s.auxiliaryTopRightArea?.width, builtin: id != 0 && CGDisplayIsBuiltin(id) != 0, id: id,
+                          mirrorOf: id == 0 ? 0 : CGDisplayMirrorsDisplay(id))
+        }
+    }
+
+    /// The island the user is working with: the focused screen's (see `focus`), else the main one (`choose`).
     static func current() -> NotchGeometry? {
         if let override { return override }
-        let list = NSScreen.screens.map { s in
-            Screen(frame: s.frame, visibleTop: s.visibleFrame.maxY, safeTop: s.safeAreaInsets.top, auxLeft: s.auxiliaryTopLeftArea?.width,
-                   auxRight: s.auxiliaryTopRightArea?.width,
-                   builtin: (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID).map { CGDisplayIsBuiltin($0) != 0 } ?? false)
-        }
-        return choose(list, barThickness: NSStatusBar.system.thickness)
+        let list = screens(), bar = NSStatusBar.system.thickness
+        if let f = focus, let s = list.first(where: { $0.id == f }) { return make(s, barThickness: bar) }
+        return choose(list, barThickness: bar)
     }
 
-    /// Which screen holds the island, the same one whatever app has the keyboard: the built-in display with a notch, else any
-    /// screen with a notch, else the built-in display, else the main display (the first: the one with the menu bar). Never
-    /// "the screen of the key window", which made the island jump between monitors with the focus.
+    /// The main island's screen (the only one with *Show on all screens* off), the same one whatever app has the keyboard: the
+    /// built-in display with a notch, else any screen with a notch, else the built-in display, else the main display (the first:
+    /// the one with the menu bar). Never "the screen of the key window", which made the island jump between monitors.
     static func choose(_ screens: [Screen], barThickness: CGFloat) -> NotchGeometry? {
-        func notched(_ s: Screen) -> Bool { s.safeTop > 0 && s.auxLeft != nil && s.auxRight != nil }
-        guard let s = screens.first(where: { $0.builtin && notched($0) }) ?? screens.first(where: notched)
-                ?? screens.first(where: \.builtin) ?? screens.first else { return nil }
+        primary(screens).map { make($0, barThickness: barThickness) }
+    }
+
+    static func primary(_ screens: [Screen]) -> Screen? {
+        screens.first(where: { $0.builtin && notched($0) }) ?? screens.first(where: notched) ?? screens.first(where: \.builtin) ?? screens.first
+    }
+
+    static func notched(_ s: Screen) -> Bool { s.safeTop > 0 && s.auxLeft != nil && s.auxRight != nil }
+
+    /// One screen's island: its notch, or a pill as tall as its menu bar (or the system's menu-bar height while it is hidden).
+    static func make(_ s: Screen, barThickness: CGFloat) -> NotchGeometry {
         if notched(s), let l = s.auxLeft, let r = s.auxRight {
             let w = s.frame.width - l - r
-            return NotchGeometry(frame: s.frame, notchWidth: w, height: s.safeTop, centerX: s.frame.minX + l + w / 2, hasNotch: true)
+            return NotchGeometry(frame: s.frame, notchWidth: w, height: s.safeTop, centerX: s.frame.minX + l + w / 2, hasNotch: true, display: s.id)
         }
-        // No notch: a pill as tall as the menu bar (or the system's menu-bar height while it is hidden).
         let bar = (s.frame.maxY - s.visibleTop).rounded()
         let hidden = bar < 1
         let height = hidden ? max(22, barThickness) : min(max(bar, 22), 44)
-        return NotchGeometry(frame: s.frame, notchWidth: 150, height: height, centerX: s.frame.midX, hasNotch: false, menuBarHidden: hidden)
+        return NotchGeometry(frame: s.frame, notchWidth: 150, height: height, centerX: s.frame.midX, hasNotch: false, menuBarHidden: hidden, display: s.id)
     }
+
+    /// Every island to show: one per screen (a mirror set once: its members show one picture), the main one first. With
+    /// `allScreens` off only the main one, as in 2.5.0.
+    static func all(_ screens: [Screen], barThickness: CGFloat, allScreens: Bool) -> [NotchGeometry] {
+        guard let main = primary(screens) else { return [] }
+        guard allScreens else { return [make(main, barThickness: barThickness)] }
+        let ids = Set(screens.map(\.id))
+        var seen = Set<CGDirectDisplayID>(), out: [NotchGeometry] = []
+        for s in [main] + screens where !seen.contains(s.id) {
+            if s.mirrorOf != 0 && s.mirrorOf != s.id && ids.contains(s.mirrorOf) { continue }     // shown by the display it mirrors
+            seen.insert(s.id)
+            out.append(make(s, barThickness: barThickness))
+        }
+        return out
+    }
+}
+
+/// Which screen an island is on, for its view.
+struct IslandPlace: Equatable {
+    var display: CGDirectDisplayID
+    var geometry: NotchGeometry
 }
 
 /// One moment of the open/close morph. p runs from 0 (closed) to 1 (open) and a spring overshoots it a little past either end;

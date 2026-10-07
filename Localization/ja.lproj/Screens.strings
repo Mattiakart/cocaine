@@ -1,0 +1,3 @@
+/* Cocaine — ja: the island on every screen and its HUD below the notch */
+"Show on all screens" = "すべての画面に表示";
+"An island at the top of every connected screen: the notch where there is one, a slim bar on the others. Off: only on the main screen." = "接続したすべての画面の上端にアイランドを表示します。ノッチのある画面ではノッチに、ほかの画面では細いバーになります。オフ：メイン画面のみ。";

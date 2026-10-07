@@ -141,7 +141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateStatusItem()
         }
         island.settingsOpen = { [weak self] in self?.panel?.isVisible ?? false }
-        island.start(panelModel: model, enabled: settings.island) { [weak self] in
+        model.islandScreensChanged = { [weak self] in
+            guard let self else { return }
+            self.island.setAllScreens(self.settings.islandAllScreens)
+        }
+        island.start(panelModel: model, enabled: settings.island, allScreens: settings.islandAllScreens) { [weak self] in
             self?.island.setOpen(false)
             self?.showPanel(fromClick: false)
         }
@@ -765,6 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let clicked = fromClick ? NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } : nil
         var screen = clicked ?? NSScreen.main
         var anchorX = mouse.x
+        if settings.island { island.focus(at: mouse) }                  // the screen where the user is: its notch holds the panel
         if settings.island, let g = NotchGeometry.current() {
             screen = NSScreen.screens.first { $0.frame == g.frame } ?? screen       // under the notch, where the island is
             anchorX = g.centerX
@@ -1040,14 +1045,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             island.model.flashNotice(icon, L("Volume"), level: r.muted ? 0 : Double(r.level))
             return true
         }
-        // The display under the pointer (else the built-in, else an Apple display with the lid closed); a lowered one is left to macOS.
+        // The display under the pointer (else the built-in, else an Apple display with the lid closed); a lowered one is left to macOS,
+        // and so is one whose island can't show the bar (a full-screen app on it): macOS shows its own there.
         guard let id = screens.keyTarget(pointer: CGEvent(source: nil)?.location), !dim.isLowered(id), !dim.previewing,
-              let b = screens.brightness(id) else { return false }
+              island.canShowHUD(on: island.hudTarget(display: id)), let b = screens.brightness(id) else { return false }
         let step: Float = fine ? 1.0 / 64 : 1.0 / 16
         let new = min(1, max(0, b + (key == 2 ? step : -step)))
         dimQuiet = Date().addingTimeInterval(1)
         screens.setBrightness(id, new)
-        island.model.flashNotice("sun.max.fill", L("Brightness"), level: Double(new))
+        island.model.flashNotice("sun.max.fill", L("Brightness"), level: Double(new), display: id)
         return true
     }
 

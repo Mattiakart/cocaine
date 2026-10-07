@@ -444,6 +444,9 @@ struct PanelView: View {
                 row(L("Replace system HUD"), detail: L("Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own.")) {
                     toggle(L("Replace system HUD"), $m.replaceHUD)
                 }
+                row(L("Show on all screens"), detail: L("An island at the top of every connected screen: the notch where there is one, a slim bar on the others. Off: only on the main screen.")) {
+                    toggle(L("Show on all screens"), $m.islandAllScreens)
+                }
             }
             clipboardCard
         }
@@ -926,7 +929,12 @@ struct TimeStepper: View {
         return ((base + n * step) % 1440 + 1440) % 1440
     }
 
-    private func step(_ n: Int) { Haptic.tap(.alignment); minutes = Self.stepped(minutes, by: n) }
+    /// − / +: one tap. A scroll step already tapped in ScrollSteps: none here (it used to tap twice per step).
+    static func step(_ minutes: inout Int, by n: Int, fromScroll: Bool) {
+        if !fromScroll { Haptic.tap(.alignment) }
+        minutes = stepped(minutes, by: n)
+    }
+    private func step(_ n: Int, fromScroll: Bool = false) { Self.step(&minutes, by: n, fromScroll: fromScroll) }
 
     private var spec: PickerSpec {
         let times = Array(stride(from: 0, to: 1440, by: 30))
@@ -945,7 +953,7 @@ struct TimeStepper: View {
         }
         .frame(height: CTL.h)
         .background(RoundedRectangle(cornerRadius: CTL.radius).fill(CTL.track))
-        .onScrollSteps(every: 12) { step($0) }
+        .onScrollSteps(every: 12) { step($0, fromScroll: true) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
     }

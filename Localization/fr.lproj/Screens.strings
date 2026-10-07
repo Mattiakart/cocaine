@@ -1,0 +1,3 @@
+/* Cocaine — fr: the island on every screen and its HUD below the notch */
+"Show on all screens" = "Afficher sur tous les écrans";
+"An island at the top of every connected screen: the notch where there is one, a slim bar on the others. Off: only on the main screen." = "Une île en haut de chaque écran connecté : l'encoche là où il y en a une, une fine barre sur les autres. Désactivé : seulement sur l'écran principal.";

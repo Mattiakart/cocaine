@@ -70,6 +70,9 @@ final class PanelModel: ObservableObject {
     @Published var stayActiveAlways: Bool { didSet { settings.stayActiveAlways = stayActiveAlways } }
     @Published var stayActiveApps: [String] { didSet { settings.stayActiveApps = stayActiveApps } }
     @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
+    /// An island on every connected screen (default), or only on the main one (Sources/IslandController.swift).
+    @Published var islandAllScreens: Bool { didSet { settings.islandAllScreens = islandAllScreens; islandScreensChanged() } }
+    var islandScreensChanged: () -> Void = {}
     @Published var presenceAccess = Presence.hasAccess
     @Published var permissionProblems: [Permission] = []
     /// Cocaine is off but Stay active is working: the bag is full of pink powder.
@@ -204,6 +207,7 @@ final class PanelModel: ObservableObject {
         stayActiveAlways = settings.stayActiveAlways
         stayActiveApps = settings.stayActiveApps
         replaceHUD = settings.replaceHUD
+        islandAllScreens = settings.islandAllScreens
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".
