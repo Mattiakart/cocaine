@@ -172,6 +172,10 @@ func cliRenderIsland() {
     pm.timerMinutes = 120; pm.onUntil = Date().addingTimeInterval(7000)
     if args.contains("--presence") { pm.presenceActive = true; pm.pinkLevel = 1 }
     if let i = args.firstIndex(of: "--pink-level"), i + 1 < args.count, let v = Double(args[i + 1]) { pm.pinkLevel = CGFloat(v); pm.pinkPouring = v < 1 }        // a frame of the pink powder filling
+    // Before the model works out its tabs: --external (the Monitors screen), --screens-fixture <name> (an arranged layout,
+    // ScreenFixtures in Sources/ScreensTests.swift).
+    Island.forceExternal = args.contains("--external")
+    applyScreensFixture(args)
     let im = IslandModel()
     im.pm = pm
     // --notch-width 210: another Mac's notch (a 14" is 185 pt; scaled resolutions change it).
@@ -282,6 +286,7 @@ func cliRenderPanel() {
         model.history = []                                         // never the user's real alerts (project names) in a render
     }
     // --island / --no-island: hanging from the notch (the strip) or not, whatever the real setting; --notch-width 210: another Mac's notch.
+    applyScreensFixture(CommandLine.arguments)                  // --screens-fixture <name>, --screens-edit <screen id>
     if CommandLine.arguments.contains("--island") { model.island = true }
     if CommandLine.arguments.contains("--no-island") { model.island = false }
     if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {

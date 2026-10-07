@@ -50,6 +50,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--clipboard-te
     exit(ClipboardTests.run() == 0 ? 0 : 1)
 }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--island-selfcheck" { cliIslandSelfcheck() }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--screens-test" { cliScreensTest() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" { cliRenderIsland() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-panel" { cliRenderPanel() }
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--render-demo-gif" {
