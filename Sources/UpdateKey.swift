@@ -4,5 +4,5 @@
 // `build.sh --release` refuses to build it.
 
 enum UpdateKey {
-    static let publicKeyBase64 = ""
+    static let publicKeyBase64 = "ihE79a1kMi1otxZWl7txj1X2YjmjCH0IuuOmD+OEn9s="
 }
