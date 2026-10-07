@@ -28,3 +28,10 @@
 "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Quelque chose a ouvert « %@ ». Si ce n’était pas vous, choisissez Ne pas autoriser. Modifiable dans Automatisations → Raccourcis clavier.";
 "Don't Allow" = "Ne pas autoriser";
 "Too hot with the lid closed: Cocaine is off" = "Trop chaud capot fermé : Cocaine est désactivé";
+
+/* Display and power: the HUD, Stay available, Monitors */
+"Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own." = "Cocaine gère les touches de volume et de luminosité et affiche leur barre dans l'îlot. Quand l'îlot n'est pas visible (plein écran, réglages ouverts), macOS affiche la sienne.";
+"While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting." = "Pendant votre inactivité, il envoie un événement de souris invisible juste avant que Teams et consorts vous affichent absent. Cela empêche aussi l'économiseur d'écran, le verrouillage et la mise en veille de l'écran.";
+"Monitor %d" = "Moniteur %d";
+"Not answering over DDC/CI" = "Ne répond pas en DDC/CI";
+"Controls the monitor itself, over DDC/CI. A value the monitor doesn't report shows –." = "Contrôle le moniteur lui-même, en DDC/CI. Une valeur que le moniteur ne communique pas s'affiche –.";

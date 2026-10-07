@@ -254,6 +254,9 @@ private func keysSelfTest(_ check: (String, Bool) -> Void) {
     check("keys: ⌃, ⌘ and ⇧ combos are passed through", MediaKeys.route([.control]).pass && MediaKeys.route([.command]).pass
           && MediaKeys.route([.shift]).pass && MediaKeys.route([.option, .control]).pass)
     check("keys: caps lock and fn don't count as modifiers", MediaKeys.route([.capsLock, .function]) == (false, false))
+    check("stay available: nudged just before the 5-minute away timers", Presence.nudgeAfter(screenSaverIdle: nil) == 270)
+    check("stay available: …or before an earlier screen saver (which locks the Mac)", Presence.nudgeAfter(screenSaverIdle: 120) == 90)
+    check("stay available: never more often than every 45 s", Presence.nudgeAfter(screenSaverIdle: 60) == 45)
     check("hud: before macOS 26 the system helper is frozen, from 26 nothing is", SystemHUD.freezesHelper(osMajor: 15)
           && !SystemHUD.freezesHelper(osMajor: 26) && !SystemHUD.freezesHelper(osMajor: 27))
     check("hud: automatic brightness drift is not shown", !HUDWatch.reports(delta: 0.01, sinceKey: 60))

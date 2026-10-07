@@ -405,7 +405,7 @@ struct PanelView: View {
     private var islandTab: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             card("rectangle.topthird.inset.filled", L("Island")) {
-                row(L("Replace system HUD"), detail: L("Volume and brightness bars appear in the island, not on screen.")) {
+                row(L("Replace system HUD"), detail: L("Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own.")) {
                     toggle(L("Replace system HUD"), $m.replaceHUD)
                 }
             }
@@ -655,7 +655,7 @@ struct PanelView: View {
                 }
             }
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
-                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event so Teams and the like don't show you as away.")) {
+                row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
                 }
                 Group {

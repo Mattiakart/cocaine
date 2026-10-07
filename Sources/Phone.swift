@@ -168,6 +168,36 @@ enum WakeSchedule {
         return true
     }
 
+    private static let queue = DispatchQueue(label: "cocaine.wake")       // pmset through sudo, one at a time, off the main thread
+
+    /// `arm()` without blocking the app: the recovery lease is noted here (main thread) first, pmset runs on a serial queue,
+    /// `done` comes back on the main thread.
+    static func armInBackground(_ done: ((Bool) -> Void)? = nil) {
+        let date = Date().addingTimeInterval(Double(minutes) * 60)
+        RecoverySession.shared.noteWake(date.timeIntervalSince1970)
+        queue.async {
+            let old = UserDefaults.standard.double(forKey: key)
+            if old > 0 { _ = pmset(["schedule", "cancel", "wake", format(Date(timeIntervalSince1970: old)), owner]) }
+            let ok = pmset(["schedule", "wake", format(date), owner])
+            if ok { UserDefaults.standard.set(date.timeIntervalSince1970, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+            DispatchQueue.main.async {
+                if !ok { RecoverySession.shared.noteWake(nil) }
+                done?(ok)
+            }
+        }
+    }
+
+    /// `cancel()` without blocking the app (no sudo when no wake is scheduled).
+    static func cancelInBackground() {
+        RecoverySession.shared.noteWake(nil)                                // in call order with armInBackground's note
+        queue.async {                                                       // after any arm still queued
+
+            let t = UserDefaults.standard.double(forKey: key)
+            if t > 0 { _ = pmset(["schedule", "cancel", "wake", format(Date(timeIntervalSince1970: t)), owner]) }
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     static func cancel() {
         let t = UserDefaults.standard.double(forKey: key)
         guard t > 0 else { RecoverySession.shared.noteWake(nil); return }
@@ -178,22 +208,41 @@ enum WakeSchedule {
 }
 
 /// Keeps the Mac awake a little after a wake-up, long enough to reconnect, run a command and answer.
+/// A scheduled wake with the lid closed is a "dark wake" (display off, no user): a user-idle assertion alone doesn't hold that, so
+/// a system-activity assertion goes with it, which keeps a dark wake running (macOS may still end it on battery when it must).
+/// Not checked on real hardware with the lid closed: the log says how long each wake was held.
 enum WakeHold {
     private static var assertion: IOPMAssertionID = 0
+    private static var activity: IOPMAssertionID = 0
     private static var releaseAt = Date.distantPast
+    private static var since = Date.distantPast
+    /// IOPMAssertionDeclareSystemActivity (exported by IOKit, declared only in its private header).
+    private typealias DeclareFn = @convention(c) (CFString, UnsafeMutablePointer<IOPMAssertionID>, UnsafeMutableRawPointer) -> IOReturn
+    private static let declareActivity: DeclareFn? = {
+        guard let h = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY),
+              let s = dlsym(h, "IOPMAssertionDeclareSystemActivity") else { return nil }
+        return unsafeBitCast(s, to: DeclareFn.self)
+    }()
 
     static func extend(_ seconds: Double) {
         let until = Date().addingTimeInterval(seconds)
         guard until > releaseAt else { return }
         releaseAt = until
         if assertion == 0 {
+            since = Date()
             IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                         "Cocaine is answering your iPhone" as CFString, &assertion)
         }
+        if activity == 0, let declare = declareActivity {
+            let state = UnsafeMutableRawPointer.allocate(byteCount: 16, alignment: 8)     // IOPMSystemState: room to spare
+            defer { state.deallocate() }
+            if declare("Cocaine is answering your iPhone" as CFString, &activity, state) != kIOReturnSuccess { activity = 0 }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.5) {
-            guard Date() >= releaseAt, assertion != 0 else { return }
-            IOPMAssertionRelease(assertion)
-            assertion = 0
+            guard Date() >= releaseAt, assertion != 0 || activity != 0 else { return }
+            if assertion != 0 { IOPMAssertionRelease(assertion); assertion = 0 }
+            if activity != 0 { IOPMAssertionRelease(activity); activity = 0 }
+            log.notice("wake for the iPhone held \(Int(Date().timeIntervalSince(since)), privacy: .public) s")
         }
     }
 }

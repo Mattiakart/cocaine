@@ -28,3 +28,10 @@
 "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts.";
 "Don't Allow" = "Don't Allow";
 "Too hot with the lid closed: Cocaine is off" = "Too hot with the lid closed: Cocaine is off";
+
+/* Display and power: the HUD, Stay available, Monitors */
+"Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own." = "Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own.";
+"While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting." = "While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting.";
+"Monitor %d" = "Monitor %d";
+"Not answering over DDC/CI" = "Not answering over DDC/CI";
+"Controls the monitor itself, over DDC/CI. A value the monitor doesn't report shows –." = "Controls the monitor itself, over DDC/CI. A value the monitor doesn't report shows –.";

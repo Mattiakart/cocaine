@@ -23,7 +23,7 @@ final class CalendarWatch: ObservableObject {
     @Published var events: [Ev] = []
     @Published var access = EKEventStore.authorizationStatus(for: .event) == .fullAccess
     @Published var asked = EKEventStore.authorizationStatus(for: .event) != .notDetermined
-    private var store = EKEventStore()
+    private lazy var store = EKEventStore()           // made when first read (not at launch: connecting to Calendar takes a moment)
     private var storeHasAccess = EKEventStore.authorizationStatus(for: .event) == .fullAccess
 
     func refresh() {

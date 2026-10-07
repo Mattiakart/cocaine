@@ -28,3 +28,10 @@
 "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "有程序打开了“%@”。如果不是你，请选择“不允许”。可在“自动化”→“快捷键”中更改。";
 "Don't Allow" = "不允许";
 "Too hot with the lid closed: Cocaine is off" = "合盖时过热：Cocaine 已关闭";
+
+/* Display and power: the HUD, Stay available, Monitors */
+"Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own." = "Cocaine 处理音量和亮度键，并在灵动岛中显示其进度条。灵动岛不可见时（全屏、设置已打开），由 macOS 显示自己的指示。";
+"While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting." = "在你空闲时，于 Teams 等应用将你显示为离开之前发送一个不可见的鼠标事件。这也会阻止屏幕保护程序、锁定和显示器睡眠启动。";
+"Monitor %d" = "显示器 %d";
+"Not answering over DDC/CI" = "未通过 DDC/CI 响应";
+"Controls the monitor itself, over DDC/CI. A value the monitor doesn't report shows –." = "通过 DDC/CI 控制显示器本身。显示器未报告的数值显示为 –。";

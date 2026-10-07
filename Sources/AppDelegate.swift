@@ -946,7 +946,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                             "Cocaine keeps you available in chat apps" as CFString, &presenceAssertion)
             }
-            if System.idleSeconds > 45 && !PowerState.displaysAsleep && !(dark && screenGate.fired) && Presence.nudge() {
+            // Only just before a chat app (or the screen saver) would take you for away, not every 45 s; never under another user.
+            if sessionActive && System.idleSeconds > Presence.nudgeAfter(screenSaverIdle: Presence.screenSaverIdle)
+                && !PowerState.displaysAsleep && !(dark && screenGate.fired) && Presence.nudge() {
                 realIdle.lastNudge = Date()
             }
         } else if presenceAssertion != 0 {
@@ -1146,35 +1148,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one-time permission) or cancels it.
     private func applyWake(ask: Bool) {
         phoneListener.maxAge = { [weak self] in (self?.settings.wakeForPhone ?? false) ? WakeSchedule.maxCommandAge : 120 }
-        guard settings.wakeForPhone else { WakeSchedule.cancel(); return }
-        sleepWatcher.willSleep = { [weak self] in self?.armWake() }
+        guard settings.wakeForPhone else { WakeSchedule.cancelInBackground(); return }
+        sleepWatcher.willSleep = { [weak self] in self?.armWake(beforeSleep: true) }
         sleepWatcher.didWake = { [weak self] in
+            guard let self, self.settings.wakeForPhone, self.model.phoneCount > 0 else { return }
             WakeHold.extend(90)                      // long enough to reconnect and answer
-            self?.phoneListener.reconnect()
-            self?.armWake()
+            self.phoneListener.reconnect()
+            self.armWake(beforeSleep: false)
         }
         sleepWatcher.start()
-        var ok = WakeSchedule.arm()
-        if !ok && ask {
-            hidePanel(); NSApp.activate()
-            if let cmd = Authorization.installCommand(user: NSUserName()),
-               Authorization.runAsRoot(cmd, prompt: L("Cocaine needs your permission once, to wake your Mac for your iPhone.")) { ok = WakeSchedule.arm() }
-            if !ok {
-                settings.wakeForPhone = false
-                model.wakeForPhone = false
-                DialogCenter.shared.present(Dialogs.message(L("Couldn't turn on the wake-ups"))) { _ in }
-                return
+        // No phone paired: nothing would listen at a wake, so none is scheduled (and no sudo at every sleep). Just turned on, the
+        // one-time permission is still asked now, so pairing a phone later needs nothing more.
+        guard model.phoneCount > 0 || ask else { WakeSchedule.cancelInBackground(); return }
+        let failed = { [weak self] in
+            guard let self else { return }
+            self.settings.wakeForPhone = false
+            self.model.wakeForPhone = false
+            DialogCenter.shared.present(Dialogs.message(L("Couldn't turn on the wake-ups"))) { _ in }
+        }
+        let done = { [weak self] in if (self?.model.phoneCount ?? 0) == 0 { WakeSchedule.cancelInBackground() } }
+        WakeSchedule.armInBackground { [weak self] ok in
+            guard let self else { return }
+            if ok || !ask { if ok { done() }; return }
+            self.hidePanel(); NSApp.activate()
+            let user = NSUserName()
+            DispatchQueue.global().async {                 // the password prompt never stalls the app
+                let granted = Authorization.installCommand(user: user).map {
+                    Authorization.runAsRoot($0, prompt: L("Cocaine needs your permission once, to wake your Mac for your iPhone."))
+                } ?? false
+                DispatchQueue.main.async {
+                    guard granted else { failed(); return }
+                    WakeSchedule.armInBackground { ok in if ok { done() } else { failed() } }
+                }
             }
         }
-        if model.phoneCount == 0 { WakeSchedule.cancel() }
     }
 
     /// Schedules the next wake just before sleeping and just after waking (so there is always one ahead), unless the
-    /// battery is low and unplugged.
-    private func armWake() {
+    /// battery is low and unplugged. Before sleeping it must be done before the Mac goes down (a moment on the main thread,
+    /// only with a phone paired); after waking it runs in the background.
+    private func armWake(beforeSleep: Bool) {
         guard settings.wakeForPhone, model.phoneCount > 0 else { return }
-        if let b = System.battery, !b.onAC, b.percent <= 20 { WakeSchedule.cancel(); return }
-        WakeSchedule.arm()
+        if let b = System.battery, !b.onAC, b.percent <= 20 { WakeSchedule.cancelInBackground(); return }
+        if beforeSleep { WakeSchedule.arm() } else { WakeSchedule.armInBackground() }
     }
 
     /// Starts listening for the paired phones (at launch and whenever the list changes).

@@ -43,6 +43,22 @@ enum Presence {
         return e != nil
     }
 
+    /// How long you may be idle before a nudge: just before the shortest "away" timer of the usual chat apps (Teams and Skype
+    /// mark you away after 5 minutes), and before the screen saver (which would lock the Mac, and a locked Mac shows you away),
+    /// with a margin for the 10 s check. Never less than 45 s.
+    static func nudgeAfter(screenSaverIdle: Double?) -> Double {
+        var limit = 300.0
+        if let s = screenSaverIdle, s > 0 { limit = min(limit, s) }
+        return max(45, limit - 30)
+    }
+
+    /// The screen saver's start delay for this user and Mac (System Settings → Lock Screen), nil when it is never.
+    static var screenSaverIdle: Double? {
+        let v = CFPreferencesCopyValue("idleTime" as CFString, "com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+        guard let n = (v as? NSNumber)?.doubleValue else { return 1200 }               // never set: macOS's default, 20 minutes
+        return n > 0 ? n : nil
+    }
+
     /// Is any of the named apps running? (Matched on a part of the name, ignoring case.)
     static func anyRunning(_ names: [String]) -> Bool {
         let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.compactMap(\.localizedName)

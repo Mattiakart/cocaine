@@ -28,3 +28,10 @@
 "Something opened “%@”. If it wasn't you, choose Don't Allow. You can change this in Automation → Shortcuts." = "何かが「%@」を開きました。心当たりがなければ「許可しない」を選んでください。オートメーション → キーボードショートカットで変更できます。";
 "Don't Allow" = "許可しない";
 "Too hot with the lid closed: Cocaine is off" = "蓋を閉じた状態で高温：Cocaineをオフにしました";
+
+/* Display and power: the HUD, Stay available, Monitors */
+"Cocaine handles the volume and brightness keys and shows their bar in the island. When the island can't be seen (full screen, settings open), macOS shows its own." = "Cocaineが音量キーと輝度キーを処理し、そのバーをアイランドに表示します。アイランドが見えないとき（フルスクリーン、設定を開いているとき）はmacOS自身の表示になります。";
+"While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting." = "操作していない間、Teamsなどが退席中と表示する直前に見えないマウスイベントを送ります。これによりスクリーンセーバー、ロック、ディスプレイのスリープも始まりません。";
+"Monitor %d" = "モニタ %d";
+"Not answering over DDC/CI" = "DDC/CIで応答しません";
+"Controls the monitor itself, over DDC/CI. A value the monitor doesn't report shows –." = "DDC/CIでモニタ本体を操作します。モニタが報告しない値は – と表示されます。";
