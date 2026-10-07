@@ -16,6 +16,10 @@
 #                                 tier: if the requested identity is missing the build stops before compiling.
 #   --notarize                    with --sign developer-id --dmg: notarize and staple the app and the DMG (tools/notarize.sh,
 #                                 needs COCAINE_NOTARY_PROFILE).
+#   --app-intents                 with --no-install only, NEVER a release: also compiles Sources/AppIntents (native Shortcuts
+#                                 actions, -D COCAINE_APP_INTENTS) and generates Contents/Resources/Metadata.appintents from the
+#                                 compiler's const values (tools/gen-appintents-metadata.py). Shortcuts runs those actions only
+#                                 for an app signed with a Team ID: see docs/maintainers/app-intents.md. Nothing is registered.
 # COCAINE_NO_NEW_IDENTITY=1: never create the local signing identity (verify.sh, CI); a missing one fails instead.
 set -euo pipefail
 cd "${0:A:h}"
@@ -26,10 +30,11 @@ VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.pl
 
 die() { print -u2 -- "build.sh: $*"; exit 1; }
 
-MODE=install TIER=local RELEASE=0 NOTARIZE=0 ALLOW_NOKEY=0
+MODE=install TIER=local RELEASE=0 NOTARIZE=0 ALLOW_NOKEY=0 INTENTS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-install) MODE=build ;;
+    --app-intents) INTENTS=1 ;;
     --dmg) MODE=dmg ;;
     --release) RELEASE=1 ;;
     --allow-unsigned-updates) ALLOW_NOKEY=1 ;;
@@ -43,6 +48,8 @@ done
 case "$TIER" in adhoc|local|developer-id) ;; *) die "unknown tier \"$TIER\" (adhoc, local or developer-id)" ;; esac
 [ "$RELEASE" = 0 ] || [ "$MODE" = dmg ] || die "--release goes with --dmg"
 [ "$ALLOW_NOKEY" = 0 ] || [ "$MODE" = dmg ] || die "--allow-unsigned-updates goes with --dmg"
+# Native App Intents never go into a release or the installed copy (they'd be listed by Shortcuts and fail without a Team ID).
+[ "$INTENTS" = 0 ] || { [ "$MODE" = build ] && [ "$RELEASE" = 0 ]; } || die "--app-intents goes with --no-install only (never a release or the installed copy)"
 if [ "$NOTARIZE" = 1 ]; then
   [ "$TIER" = developer-id ] && [ "$MODE" = dmg ] || die "--notarize needs --sign developer-id --dmg"
   [ -n "${COCAINE_NOTARY_PROFILE:-}" ] || die "--notarize needs COCAINE_NOTARY_PROFILE (a profile saved with xcrun notarytool store-credentials)"
@@ -69,9 +76,13 @@ ln -sfn "$BUILD" build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 : > "$BUILD/.metadata_never_index"            # belt and braces next to the .noindex name
 SOURCES=(Sources/*.swift(N))
+EXTRA=()
+if [ "$INTENTS" = 1 ]; then                   # the module name must stay "Cocaine": the metadata's mangled names contain it
+  SOURCES+=(Sources/AppIntents/*.swift(N)); EXTRA=(-module-name Cocaine -D COCAINE_APP_INTENTS)
+fi
 for arch in arm64 x86_64; do                  # each slice is linked as "Cocaine" so logs show the real name
   mkdir -p "$BUILD/$arch"
-  swiftc -O -swift-version 5 -target $arch-apple-macos14.0 main.swift "${SOURCES[@]}" -o "$BUILD/$arch/Cocaine"
+  swiftc -O -swift-version 5 -target $arch-apple-macos14.0 "${EXTRA[@]}" main.swift "${SOURCES[@]}" -o "$BUILD/$arch/Cocaine"
 done
 lipo -create "$BUILD/arm64/Cocaine" "$BUILD/x86_64/Cocaine" -output "$APP/Contents/MacOS/Cocaine"
 "$BUILD/$(uname -m)/Cocaine" --render-assets "$BUILD"
@@ -80,6 +91,14 @@ install -m 0755 cocaine.zsh "$APP/Contents/Resources/cocaine"
 install -m 0644 remote.zsh "$APP/Contents/Resources/remote.zsh"
 cp Info.plist "$APP/Contents/Info.plist"
 install -m 0644 Cocaine.sdef "$APP/Contents/Resources/Cocaine.sdef"   # the AppleScript dictionary (Sources/Scripting.swift)
+if [ "$INTENTS" = 1 ]; then                   # the actions' metadata from the compiler's const values, before signing
+  swiftc -typecheck -swift-version 5 -target arm64-apple-macos14.0 "${EXTRA[@]}" main.swift "${SOURCES[@]}" \
+    -Xfrontend -const-gather-protocols-list -Xfrontend tools/appintents-protocols.json \
+    -Xfrontend -emit-const-values-path -Xfrontend "$BUILD/Cocaine.swiftconstvalues" || die "const values pass failed"
+  python3 -I tools/gen-appintents-metadata.py generate "$BUILD/Cocaine.swiftconstvalues" "$APP/Contents/Resources" || die "App Intents metadata failed"
+  python3 -I tools/gen-appintents-metadata.py check "$APP/Contents/Resources/Metadata.appintents" "$APP/Contents/MacOS/Cocaine" || die "App Intents metadata check failed"
+  echo "App Intents built in (NOT for release; Shortcuts runs them only with a Team ID signature: docs/maintainers/app-intents.md)"
+fi
 cp -R Localization/*.lproj "$APP/Contents/Resources/"   # UI text; macOS picks the Mac's language, else English
 
 # A bundle that couldn't be signed or verified as asked is removed: nothing usable is left with a weaker signature.
