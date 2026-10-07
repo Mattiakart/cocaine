@@ -11,6 +11,11 @@ Where things are:
   announcements and the display options (Increase Contrast…).
 - Authorization.swift (the sudo rule), DimController.swift (idle dimming and the lid rule, over a display provider), Screens.swift (the real displays for it), Permissions.swift, Presence.swift (Stay active), HUD.swift
   (volume/brightness HUD and media keys), Recovery*.swift (watchdog and recovery). DisplayTests.swift: --display-test.
+- Keep awake extras: AwakeTime.swift (until a time), AwakeTriggers.swift (more triggers, keep awake while…, unplug, lock pause,
+  launch, clicks, icon styles: pure, behind AwakeProbe), AwakeCenter.swift (the model and the wiring AppDelegate owns),
+  AwakePanel.swift (their panel rows), Scripting.swift (the AppleScript dictionary, Cocaine.sdef), AwakeShortcuts.swift (the Mac
+  Shortcuts pack), AwakeTests.swift (--awake-test). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
+  docs/maintainers/app-intents.md).
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
 - The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
   Controls.swift, Tokens.swift, InAppDialog.swift and Dialogs.swift (the app's dialogs).

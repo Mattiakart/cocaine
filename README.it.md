@@ -294,12 +294,19 @@ marcati `cocaine`, nient'altro), consuma un po' di batteria, si ferma a batteria
 chiudi Cocaine. Se serve la risposta subito, tieni Cocaine attivo. Si può attivare solo dopo aver abbinato un iPhone.
 (`cocaine remote wake-info` stampa ancora quello che serve a un'app Wake-on-LAN, da usare sulla rete di casa.)
 
-**Anche dai Comandi Rapidi e dagli script sul Mac.** Cocaine non ha azioni native per i Comandi Rapidi: richiedono metadati che
-produce solo la toolchain di Xcode, mentre l'app è compilata con i Command Line Tools. Al loro posto: i link (`cocaine://on?minutes=90`,
-`off`, `toggle`, `timer`, `status` con risposta x-callback; anche `pause`, `resume`, `panel`) e il comando incluso (`cocaine on 90m`,
-`off`, `status --json`, usabile da *Esegui script shell*). I link che cambiano qualcosa funzionano solo dopo il tuo consenso (una
-domanda la prima volta, oppure Generale → *App Comandi Rapidi e link*), perché qualsiasi app o pagina web può
-aprire un link. Vedi [Alimentazione e trigger](docs/power-and-triggers.it.md).
+**Anche dai Comandi Rapidi e dagli script sul Mac.** Nelle versioni pubblicate Cocaine non ha azioni native per i Comandi Rapidi:
+Comandi Rapidi le esegue solo per app firmate con un'identità rilasciata da Apple (un Team ID), e Cocaine è firmato in locale (il codice
+è pronto dietro un'opzione di build: [docs/maintainers/app-intents.md](docs/maintainers/app-intents.md)). Al loro posto: un
+**dizionario AppleScript** (`tell application "Cocaine" to keep awake for 90`, `keep awake until "18:30"`, `stop keeping awake`,
+`toggle`, e da leggere `awake`, `awake until`, `remaining minutes`…), usabile da *Esegui AppleScript* di Comandi Rapidi; quattro
+**comandi rapidi pronti per il Mac** (Tieni sveglio…, Spegni, Alterna, Stato che restituisce un Dizionario) che Automazioni → *Comandi
+Rapidi e script* crea, firma e apre in Comandi Rapidi; i link (`cocaine://on?minutes=90`, `on?until=18:30`, `on?timer=off`, `off`,
+`toggle`, `timer`, `status` con risposta x-callback; anche `pause`, `resume`, `panel`) e il comando incluso (`cocaine on 90m`,
+`cocaine on until 18:30`, `off`, `status --json`). Ciò che cambia qualcosa funziona solo dopo il tuo consenso (una domanda la prima
+volta, oppure Generale → *App Comandi Rapidi e link*), perché qualsiasi app, script o pagina web potrebbe chiederlo. Vedi
+[Script](docs/scripting.it.md), [Tenere sveglio il Mac](docs/keep-awake.it.md) (fino a un'ora, altri trigger, sveglio finché gira un
+programma o finiscono i download, spegnimento quando scolleghi l'alimentatore, pausa a schermo bloccato) e
+[Alimentazione e trigger](docs/power-and-triggers.it.md).
 
 ### Automazioni
 
