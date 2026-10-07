@@ -159,6 +159,26 @@ struct ScreenOffGate {
     }
 }
 
+/// The last resort under Battery Guard, not a setting: at 5 % on battery Cocaine lets the Mac sleep (it turns off, so sleep goes back
+/// to what it was), even with Battery Guard off or already used up, and again each time it is turned back on down there. The user is
+/// told once per low stretch; Smart Triggers stay off until the battery is above 8 % or on the charger.
+struct BatteryFloor {
+    static let level = 5
+    enum Act: Equatable { case none, release, releaseQuietly }
+    private(set) var told = false
+
+    mutating func check(percent: Int, onAC: Bool, on: Bool) -> Act {
+        if onAC || percent > Self.level + 3 { told = false; return .none }
+        guard percent <= Self.level, on else { return .none }
+        if told { return .releaseQuietly }
+        told = true
+        return .release
+    }
+
+    /// Since the floor acted, until the battery recovered.
+    func blocks(percent: Int, onAC: Bool) -> Bool { told && !onAC && percent <= Self.level + 3 }
+}
+
 /// Lid closed, on battery, and the Mac getting hot (in a bag): turn Cocaine off, once until that clears.
 struct HeatGuard {
     private(set) var tripped = false

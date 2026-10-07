@@ -29,7 +29,8 @@ enum Island {
     static let openSpring = Animation.spring(response: 0.4, dampingFraction: 0.78)
     static let closeSpring = Animation.spring(response: 0.32, dampingFraction: 0.9)
     static var forceExternal = false                           // the render tool: show the Monitors tab
-    static var external: Bool { forceExternal || !DDCDisplays.externalNames.isEmpty }
+    /// The Monitors tab: an external monitor on a Mac that can talk DDC/CI to it (Apple silicon).
+    static var external: Bool { forceExternal || (DDCDisplays.supported && !DDCDisplays.externalNames.isEmpty) }
 
     static func clamp(_ x: CGFloat) -> CGFloat { min(1, max(0, x)) }
     static func mix(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
@@ -56,19 +57,48 @@ struct NotchGeometry: Equatable {
     var height: CGFloat
     var centerX: CGFloat       // the notch's middle, in screen coordinates
     var hasNotch: Bool
+    /// A screen without a notch whose menu bar hides itself: the closed pill stays out of the way until the pointer reaches the
+    /// top edge (where the menu bar comes down too).
+    var menuBarHidden = false
 
     /// The render tools (`--notch-width`): another Mac's notch, to see the panel and the island as they'd be there.
     static var override: NotchGeometry?
 
+    /// What the choice needs to know about one screen (NSScreen in the app, made-up screens in the tests).
+    struct Screen: Equatable {
+        var frame: CGRect
+        var visibleTop: CGFloat           // visibleFrame.maxY: below the menu bar when it shows
+        var safeTop: CGFloat              // safeAreaInsets.top: the notch's height, 0 without one
+        var auxLeft: CGFloat?, auxRight: CGFloat?    // the menu-bar areas left and right of the notch
+        var builtin: Bool
+    }
+
     static func current() -> NotchGeometry? {
         if let override { return override }
-        let screens = NSScreen.screens
-        guard let s = screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first else { return nil }
-        if s.safeAreaInsets.top > 0, let l = s.auxiliaryTopLeftArea, let r = s.auxiliaryTopRightArea {
-            return NotchGeometry(frame: s.frame, notchWidth: s.frame.width - l.width - r.width, height: s.safeAreaInsets.top,
-                                 centerX: s.frame.minX + l.width + (s.frame.width - l.width - r.width) / 2, hasNotch: true)
+        let list = NSScreen.screens.map { s in
+            Screen(frame: s.frame, visibleTop: s.visibleFrame.maxY, safeTop: s.safeAreaInsets.top, auxLeft: s.auxiliaryTopLeftArea?.width,
+                   auxRight: s.auxiliaryTopRightArea?.width,
+                   builtin: (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID).map { CGDisplayIsBuiltin($0) != 0 } ?? false)
         }
-        return NotchGeometry(frame: s.frame, notchWidth: 150, height: 24, centerX: s.frame.midX, hasNotch: false)
+        return choose(list, barThickness: NSStatusBar.system.thickness)
+    }
+
+    /// Which screen holds the island, the same one whatever app has the keyboard: the built-in display with a notch, else any
+    /// screen with a notch, else the built-in display, else the main display (the first: the one with the menu bar). Never
+    /// "the screen of the key window", which made the island jump between monitors with the focus.
+    static func choose(_ screens: [Screen], barThickness: CGFloat) -> NotchGeometry? {
+        func notched(_ s: Screen) -> Bool { s.safeTop > 0 && s.auxLeft != nil && s.auxRight != nil }
+        guard let s = screens.first(where: { $0.builtin && notched($0) }) ?? screens.first(where: notched)
+                ?? screens.first(where: \.builtin) ?? screens.first else { return nil }
+        if notched(s), let l = s.auxLeft, let r = s.auxRight {
+            let w = s.frame.width - l - r
+            return NotchGeometry(frame: s.frame, notchWidth: w, height: s.safeTop, centerX: s.frame.minX + l + w / 2, hasNotch: true)
+        }
+        // No notch: a pill as tall as the menu bar (or the system's menu-bar height while it is hidden).
+        let bar = (s.frame.maxY - s.visibleTop).rounded()
+        let hidden = bar < 1
+        let height = hidden ? max(22, barThickness) : min(max(bar, 22), 44)
+        return NotchGeometry(frame: s.frame, notchWidth: 150, height: height, centerX: s.frame.midX, hasNotch: false, menuBarHidden: hidden)
     }
 }
 

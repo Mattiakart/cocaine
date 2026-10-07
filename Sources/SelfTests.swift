@@ -523,6 +523,7 @@ func cliSelfTest() {
     d.userToggled(to: true, triggerActive: true)
     check("trigger: user takes over an auto-on", d.step(active: false, isOn: true, now: t0 + 999) == .none)
     powerSelfTest(check)
+    displaySelfTest(check)                         // dimming and the lid, keys, island screen, battery floor, DDC (DisplayTests.swift)
     let board = AgentBoard(); let now = Date()
     board.set("s1", from: "Claude Code", project: "x", state: "working", now: now)
     board.set("s2", from: "Codex", project: nil, state: "waiting", now: now)

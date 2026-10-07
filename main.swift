@@ -37,6 +37,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcu
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--relay-test" { cliRelayTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remote-test" { cliRemoteTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" { cliSelfTest() }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--display-test" { cliDisplayTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test" { cliDialogsTest() }
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" { cliAIAlerts() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" { cliPermissions() }

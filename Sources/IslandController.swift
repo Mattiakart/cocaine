@@ -57,7 +57,15 @@ final class IslandController {
             p.keyable = on
             if !on, p.isKeyWindow { p.orderOut(nil); p.orderFrontRegardless() }     // gives the keyboard back to the app in front
         }
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.relayout() }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.relayout(); self?.checkNow()                    // a display plugged, unplugged, mirrored, the lid (clamshell)
+        }
+        // Into or out of a full-screen Space, displays awake again: hidden or shown at once, not at the next check.
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.screensDidWakeNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self?.checkNow() }    // after the Space's windows are in
+            }
+        }
         model.mic.start()
         startPointerMonitors()
         model.files.onNew = { [weak model] icon, text in model?.flashNotice(icon, text) }
@@ -172,13 +180,21 @@ final class IslandController {
             setOpen(false); hovering = false
             panel?.orderOut(nil)
         } else if enabled {
-            panel?.orderFrontRegardless()
+            // Not over a full-screen app (it would only vanish again at the next check) nor under a hidden menu bar.
+            covered = NotchGeometry.current().map(Self.fullScreenCovers) ?? false
+            if !covered && !model.geometry.menuBarHidden { panel?.orderFrontRegardless() }
         }
     }
 
     private func pointerMoved(_ e: NSEvent) {
-        guard enabled, !suspended, let panel, panel.isVisible else { return }
+        guard enabled, !suspended, let panel else { return }
         let p = NSEvent.mouseLocation, g = model.geometry
+        if !panel.isVisible {
+            // A hidden menu bar comes down when the pointer touches the top edge: the pill comes with it.
+            guard g.menuBarHidden, !covered, p.y >= g.frame.maxY - 1, abs(p.x - g.centerX) <= g.notchWidth / 2 + 40 else { return }
+            relayout()
+            panel.orderFrontRegardless()
+        }
         // Open: the open island. Closed: just what is drawn (the notch and its wings), and the very top edge of the screen.
         let f: NSRect = model.open ? openRect(g)
             : NSRect(x: g.centerX - g.notchWidth / 2 - model.leftW, y: g.frame.maxY - g.height - 2, width: g.notchWidth + model.leftW + model.rightW, height: g.height + 14)
@@ -235,8 +251,10 @@ final class IslandController {
         if suspended && !settingsOpen() { setSuspended(false) }         // never left hidden behind a settings panel that is gone
         if ticks % 4 == 0 {
             let g = NotchGeometry.current()
-            let covered = g.map { Self.fullScreenCovers($0.frame) } ?? false
-            if covered || g == nil {
+            covered = g.map(Self.fullScreenCovers) ?? false
+            // A pill under a hidden menu bar stays away until the pointer reaches the top edge (pointerMoved brings it).
+            let tucked = (g?.menuBarHidden ?? false) && !model.open && !hovering
+            if covered || g == nil || tucked {
                 if panel.isVisible { panel.orderOut(nil) }
                 missed = 0
             } else if !suspended {
@@ -255,8 +273,16 @@ final class IslandController {
         }
         if !model.open && Date() >= closingUntil { relayout() }        // never shrink the window under a closing morph
     }
+    /// The full check of `watch()` right now.
+    private func checkNow() {
+        ticks = (ticks / 4) * 4 + 3
+        watch()
+    }
     private var missed = 0
+    private var covered = false
     private(set) var showing = true
+    /// Something drawn in the island now would be seen: it is on, on screen, not under a full-screen app or the settings panel.
+    var canShowHUD: Bool { enabled && showing && !suspended && !covered && (panel?.isVisible ?? false) }
     var onShowing: (Bool) -> Void = { _ in }
     var settingsOpen: () -> Bool = { false }
     private func setShowing(_ s: Bool) {
@@ -271,12 +297,32 @@ final class IslandController {
         return (w[kCGWindowIsOnscreen as String] as? Bool) ?? false
     }
 
-    private static func fullScreenCovers(_ frame: CGRect) -> Bool {
+    /// A full-screen app (video, a game, any app in its own full-screen Space) on the island's screen.
+    private static func fullScreenCovers(_ g: NotchGeometry) -> Bool {
         let list = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]) ?? []
-        for w in list where (w[kCGWindowLayer as String] as? Int) == 0 && (w[kCGWindowOwnerName as String] as? String) != "Cocaine" {
-            guard let b = w[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
-            if r.width >= frame.width - 1 && r.height >= frame.height - 1 { return true }
+        let windows: [Window] = list.compactMap { w in
+            guard let b = w[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return nil }
+            return Window(layer: w[kCGWindowLayer as String] as? Int ?? -1, pid: w[kCGWindowOwnerPID as String] as? pid_t ?? 0, bounds: r)
         }
-        return false
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? g.frame.height
+        return covers(screen: globalRect(g.frame, primaryHeight: primaryHeight), topInset: g.hasNotch ? g.height : 0,
+                      windows: windows, ownPID: getpid())
+    }
+
+    struct Window { var layer: Int; var pid: pid_t; var bounds: CGRect }
+
+    /// Window bounds are in the window server's global space (top-left origin on the main display, y down); an NSScreen frame is
+    /// AppKit's (bottom-left origin, y up).
+    static func globalRect(_ appKit: CGRect, primaryHeight: CGFloat) -> CGRect {
+        CGRect(x: appKit.minX, y: primaryHeight - appKit.maxY, width: appKit.width, height: appKit.height)
+    }
+
+    /// Covered when one normal-level window of another app spans the whole screen, menu-bar strip included (a zoomed window stops
+    /// below the menu bar); on a notched screen a full-screen app may keep out of the strip beside the camera (`topInset`).
+    /// Position counts, not just size: a big window on another monitor, however large, doesn't cover this one.
+    static func covers(screen: CGRect, topInset: CGFloat = 0, windows: [Window], ownPID: pid_t) -> Bool {
+        var need = screen
+        need.origin.y += topInset; need.size.height -= topInset                // global space: y grows downward
+        return windows.contains { $0.layer == 0 && $0.pid != ownPID && $0.bounds.insetBy(dx: -1, dy: -1).contains(need) }
     }
 }

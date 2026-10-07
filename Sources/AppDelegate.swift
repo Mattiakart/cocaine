@@ -32,12 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitSignals: [DispatchSourceSignal] = []
     private var ticks = 0
     private var lastOn: Bool?
-    private var lastIdle = 0.0
     private let screens = Screens()
-    private var dimPlan: DimPlan?       // screens lowered after idle time; nil when not lowered
+    /// Idle dimming and the lid rule (Sources/DimController.swift); this file only feeds it and runs its fades.
+    private lazy var dim = DimController(io: screens, note: { RecoverySession.shared.noteDim($0) })
+    private let clamshell = ClamshellWatcher()
+    private var sessionActive = true    // false while another user is on screen (fast user switching)
     private var dimQuiet = Date.distantPast   // the island ignores brightness changes until then (they are Cocaine's own)
-    private var previewPlan: DimPlan?   // same, during "Preview"
-    private var dimT: Float = 0         // how far the current plan is applied (0 = normal, 1 = fully dimmed)
     private var supervising = false
     private let launchedAt = Date()
     private let alerter = Alerter()
@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var approvalAlerted: [String: Date] = [:]   // session → when the notch announced its request
     private var agentNoticeWork: DispatchWorkItem?
     private var batteryGuard = BatteryGuard()
+    private var batteryFloor = BatteryFloor()
     private var autoOn = AutoOn() { didSet { if autoOn.owned != oldValue.owned { settings.triggerOwned = autoOn.owned } } }
     private var triggerActive = false
     private var arbiter = TriggerArbiter()
@@ -172,12 +173,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !self.model.permissionProblems.isEmpty { self.watchPermissions() }      // a switch flipped there can take a moment
         }
         model.hudReplaceChanged = { [weak self] in self?.applyHUDReplacement() }
-        if !settings.replaceHUD { SystemHUD.cleanup() }
+        if !settings.replaceHUD || !SystemHUD.freezesHelper() { SystemHUD.cleanup() }
         applyHUDReplacement(atLaunch: true)
         island.model.hud.suppressBrightness = { [weak self] in
             guard let self else { return false }
-            return self.dimPlan != nil || self.previewPlan != nil || self.fadeTimer != nil || Date() < self.dimQuiet
+            return self.dim.busy || self.fadeTimer != nil || Date() < self.dimQuiet
         }
+        setUpDimming()
         island.model.focus.onStart = { [weak self] minutes in
             guard let self, !System.cocaineOn else { return }
             self.setCocaine(true, forMinutes: minutes)
@@ -612,7 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.notice("alert from \(a.from, privacy: .public) muted until \(until, privacy: .public)")
             return
         }
-        let away = forced ?? (idleNow >= 20 || dimPlan != nil || (screenOffMode && screenGate.fired))
+        let away = forced ?? (idleNow >= 20 || dim.idleDimmed || (screenOffMode && screenGate.fired))
         log.notice("alert from \(a.from, privacy: .public) project \(a.project ?? "-", privacy: .public) (away: \(away, privacy: .public), repeated: \(repeated, privacy: .public))")
         if !repeated && !test {                          // "Recent alerts"
             settings.alertHistory = [AlertRecord(from: a.from, message: a.message, project: a.project, at: Date(), session: a.session, origin: a.origin)]
@@ -627,8 +629,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings.alertFlash {
             var activity: IOPMAssertionID = 0            // wakes a sleeping display
             IOPMAssertionDeclareUserActivity("Cocaine alert" as CFString, kIOPMUserActiveLocal, &activity)
-            restore()
             brightUntil = Date().addingTimeInterval(max(settings.delay, 60))
+            updateDimming(on: System.cocaineOn)          // the idle dim lets go at once (a built-in behind a closed lid stays dark)
             alerter.show(title: a.from, message: a.message, detail: a.project, seconds: settings.alertDuration)
         }
         if !settings.alertSound.isEmpty { NSSound(named: settings.alertSound)?.play() }
@@ -682,7 +684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ClipboardHistory.shared.flush()          // a saved history gets its last change
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
-        if let plan = dimPlan ?? previewPlan { apply(plan, 0); if !plan.gamma.isEmpty { screens.restoreGamma() } }
+        dim.quit()                               // every lowered display back, also in the middle of a fade; then the lease is cleared
         settings.savedBrightness = [:]
         RecoverySession.shared.noteDim([])
         RecoverySession.shared.end()
@@ -871,10 +873,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alerter.close(animated: true)            // the user is back
         }
         updateDimming(on: on)
+        syncSystemHUD()                                          // the island hidden (full screen…) or back: who shows the HUD
         if ticks % 4 == 0 { checkTimer(on) }                     // every 2 s
         if ticks % 10 == 0 { evaluateTriggers(on) }              // every 5 s
         if ticks % 20 == 0 { checkBattery(on); checkHeat(on); writeBoard(); presenceTick() }    // every 10 s
-        if ticks % 4 == 0 { watchPower() }                       // every 2 s
+        if ticks % 4 == 0 { watchPower(); mediaKeys.healthCheck() }   // every 2 s
     }
 
     // MARK: Permissions
@@ -898,6 +901,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let access = Presence.hasAccess
         if model.presenceAccess != access { model.presenceAccess = access }
         // A permission just given: start what was waiting for it.
+        // A permission taken away: the tap is dropped, so giving it back recreates it here.
+        mediaKeys.healthCheck()
         if settings.replaceHUD && !mediaKeys.running && AXIsProcessTrusted() { mediaKeys.start() }
         Permissions.probe(files: settings.island) { [weak self] changed in if changed { self?.refreshPermissions() } }
     }
@@ -960,13 +965,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Volume, mute and brightness keys: applied here, shown in the island. False leaves the key to macOS.
     private func handleMediaKey(_ key: Int, fine: Bool) -> Bool {
+        // Only while the island can show the bar: in full screen, behind the settings panel, under another user or with the
+        // island off, the key goes to macOS and macOS shows its own indicator.
+        guard hudInIsland else { return false }
         if key == 0 || key == 1 || key == 7 {
             guard let r = MediaKeys.changeVolume(key: key, fine: fine) else { return false }
             let icon = r.muted || r.level == 0 ? "speaker.slash.fill" : r.level < 0.34 ? "speaker.wave.1.fill" : r.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
             island.model.flashNotice(icon, L("Volume"), level: r.muted ? 0 : Double(r.level))
             return true
         }
-        guard dimPlan == nil, previewPlan == nil, let id = screens.online.first(where: { CGDisplayIsBuiltin($0) != 0 }), let b = screens.brightness(id) else { return false }
+        // The display under the pointer (else the built-in, else an Apple display with the lid closed); a lowered one is left to macOS.
+        guard let id = screens.keyTarget(pointer: CGEvent(source: nil)?.location), !dim.isLowered(id), !dim.previewing,
+              let b = screens.brightness(id) else { return false }
         let step: Float = fine ? 1.0 / 64 : 1.0 / 16
         let new = min(1, max(0, b + (key == 2 ? step : -step)))
         dimQuiet = Date().addingTimeInterval(1)
@@ -978,7 +988,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyHUDReplacement(atLaunch: Bool = false) {
         island.syncHUD(settings.replaceHUD)
         if settings.replaceHUD {
-            systemHUD.enable()
             if !atLaunch {                                        // just turned on: ask if it's missing (at launch: 3 s later, once)
                 autoAsked.remove(.accessibility)
                 refreshPermissions(askMissing: true)
@@ -986,9 +995,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if AXIsProcessTrusted() { mediaKeys.start() }
         } else {
-            systemHUD.disable()
             mediaKeys.stop()
         }
+        syncSystemHUD()
+    }
+
+    /// The island shows the volume and brightness bars right now: Replace system HUD on, the island on and on screen (not hidden
+    /// by a full-screen app or the settings panel), and this user's session in front.
+    private var hudInIsland: Bool {
+        settings.replaceHUD && settings.island && island.canShowHUD && sessionActive
+    }
+
+    /// Before macOS 26 the system HUD is a separate helper, kept frozen only while the island shows the bars (any other moment
+    /// it is let go, so there is always an indicator). From macOS 26 the HUD is drawn by Control Center: nothing is frozen, the
+    /// keys Cocaine handles simply never reach macOS (Sources/HUD.swift).
+    private func syncSystemHUD() {
+        if hudInIsland && SystemHUD.freezesHelper() { systemHUD.enable() } else { systemHUD.disable() }
     }
 
     // MARK: Timer, Battery Guard, Smart Triggers, hotkeys
@@ -1016,6 +1038,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let b = System.battery
         model.battery = b.map { "\($0.percent)%" }
         guard let b else { return }
+        // The floor first: at 5 % Cocaine lets go whatever Battery Guard says (off, or already used up), every time.
+        let floor = batteryFloor.check(percent: b.percent, onAC: b.onAC, on: on)
+        if floor != .none {
+            log.notice("battery at \(b.percent, privacy: .public)%: the floor lets the Mac sleep")
+            autoOn.userToggled(to: false, triggerActive: triggerActive)
+            setCocaine(false, auto: true)
+            let text = String(format: L("Battery at %d%%: Cocaine is off"), b.percent)
+            if floor == .release { alert(Notice(from: "Cocaine", message: text, project: nil), away: true) }
+            else { island.model.flashNotice("battery.0", text) }      // turned on again down there: said again, quietly
+            return
+        }
         guard batteryGuard.check(percent: b.percent, onAC: b.onAC, threshold: settings.batteryThreshold), on else { return }
         log.notice("battery at \(b.percent, privacy: .public)%")
         if settings.batteryTurnsOff {
@@ -1059,7 +1092,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        minimum: PowerRule.batteryFloor(guardLevel: settings.batteryThreshold))
         states[.display] = DisplayRule.met(rule: settings.triggerDisplay, external: PowerState.externalDisplays)
         if settings.triggerSchedule { states[.schedule] = settings.schedule.contains(Date(), calendar: .autoupdatingCurrent) }
-        let blocked = lowBattery || heatGuard.tripped
+        let floorBlocked = b.map { batteryFloor.blocks(percent: $0.percent, onAC: $0.onAC) } ?? false
+        let blocked = lowBattery || heatGuard.tripped || floorBlocked
         let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: blocked)
         if !active { triggerGrace = grace }
         triggerActive = active
@@ -1075,7 +1109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if model.triggeredBy != by { model.triggeredBy = by }
         let hold: String? = !blocked || states.values.allSatisfy({ $0 != true }) ? nil
-            : lowBattery ? L("Triggers on hold: battery low") : L("Triggers on hold: too hot with the lid closed")
+            : lowBattery || floorBlocked ? L("Triggers on hold: battery low") : L("Triggers on hold: too hot with the lid closed")
         if model.triggerHold != hold { model.triggerHold = hold }
     }
 
@@ -1345,139 +1379,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Tells the engine's display helper whether to keep the displays on (normal) or let them sleep (screen off).
     private func syncScreenMode() {
         let mode = screenOffMode ? "screen-off" : "normal"
-        if screenOffMode, dimPlan != nil { restore() }            // switching over while dimmed: back to normal first
+        updateDimming(on: System.cocaineOn)                        // switching over while dimmed: the idle dim lets go
         DispatchQueue.global().async { run("/bin/zsh", [scriptPath, "mode", mode]) }
     }
 
-    /// Lid shut while Cocaine is on: every screen goes to its minimum at once (no idle wait), and comes back when the lid opens.
-    private var lastLidClosed = System.lidClosed
-    private var lidDimmed = false
-
-    private func lidChanged(closed: Bool, on: Bool) {
-        if closed {
-            guard on, previewPlan == nil, !screenOffMode else { return }
-            var plan = dimPlan ?? makePlan(level: Self.lidLevel, includeBuiltin: true)
-            if dimPlan != nil {                                    // already dimmed by idle: go down to the minimum
-                plan.backlit = plan.backlit.map { .init(id: $0.id, from: $0.from, to: Self.lidLevel) }
-                plan.gamma = plan.gamma.map { ($0.id, 0.12) }
-            }
-            guard !plan.displays.isEmpty else { return }
-            dimPlan = plan
-            lidDimmed = true
-            RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
-            log.notice("lid closed: \(plan.displays.count, privacy: .public) screens to the minimum")
-            dimQuiet = Date().addingTimeInterval(3)
-            fade(plan, to: 1, over: 0.12)
-        } else if lidDimmed {
-            lidDimmed = false
-            restore()
+    /// The dimming's wiring: the lid the instant it moves, the other user's session, the fades.
+    private func setUpDimming() {
+        dim.log = { log.notice("dim: \($0, privacy: .public)") }
+        dim.onFade = { [weak self] in self?.runFades() }
+        clamshell.onChange = { [weak self] closed in self?.dim.lidChanged(closed: closed) }
+        clamshell.start()
+        // Fast user switching: under another user nothing is dimmed (their screen, their brightness), the HUD keys go back to macOS.
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.sessionChanged(false)
         }
+        ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.sessionChanged(true)
+        }
+        // The settings panel's screen went away (unplugged, the lid closed into clamshell): close it rather than leave it
+        // open off screen, with the island waiting behind it.
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let panel = self.panel, panel.isVisible,
+                  !NSScreen.screens.contains(where: { $0.frame.intersects(panel.frame) }) else { return }
+            log.notice("the settings panel's screen is gone: closed")
+            self.hidePanel()
+        }
+        // Any brightness key (handled or left to macOS): the next small change is that key's, worth a bar in the island.
+        mediaKeys.onKey = { [weak self] key in if key == 2 || key == 3 { self?.island.model.hud.brightnessKey() } }
     }
-    private static let lidLevel: Float = 0.01                      // the lowest the backlight goes (Screens never sets less)
+
+    private func sessionChanged(_ active: Bool) {
+        guard active != sessionActive else { return }
+        sessionActive = active
+        log.notice("session \(active ? "active" : "switched away", privacy: .public)")
+        updateDimming(on: System.cocaineOn)
+        syncSystemHUD()
+    }
+
+    private func runFades() {
+        dimQuiet = Date().addingTimeInterval(3)                    // Cocaine's own changes: no Brightness bar in the island
+        guard fadeTimer == nil else { return }
+        let t = Timer(timeInterval: 0.025, repeats: true) { [weak self] t in
+            guard let self, self.dim.fadeStep() else { t.invalidate(); self?.fadeTimer = nil; return }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        fadeTimer = t
+    }
+
+    private func dimInputs(on: Bool) -> DimInputs {
+        DimInputs(on: on, dimEnabled: settings.dimEnabled, screenOff: screenOffMode, sessionActive: sessionActive, idle: idleNow,
+                  delay: settings.delay, level: settings.level, allowed: Date() > brightUntil)
+    }
 
     private func updateDimming(on: Bool) {
-        guard previewPlan == nil else { return }
-        let lid = System.lidClosed
-        if lid != lastLidClosed { lastLidClosed = lid; lidChanged(closed: lid, on: on) }
         let idle = idleNow                                         // Stay active's own nudges don't count as you
-        defer { lastIdle = idle }
-        if screenOffMode {
+        dim.tick(dimInputs(on: on))
+        if screenOffMode && sessionActive {
             // Once per idle stretch, after the delay: displays off. The Mac keeps running (disablesleep); input wakes them.
             if screenGate.step(idle: idle, delay: settings.delay, enabled: true, on: on, allowed: Date() > brightUntil,
                                asleep: PowerState.displaysAsleep) {
                 log.notice("screens off after \(Int(idle), privacy: .public)s idle")
                 DispatchQueue.global().async { PowerState.sleepDisplays() }
             }
-            return
-        }
-        if let plan = dimPlan {
-            let unplugged = !plan.displays.isSubset(of: Set(screens.online))
-            if lidDimmed && !lid && on { lidDimmed = false }       // the lid opened between ticks: normal rules again
-            if (idle < lastIdle && !lidDimmed) || !on || (!settings.dimEnabled && !lidDimmed) || unplugged { lidDimmed = false; restore(); return }   // input since last tick
-            // automatic brightness can creep back up while the screen is lowered
-            if ticks % 10 == 0, fadeTimer == nil {
-                for b in plan.backlit where (screens.brightness(b.id) ?? 0) > b.to + 0.02 { screens.setBrightness(b.id, b.to) }
-            }
-        } else if on, settings.dimEnabled, idle >= settings.delay, Date() > brightUntil {
-            dim(afterIdle: idle)
         }
     }
 
-    /// Every screen that's on: the built-in panel is skipped only with the lid shut (it's off anyway).
-    private func makePlan(level: Float, includeBuiltin: Bool = false) -> DimPlan {
-        var plan = DimPlan()
-        let lidClosed = System.lidClosed
-        for d in screens.online {
-            if CGDisplayIsBuiltin(d) != 0 && lidClosed && !includeBuiltin { continue }
-            if screens.hasBacklight(d) {
-                if let cur = screens.brightness(d), cur > level { plan.backlit.append(.init(id: d, from: cur, to: level)) }
-            } else {
-                plan.gamma.append((d, 0.12 + 0.88 * level))           // software: dimmed, never black
-            }
-        }
-        return plan
-    }
-
-    private func dim(afterIdle idle: Double) {
-        let plan = makePlan(level: settings.level)
-        dimPlan = plan                                              // even if empty, so we don't retry every tick
-        RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
-        log.notice("dim \(plan.backlit.count, privacy: .public) backlit + \(plan.gamma.count, privacy: .public) gamma screens after \(Int(idle), privacy: .public)s idle")
-        dimQuiet = Date().addingTimeInterval(3)
-        fade(plan, to: 1, over: 1.5)
-    }
-
-    private func restore() {
-        guard let plan = dimPlan else { return }
-        dimPlan = nil
-        dimQuiet = Date().addingTimeInterval(3)
-        log.notice("restore \(plan.displays.count, privacy: .public) screens")
-        fade(plan, to: 0, over: 0.25) {
-            if !plan.gamma.isEmpty { self.screens.restoreGamma() }
-            if self.dimPlan == nil && self.previewPlan == nil { RecoverySession.shared.noteDim([]) }   // cleared once really back
-        }
-    }
-
-    /// Puts every screen in `plan` at `t` (0 = as it was, 1 = fully dimmed).
-    private func apply(_ plan: DimPlan, _ t: Float) {
-        dimT = t
-        for b in plan.backlit { screens.setBrightness(b.id, b.from + (b.to - b.from) * t) }
-        for g in plan.gamma { screens.setGamma(g.id, 1 + (g.to - 1) * t) }
-    }
-
-    private func fade(_ plan: DimPlan, to target: Float, over seconds: Double, then done: (() -> Void)? = nil) {
-        fadeTimer?.invalidate()
-        fadeTimer = nil
-        let start = dimT
-        let steps = max(1, Int(seconds / 0.025))
-        var i = 0
-        let t = Timer(timeInterval: seconds / Double(steps), repeats: true) { [weak self] t in
-            guard let self else { t.invalidate(); return }
-            i += 1
-            let f = Float(i) / Float(steps)
-            self.apply(plan, start + (target - start) * f * f * (3 - 2 * f))   // smoothstep
-            if i >= steps { t.invalidate(); self.fadeTimer = nil; done?() }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        fadeTimer = t
-    }
-
+    /// "Preview": the chosen dim for three seconds, then back.
     private func preview() {
-        guard previewPlan == nil, dimPlan == nil else { return }
-        let plan = makePlan(level: settings.level)
-        previewPlan = plan
-        RecoverySession.shared.noteDim(plan.backlit.map { .init(id: $0.id, from: $0.from, to: $0.to) })
+        guard !model.previewing else { return }
         model.previewing = true
-        fade(plan, to: 1, over: 0.6) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                self.fade(plan, to: 0, over: 0.4) {
-                    if !plan.gamma.isEmpty { self.screens.restoreGamma() }
-                    self.previewPlan = nil
-                    RecoverySession.shared.noteDim([])
-                    self.model.previewing = false
-                }
-            }
-        }
+        dim.preview()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.1) { [weak self] in self?.model.previewing = false }
     }
 
     private func setLogin(_ enable: Bool) {
