@@ -1,6 +1,6 @@
 /* Cocaine — de: plan review, questions, limits, sounds and jump rules from AI agents */
 
-"%@ in %@" = "%@ in %@";
+"%@ in %@" = "%@ für %@";
 "%d MCP question(s)" = "MCP-Fragen: %d";
 "%d d" = "%d T";
 "%d in the background" = "%d im Hintergrund";
@@ -82,7 +82,7 @@
 "added" = "hinzugefügt";
 "can't sign in" = "kann sich nicht anmelden";
 "every occurrence" = "jedes Vorkommen";
-"every project" = "jedes Projekt";
+"every project" = "alle Projekte";
 "got a server error" = "hat einen Serverfehler erhalten";
 "has a billing problem" = "hat ein Abrechnungsproblem";
 "has a plan for you to review" = "hat einen Plan zur Prüfung für dich";
