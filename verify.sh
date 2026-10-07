@@ -42,6 +42,7 @@ run "plutil -lint Info.plist" plutil -lint -s Info.plist
 run "plutil -lint Cocaine.entitlements" plutil -lint -s Cocaine.entitlements
 for f in Localization/*.lproj/*.strings; do run "plutil -lint $f" plutil -lint -s "$f"; done
 run "xmllint Cocaine.sdef (the AppleScript dictionary)" xmllint --noout Cocaine.sdef
+run "perl -c relay/cocaine-relay (the SSH hosts relay)" /usr/bin/perl -c relay/cocaine-relay
 run "Info.plist: scripting enabled with Cocaine.sdef" zsh -c "[ \"\$(/usr/libexec/PlistBuddy -c 'Print :OSAScriptingDefinition' Info.plist)\" = Cocaine.sdef ]"
 
 step "native App Intents (behind --app-intents; generated in a temporary folder, nothing registered)"
@@ -110,6 +111,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--shelf-test (temporary folders, generated files)" "$ISO" --shelf-test
   run "--dialogs-test" "$ISO" --dialogs-test
   run "--remote-test" "$ISO" --remote-test
+  run "--ssh-test (fake ssh + the real relay, temporary homes, keys in memory)" "$ISO" --ssh-test
   run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test
   if [ "${CI:-}" = true ]; then skipped "--scripting-selftest" "CI: Apple Events in a headless session"
   else run "--scripting-selftest (real AppleScript sent to the copy itself; fake state)" "$ISO" --scripting-selftest; fi
