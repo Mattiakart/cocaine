@@ -186,3 +186,173 @@ final class Alerter {
         }, completionHandler: { closing.forEach { $0.orderOut(nil) } })
     }
 }
+
+// MARK: - Sounds per event, a sound file of your own, quiet hours
+
+extension Settings {
+    /// A sound per kind of alert: "" = the general Sound, "none" = silent, a system sound's name, or the path of a sound file
+    /// the user picked (referenced where it is, never copied).
+    func eventSound(_ kind: String) -> String { d.string(forKey: "sound." + kind) ?? "" }
+    func setEventSound(_ kind: String, _ v: String) { d.set(v, forKey: "sound." + kind) }
+    /// Quiet hours: no sound and no voice between these minutes of the day (an alert still shows and is kept in the list).
+    var quietHours: Bool { get { flag("quietHours", false) } nonmutating set { d.set(newValue, forKey: "quietHours") } }
+    var quietStart: Int { get { d.object(forKey: "quietStart") as? Int ?? 22 * 60 } nonmutating set { d.set(newValue, forKey: "quietStart") } }
+    var quietEnd: Int { get { d.object(forKey: "quietEnd") as? Int ?? 8 * 60 } nonmutating set { d.set(newValue, forKey: "quietEnd") } }
+}
+
+enum AlertSounds {
+    static let kinds = ["done", "input", "error"]
+    static let fileTypes: Set<String> = ["aiff", "aif", "wav", "mp3", "m4a", "caf"]
+    static let maxFileSize = 20 << 20
+
+    /// A sound file the user picked that can be played: a regular file of a sound type, not too big.
+    static func validFile(_ path: String) -> Bool {
+        guard path.hasPrefix("/"), fileTypes.contains((path as NSString).pathExtension.lowercased()),
+              let a = try? FileManager.default.attributesOfItem(atPath: path), a[.type] as? FileAttributeType == .typeRegular,
+              (a[.size] as? Int ?? .max) <= maxFileSize else { return false }
+        return true
+    }
+
+    /// What plays for an alert of this kind: its own choice, else the general one; nil = silence.
+    static func resolve(kind: String, own: String, general: String) -> String? {
+        let pick = own.isEmpty ? general : own
+        if pick.isEmpty || pick == "none" { return nil }
+        if pick.hasPrefix("/") { return validFile(pick) ? pick : general.isEmpty || general.hasPrefix("/") ? nil : general }
+        return pick
+    }
+
+    /// Inside quiet hours now? (A span that crosses midnight, 22:00–08:00, works; equal ends mean all day.)
+    static func isQuiet(on: Bool, start: Int, end: Int, now: Date, calendar: Calendar = .autoupdatingCurrent) -> Bool {
+        guard on else { return false }
+        let c = calendar.dateComponents([.hour, .minute], from: now)
+        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        if start == end { return true }
+        return start < end ? (m >= start && m < end) : (m >= start || m < end)
+    }
+
+    private static var playing: NSSound?
+    static func play(_ id: String) {
+        playing?.stop()
+        let s = id.hasPrefix("/") ? NSSound(contentsOfFile: id, byReference: true) : NSSound(named: id)
+        playing = s
+        s?.play()
+    }
+
+    /// The name shown for a choice.
+    static func title(_ id: String) -> String {
+        switch id {
+        case "": return L("Same as Sound")
+        case "none": return L("No sound")
+        default: return id.hasPrefix("/") ? (id as NSString).lastPathComponent : id
+        }
+    }
+}
+
+/// The AI settings added with the plan review and the limits, for the panel (one observable object, so PanelModel stays as it is).
+final class AgentPrefs: ObservableObject {
+    static let shared = AgentPrefs()
+    private let s = Settings()
+
+    @Published var preview: Bool { didSet { s.agentPreview = preview } }
+    @Published var sounds: [String: String] { didSet { for (k, v) in sounds where s.eventSound(k) != v { s.setEventSound(k, v) } } }
+    @Published var quietHours: Bool { didSet { s.quietHours = quietHours } }
+    @Published var quietStart: Int { didSet { s.quietStart = quietStart } }
+    @Published var quietEnd: Int { didSet { s.quietEnd = quietEnd } }
+    /// The statusline wrapper for Claude's plan limits (Quotas.swift): read from Claude Code's settings, changed there.
+    @Published private(set) var limits = false
+    @Published private(set) var limitsBusy = false
+    @Published var limitsError: String?
+    @Published private(set) var jumpRules: JumpRules.Status = JumpRules.Status()
+
+    private init() {
+        let st = Settings()
+        preview = st.agentPreview
+        sounds = Dictionary(uniqueKeysWithValues: AlertSounds.kinds.map { ($0, st.eventSound($0)) })
+        quietHours = st.quietHours; quietStart = st.quietStart; quietEnd = st.quietEnd
+    }
+
+    func refresh() {
+        DispatchQueue.global(qos: .utility).async {
+            let on = StatusLineHook.isOn()
+            let rules = JumpRules.status()
+            DispatchQueue.main.async { self.limits = on; self.jumpRules = rules }
+        }
+    }
+
+    func setLimits(_ on: Bool) {
+        guard !limitsBusy else { return }
+        limitsBusy = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = StatusLineHook.set(on)
+            let now = StatusLineHook.isOn()
+            DispatchQueue.main.async {
+                self.limitsBusy = false
+                self.limits = now
+                self.limitsError = ok ? nil : (AIHooks.binary == nil ? L("Only from the app in Applications") : L("Couldn't change ~/.claude/settings.json"))
+            }
+        }
+    }
+
+    /// The picker's choices for one kind: the general sound, none, the system ones, the file picked, "Choose a file…".
+    func soundSpec(_ kind: String, title: String) -> PickerSpec {
+        var items = [PickerItem(id: "", title: L("Same as Sound"), symbol: "arrow.uturn.backward"),
+                     PickerItem(id: "none", title: L("No sound"), symbol: "speaker.slash")]
+            + Settings.sounds.map { PickerItem(id: $0, title: $0, symbol: "speaker.wave.2") }
+        if let cur = sounds[kind], cur.hasPrefix("/") { items.append(PickerItem(id: cur, title: AlertSounds.title(cur), symbol: "music.note")) }
+        items.append(PickerItem(id: "choose", title: L("Choose a sound file…"), symbol: "folder", section: 1))
+        return PickerSpec(id: "sound." + kind, title: title, items: items, mode: .single(sounds[kind] ?? ""))
+    }
+
+    func pickSound(_ kind: String, _ id: String) {
+        guard id == "choose" else {
+            sounds[kind] = id
+            if let play = AlertSounds.resolve(kind: kind, own: id, general: s.alertSound) { AlertSounds.play(play) }   // hear it
+            return
+        }
+        let panel = NSOpenPanel()                    // the system's own file chooser is the point here
+        panel.allowedContentTypes = AlertSounds.fileTypes.compactMap { UTType(filenameExtension: $0) }
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = L("A sound file: it is played from where it is, never copied")
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url, AlertSounds.validFile(url.path) else { return }
+        sounds[kind] = url.path
+        AlertSounds.play(url.path)
+    }
+
+    /// What plays for an alert of `kind` now: nil in quiet hours or when silent.
+    func soundNow(_ kind: String, now: Date = Date()) -> String? {
+        if AlertSounds.isQuiet(on: quietHours, start: quietStart, end: quietEnd, now: now) { return nil }
+        return AlertSounds.resolve(kind: kind, own: sounds[kind] ?? "", general: s.alertSound)
+    }
+
+    var quietNow: Bool { AlertSounds.isQuiet(on: quietHours, start: quietStart, end: quietEnd, now: Date()) }
+}
+
+// MARK: - Tests (part of --agents-test)
+
+enum AlertSoundTests {
+    static func run(_ check: (String, Bool) -> Void) {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Rome")!
+        func at(_ h: Int, _ m: Int) -> Date { cal.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: h, minute: m))! }
+        check("sounds: quiet hours across midnight (22:00–08:00)", AlertSounds.isQuiet(on: true, start: 1320, end: 480, now: at(23, 30), calendar: cal)
+              && AlertSounds.isQuiet(on: true, start: 1320, end: 480, now: at(7, 59), calendar: cal)
+              && !AlertSounds.isQuiet(on: true, start: 1320, end: 480, now: at(8, 0), calendar: cal)
+              && !AlertSounds.isQuiet(on: true, start: 1320, end: 480, now: at(12, 0), calendar: cal))
+        check("sounds: quiet hours within a day, and off means never", AlertSounds.isQuiet(on: true, start: 780, end: 840, now: at(13, 30), calendar: cal)
+              && !AlertSounds.isQuiet(on: true, start: 780, end: 840, now: at(14, 0), calendar: cal)
+              && !AlertSounds.isQuiet(on: false, start: 0, end: 0, now: at(1, 0), calendar: cal))
+        check("sounds: per event, else the general one; none is silent",
+              AlertSounds.resolve(kind: "done", own: "", general: "Glass") == "Glass" && AlertSounds.resolve(kind: "done", own: "Ping", general: "Glass") == "Ping"
+              && AlertSounds.resolve(kind: "done", own: "none", general: "Glass") == nil && AlertSounds.resolve(kind: "done", own: "", general: "") == nil)
+        let dir = AgentTests.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let ok = dir.appendingPathComponent("ding.wav"), bad = dir.appendingPathComponent("evil.app"), gone = dir.appendingPathComponent("gone.mp3")
+        try? Data(repeating: 0, count: 64).write(to: ok); try? Data(repeating: 0, count: 64).write(to: bad)
+        check("sounds: a picked file is used where it is, if it is a sound file that exists",
+              AlertSounds.resolve(kind: "error", own: ok.path, general: "Glass") == ok.path
+              && AlertSounds.resolve(kind: "error", own: bad.path, general: "Glass") == "Glass"
+              && AlertSounds.resolve(kind: "error", own: gone.path, general: "Glass") == "Glass"
+              && !AlertSounds.validFile(dir.path) && !AlertSounds.validFile("relative.wav"))
+    }
+}

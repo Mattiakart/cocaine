@@ -130,38 +130,41 @@ extension IslandView {
 
     // MARK: usage
 
-    /// The AI tools' usage: Codex's limits and Claude Code's tokens.
+    /// The AI tools' usage: Claude Code's plan limits (from its statusline, Quotas.swift) and tokens, Codex's limits, each with
+    /// the time to its reset. Scrolls in whatever height it has.
     func usageModule(_ b: ModuleBox) -> some View {
-        VStack(alignment: .leading, spacing: Space.l) {
-            VStack(alignment: .leading, spacing: Space.m) {
-                Text("Codex").font(UI.groupTitle)
-                if usage.codex.isEmpty {
-                    Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint).shimmer(!usage.loaded)
-                }
-                ForEach(usage.codex) { l in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline) { Text(l.name).font(UI.detail).foregroundStyle(UI.secondary); Spacer()
-                            Text("\(Int(l.percent))%").font(UI.metric) }
-                        Capsule().fill(Color.white.opacity(0.12)).frame(height: 5)
-                            .overlay(alignment: .leading) { GeometryReader { r in Capsule().fill(Island.accent).frame(width: r.size.width * min(1, l.percent / 100)) } }
-                        if let d = l.resets {
-                            Text(String(format: L("Resets %@"), d.formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Language.locale))))
-                                .font(UI.detail).foregroundStyle(UI.hint)
-                        }
+        FadingScroll {
+            VStack(alignment: .leading, spacing: Space.l) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Text("Claude Code").font(UI.groupTitle)
+                    if usage.claudeLimits.isEmpty {
+                        Text(!usage.loaded ? "…" : usage.claudeLimitsOn ? L("Plan limits show after its next reply (Pro and Max plans)")
+                             : L("Plan limits: turn them on in Settings → AI alerts"))
+                            .font(UI.detail).foregroundStyle(UI.hint).fixedSize(horizontal: false, vertical: true).shimmer(!usage.loaded)
                     }
-                    .accessibilityElement(children: .combine)
+                    ForEach(usage.claudeLimits) { w in QuotaBar(provider: "Claude Code", window: w) }
+                    tokenRow(L("Last 5 hours"), usage.claudeFive)
+                    tokenRow(L("Last 7 days"), usage.claudeWeek)
+                    Text(usage.partial ? L("Still counting: the totals grow as the rest is read") : L("Tokens in your conversations on this Mac"))
+                        .font(UI.detail).foregroundStyle(usage.partial ? warningColor : UI.hint)
+                        .shimmer(usage.partial)                              // still reading: a calm light passes over it
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Codex").font(UI.groupTitle)
+                        if let p = usage.codexPlan { Text(p.capitalized).font(UI.detail).foregroundStyle(UI.hint) }
+                    }
+                    if usage.codex.isEmpty {
+                        Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint).shimmer(!usage.loaded)
+                    }
+                    ForEach(usage.codex) { l in
+                        QuotaBar(provider: "Codex", window: QuotaWindow(id: l.id, minutes: l.minutes, percent: l.percent, resets: l.resets))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .leading, spacing: Space.xs) {
-                Text("Claude Code").font(UI.groupTitle)
-                tokenRow(L("Last 5 hours"), usage.claudeFive)
-                tokenRow(L("Last 7 days"), usage.claudeWeek)
-                Text(usage.partial ? L("Still counting: the totals grow as the rest is read") : L("Tokens in your conversations on this Mac"))
-                    .font(UI.detail).foregroundStyle(usage.partial ? warningColor : UI.hint)
-                    .shimmer(usage.partial)                              // still reading: a calm light passes over it
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(Motion.animation(.crossfade), value: usage.loaded)
         }
         .onAppear { usage.refresh() }
     }

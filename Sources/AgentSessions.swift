@@ -20,12 +20,28 @@ struct AgentOrigin: Codable, Equatable {
     var pidStart: Double?      // its start time: tells a reused pid apart
     var url: String?           // a web chat's tab (https, a known chat site only): going back selects that tab
     var browser: String?       // the browser holding that tab (bundle id)
+    // More terminals' own ids, for going back to the exact pane (Sources/AgentFocus.swift):
+    var kittyWindow: String? = nil     // $KITTY_WINDOW_ID
+    var kittyListen: String? = nil     // $KITTY_LISTEN_ON (unix:/path only): kitty's remote-control socket
+    var cmuxSurface: String? = nil     // $CMUX_SURFACE_ID
+    var cmuxWorkspace: String? = nil   // $CMUX_WORKSPACE_ID
+    var cmuxSocket: String? = nil      // $CMUX_SOCKET_PATH
+    var zellijSession: String? = nil   // $ZELLIJ_SESSION_NAME
+    var zellijPane: String? = nil      // $ZELLIJ_PANE_ID
+    var ghosttyTerminal: String? = nil // Ghostty's id of the terminal (asked at the session's start, only if already allowed)
 
     var isEmpty: Bool { self == AgentOrigin() }
 
     private static func matches(_ s: String?, _ pattern: String) -> String? {
         guard let s, s.range(of: pattern, options: .regularExpression) != nil else { return nil }
         return s
+    }
+
+    /// An absolute socket path (after `prefix`), no "..", only plain characters.
+    private static func socketPath(_ s: String?, prefix: String) -> String? {
+        guard let s, s.hasPrefix(prefix) else { return nil }
+        guard let ok = matches(String(s.dropFirst(prefix.count)), #"^/[A-Za-z0-9._/-]{1,200}$"#), !ok.contains("..") else { return nil }
+        return ok
     }
 
     /// Only well-formed values survive; everything else becomes nil.
@@ -47,6 +63,14 @@ struct AgentOrigin: Codable, Equatable {
         if let s = pidStart, s > 0, s.isFinite { o.pidStart = s }
         o.url = url.flatMap(AIEnvironments.safeChatURL)
         o.browser = Self.matches(browser, #"^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$"#).flatMap { AIEnvironments.browsers.contains($0) ? $0 : nil }
+        o.kittyWindow = Self.matches(kittyWindow, #"^[0-9]{1,9}$"#)
+        o.kittyListen = Self.socketPath(kittyListen, prefix: "unix:").map { "unix:" + $0 }
+        o.cmuxSurface = Self.matches(cmuxSurface, #"^[A-Za-z0-9-]{1,64}$"#)
+        o.cmuxWorkspace = Self.matches(cmuxWorkspace, #"^[A-Za-z0-9-]{1,64}$"#)
+        o.cmuxSocket = Self.socketPath(cmuxSocket, prefix: "")
+        o.zellijSession = Self.matches(zellijSession, #"^[A-Za-z0-9._-]{1,64}$"#)
+        o.zellijPane = Self.matches(zellijPane, #"^[0-9]{1,6}$"#)
+        o.ghosttyTerminal = Self.matches(ghosttyTerminal, #"^[A-Za-z0-9-]{1,64}$"#)
         return o
     }
 
@@ -59,6 +83,10 @@ struct AgentOrigin: Codable, Equatable {
         o.tmuxPane = n.tmuxPane ?? tmuxPane; o.tmuxSocket = n.tmuxSocket ?? tmuxSocket; o.weztermPane = n.weztermPane ?? weztermPane
         o.cwd = n.cwd ?? cwd; o.pid = n.pid ?? o.pid; o.pidStart = n.pidStart ?? o.pidStart
         o.url = n.url ?? url; o.browser = n.browser ?? browser
+        o.kittyWindow = n.kittyWindow ?? kittyWindow; o.kittyListen = n.kittyListen ?? kittyListen
+        o.cmuxSurface = n.cmuxSurface ?? cmuxSurface; o.cmuxWorkspace = n.cmuxWorkspace ?? cmuxWorkspace; o.cmuxSocket = n.cmuxSocket ?? cmuxSocket
+        o.zellijSession = n.zellijSession ?? zellijSession; o.zellijPane = n.zellijPane ?? zellijPane
+        o.ghosttyTerminal = n.ghosttyTerminal ?? ghosttyTerminal
         return o
     }
 }
@@ -223,6 +251,18 @@ final class AgentBoard {
 
     func entry(_ id: String) -> AgentEntry? { entries.first { $0.id == id } }
 
+    /// Remembers the Ghostty terminal a session started in (AgentFocus goes back to it). False if nothing changed.
+    @discardableResult
+    func setGhosttyTerminal(_ id: String, _ terminal: String) -> Bool {
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return false }
+        var o = entries[i].origin ?? AgentOrigin()
+        o.ghosttyTerminal = terminal
+        o = o.sanitized()
+        guard o != entries[i].origin, o.ghosttyTerminal != nil else { return false }
+        entries[i].origin = o
+        return true
+    }
+
     struct Snapshot: Codable { var updated: Double; var cocaine: String; var until: Double?; var agents: [AgentEntry] }
 
     /// Atomic (a crash never leaves half a file) and private to the user.
@@ -285,7 +325,10 @@ struct AlertParams {
         p.test = value("test")
         p.origin = AgentOrigin(app: value("app"), term: value("term"), tty: value("tty"), termSession: value("tsid"),
                                tmuxPane: value("tmux"), tmuxSocket: value("tmuxs", 220), weztermPane: value("wez"),
-                               cwd: value("cwd", 1024), pid: value("pid").flatMap { Int32($0) }).sanitized()
+                               cwd: value("cwd", 1024), pid: value("pid").flatMap { Int32($0) },
+                               kittyWindow: value("kitty"), kittyListen: value("kittys", 220), cmuxSurface: value("cmux"),
+                               cmuxWorkspace: value("cmuxw"), cmuxSocket: value("cmuxs", 220), zellijSession: value("zj"),
+                               zellijPane: value("zjp")).sanitized()
         return p
     }
 

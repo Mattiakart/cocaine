@@ -182,6 +182,31 @@ enum CodexUsage {
         return parse(String(decoding: (try? h.readToEnd()) ?? Data(), as: UTF8.self))
     }
 
+    /// The plan named next to the newest limits ("plus", "pro", "prolite"…), if any.
+    static func planType(_ text: String) -> String? {
+        guard let r = text.range(of: "\"plan_type\":\"", options: .backwards) else { return nil }
+        let v = text[r.upperBound...].prefix { $0 != "\"" }.prefix(30)
+        return v.isEmpty || !v.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }) ? nil : String(v)
+    }
+
+    /// The newest session's plan type (read with the limits).
+    static func plan(root: URL, maxFiles: Int = 30) -> String? {
+        guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return nil }
+        var list: [(URL, Date)] = []
+        for case let u as URL in en where u.pathExtension == "jsonl" {
+            list.append((u, (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast))
+        }
+        for (u, _) in list.sorted(by: { $0.1 > $1.1 }).prefix(maxFiles) {
+            guard let h = try? FileHandle(forReadingFrom: u) else { continue }
+            let size = (try? h.seekToEnd()) ?? 0
+            try? h.seek(toOffset: size > 524_288 ? size - 524_288 : 0)
+            let text = String(decoding: (try? h.readToEnd()) ?? Data(), as: UTF8.self)
+            try? h.close()
+            if let p = planType(text) { return p }
+        }
+        return nil
+    }
+
     /// The last "rate_limits" in `text`: each window's percent used, its length and when it resets ("resets_at", seconds since
     /// 1970, or "resets_in_seconds" from the line's timestamp), whatever order the keys come in.
     static func parse(_ text: String) -> [Limit]? {
@@ -215,8 +240,14 @@ enum CodexUsage {
 
 /// What the Status page shows, refreshed when the page opens (at most every 30 s), read off the main thread.
 final class UsageWatch: ObservableObject {
-    struct Limit: Identifiable { var id: String; var name: String; var percent: Double; var resets: Date? }
+    struct Limit: Identifiable { var id: String; var name: String; var percent: Double; var resets: Date?; var minutes: Int? = nil }
     @Published var codex: [Limit] = []
+    @Published var codexPlan: String?
+    /// Claude Code's plan limits (Quotas.swift), from the statusline wrapper's records; empty until it reports them.
+    @Published var claudeLimits: [QuotaWindow] = []
+    @Published var claudeLimitsAt: Date?
+    /// The statusline wrapper is on (so "no limits yet" means "not reported yet", not "not set up").
+    @Published var claudeLimitsOn = false
     @Published var claudeFive = 0
     @Published var claudeWeek = 0
     @Published var loaded = false
@@ -232,9 +263,14 @@ final class UsageWatch: ObservableObject {
         busy = true
         queue.async { [claude, codexRoot] in
             let c = CodexUsage.limits(root: codexRoot)
+            let plan = c.isEmpty ? nil : CodexUsage.plan(root: codexRoot)
+            let q = Quotas.claude(folder: StatusLineHook.folder(ProcessInfo.processInfo.environment))
+            let on = StatusLineHook.isOn()
             let t = claude.refresh()
             DispatchQueue.main.async {
-                self.codex = c.map { Limit(id: $0.id, name: Self.windowName($0.minutes), percent: $0.percent, resets: $0.resets) }
+                self.codex = c.map { Limit(id: $0.id, name: Self.windowName($0.minutes), percent: $0.percent, resets: $0.resets, minutes: $0.minutes) }
+                self.codexPlan = plan
+                self.claudeLimits = q.windows; self.claudeLimitsAt = q.at; self.claudeLimitsOn = on
                 self.claudeFive = t.five; self.claudeWeek = t.week; self.partial = t.partial
                 self.loaded = true; self.busy = false; self.last = Date()
                 if t.partial { self.refresh(force: true) }          // carries on where it stopped
@@ -243,9 +279,7 @@ final class UsageWatch: ObservableObject {
     }
 
     /// "Week", "Day", "5 h" in the app's language (on the main thread: the language can change meanwhile).
-    static func windowName(_ minutes: Int) -> String {
-        minutes >= 10000 ? L("Week") : minutes >= 1440 ? L("Day") : String(format: L("%d h"), minutes / 60)
-    }
+    static func windowName(_ minutes: Int) -> String { Quotas.windowName(minutes) }
 }
 
 // MARK: - Tests (part of --selftest): generated files in a temporary folder, never ~/.claude or ~/.codex

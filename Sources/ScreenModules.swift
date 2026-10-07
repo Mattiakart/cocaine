@@ -29,6 +29,7 @@ extension IslandView {
         case "clipboard": clipboardModule(b)
         case "batteries": batteriesModule(b)
         case "usage": usageModule(b)
+        case "quotas": quotasModule(b)
         case "mirror": mirrorTab
         case "monitors": displayTab
         default: EmptyView()

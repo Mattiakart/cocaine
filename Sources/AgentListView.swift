@@ -14,6 +14,10 @@ struct AgentListView: View {
     let focus: (AgentOrigin?, String) -> Void
     let answer: (String, Int) -> Void
     let release: (String) -> Void
+    /// What the cards show beyond the state (the last message, background tasks, the error), in memory only.
+    @ObservedObject var extras = AgentExtras.shared
+    @ObservedObject var review = ApprovalReviewModel.shared
+    @ObservedObject var prefs = AgentPrefs.shared
 
     /// Every row's inner inset, the request cards' too, so icons and names sit on one column.
     static let inset: CGFloat = 6
@@ -33,10 +37,25 @@ struct AgentListView: View {
                         .padding(.horizontal, Self.inset)
                 }
                 // A request arrives from the top and goes when answered; sessions come, go and change state in place.
-                ForEach(approvals) { r in approvalRow(r).motionAppear(edge: .top) }
+                if approvals.count > 1 {                            // the queue: how many wait, of which kinds
+                    Text(Self.queueText(approvals)).font(UI.detail).foregroundStyle(UI.secondary).padding(.horizontal, Self.inset)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(approvals) { r in
+                    Group {
+                        if !island && review.expanded == r.id {
+                            ApprovalReviewView(request: r, index: approvals.firstIndex(of: r) ?? 0, count: approvals.count, island: false,
+                                               accent: accent, warning: warning)
+                        } else {
+                            approvalRow(r)
+                        }
+                    }
+                    .motionAppear(edge: .top)
+                }
                 ForEach(rows) { e in sessionRow(e).motionAppear(edge: nil) }
             }
             .animation(Motion.animation(.notice), value: approvals.map(\.id))
+            .animation(Motion.animation(.expand), value: review.expanded)
             .animation(Motion.animation(.notice), value: rows.map(\.id))
             .animation(Motion.animation(.crossfade), value: rows.map(\.state))
         }
@@ -58,8 +77,13 @@ struct AgentListView: View {
                     .contentTransition(.symbolEffect(.replace))          // working → done: the symbol changes into the next
                 VStack(alignment: .leading, spacing: 1) {
                     Text(e.from).font(UI.itemTitle).lineLimit(1)
-                    Text([Self.name(e.state), e.project].compactMap { $0 }.joined(separator: " · "))
+                    Text(Self.stateLine(e, extras[e.id]))
                         .font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
+                    if let more = Self.extraLine(e, extras[e.id], preview: prefs.preview) {
+                        Text(more).font(UI.detail).foregroundStyle(e.state == "error" ? warning : UI.hint).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(Motion.appear(.top))
+                    }
                 }
                 Spacer(minLength: Space.xs)
                 Text(e.restored == true ? "↺ " + Self.age(e.since) : Self.age(e.since))
@@ -71,7 +95,36 @@ struct AgentListView: View {
         }
         .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .help(agentsL("Go to this session"))
-        .accessibilityLabel("\(e.from), \(Self.name(e.state))" + (e.project.map { ", \($0)" } ?? ""))
+        .accessibilityLabel("\(e.from), \(Self.stateLine(e, extras[e.id]))" + (Self.extraLine(e, extras[e.id], preview: prefs.preview).map { ". \($0)" } ?? ""))
+    }
+
+    /// "Done · project · 2 in the background": the state, the project, what still runs.
+    static func stateLine(_ e: AgentEntry, _ x: AgentExtra?) -> String {
+        var parts = [name(e.state)]
+        if let p = e.project { parts.append(p) }
+        if let x, x.background > 0, e.state != "idle" { parts.append(String(format: agentsL("%d in the background"), x.background)) }
+        if let x, !x.steps.isEmpty {
+            parts.append(String(format: agentsL("plan %d/%d"), x.steps.filter { $0.status == "completed" }.count, x.steps.count))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The card's second line: why it failed, else (when the setting allows) the start of its last message, else what it
+    /// is doing on its plan. Plain text, bounded.
+    static func extraLine(_ e: AgentEntry, _ x: AgentExtra?, preview: Bool) -> String? {
+        guard let x else { return nil }
+        if e.state == "error", let err = x.error { return err }
+        if e.state == "done", preview, let m = x.message { let p = Markdown.preview(m, limit: 160); if !p.isEmpty { return p } }
+        if e.state == "working", let now = x.steps.first(where: { $0.status == "in_progress" }) { return ApprovalRequest.clean(now.step, 160) }
+        return nil
+    }
+
+    /// "3 requests waiting: 1 plan, 2 permissions".
+    static func queueText(_ list: [ApprovalRequest]) -> String {
+        let kinds: [(ApprovalRequest.Kind, String)] = [(.plan, agentsL("%d plan(s)")), (.question, agentsL("%d question(s)")),
+                                                      (.permission, agentsL("%d permission(s)")), (.elicitation, agentsL("%d MCP question(s)"))]
+        let parts = kinds.compactMap { k, f -> String? in let n = list.filter { $0.kind == k }.count; return n > 0 ? String(format: f, n) : nil }
+        return String(format: agentsL("%d requests waiting"), list.count) + ": " + parts.joined(separator: ", ")
     }
 
     /// The granting answer (Allow, Yes, the first choice) is primary; the others are grey.
@@ -85,9 +138,10 @@ struct AgentListView: View {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    private func choiceLabel(_ c: ApprovalChoice) -> String {
+    static func choiceName(_ c: ApprovalChoice) -> String {
         ["allow": agentsL("Allow"), "deny": agentsL("Deny"), "decline": agentsL("Decline"), "yes": agentsL("Yes"), "no": agentsL("No")][c.label] ?? c.label
     }
+    private func choiceLabel(_ c: ApprovalChoice) -> String { Self.choiceName(c) }
 
     private func approvalRow(_ r: ApprovalRequest) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
@@ -96,11 +150,11 @@ struct AgentListView: View {
                     Image(systemName: "hand.raised.fill").font(UI.icon).foregroundStyle(warning).frame(width: UI.iconColumn)
                     VStack(alignment: .leading, spacing: 1) {
                         Text([r.from, r.project].compactMap { $0 }.joined(separator: " · ")).font(UI.itemTitle).lineLimit(1)
-                        Text(r.event == "Elicitation" ? String(format: agentsL("%@ asks"), r.title) : String(format: agentsL("Wants to use %@"), r.title))
+                        Text(ApprovalReviewView.subtitle(r))
                             .font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
                         if !r.summary.isEmpty {
-                            Text(r.summary).font(r.event == "Elicitation" ? UI.detail : UI.mono)
-                                .lineLimit(r.answerable ? nil : 3).fixedSize(horizontal: false, vertical: true)   // answerable: shown whole
+                            Text(r.summary).font(r.kind == .permission ? UI.mono : UI.detail)
+                                .lineLimit(r.inline ? nil : 3).fixedSize(horizontal: false, vertical: true)   // inline: shown whole
                         }
                     }
                     Spacer(minLength: 0)
@@ -109,10 +163,16 @@ struct AgentListView: View {
             }
             .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow)).help(agentsL("Go to this session"))
             HStack(spacing: Space.s) {
-                ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
-                    Button(choiceLabel(c)) { answer(r.id, i) }
-                        .buttonStyle(CocaineButtonStyle(kind: Self.kind(c, index: i)))       // Allow/Yes: the one filled button
-                        .accessibilityLabel("\(choiceLabel(c)): \(r.title)")
+                if r.inline {                // one short field says it all: its buttons right here
+                    ForEach(Array(r.choices.enumerated()), id: \.offset) { i, c in
+                        Button(choiceLabel(c)) { answer(r.id, i) }
+                            .buttonStyle(CocaineButtonStyle(kind: Self.kind(c, index: i)))       // Allow/Yes: the one filled button
+                            .accessibilityLabel("\(choiceLabel(c)): \(r.title)")
+                    }
+                } else if r.answerable {     // a plan, a question, a long command or an edit: read it whole first
+                    Button(agentsL("Review")) { review.open(r.id) }
+                        .buttonStyle(CocaineButtonStyle(kind: .primary))
+                        .accessibilityLabel(String(format: agentsL("Review: %@"), ApprovalReviewView.subtitle(r)))
                 }
                 Button(agentsL("In the terminal")) { release(r.id); focus(r.origin, r.from) }
                     .buttonStyle(CocaineButtonStyle(kind: .plain)).help(agentsL("Hands the request back to the terminal and goes there"))
