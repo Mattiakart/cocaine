@@ -1,0 +1,486 @@
+#!/usr/bin/env perl
+# cocaine-relay: the small helper Cocaine ("SSH hosts", https://github.com/Mattiakart/cocaine) puts on a remote machine you
+# chose, so the AI agents running there can reach the Cocaine on your Mac through the ssh connection Cocaine itself opens.
+#
+#   cocaine-relay serve              run by Cocaine over ssh: talks to the Mac on stdin/stdout only (signed JSON lines)
+#   cocaine-relay hook <tool> <kind> run by an agent's hook: hands its news (or its request, then waits for the answer) to serve
+#   cocaine-relay version            prints "cocaine-relay <protocol> <sha256 of this file>"
+#
+# No network port, no daemon, no root: `serve` lives only while Cocaine's ssh connection does, and listens on a Unix socket in
+# ~/.cocaine/run (0700). Every line to and from the Mac carries an HMAC-SHA256 made with a key only this account and the Mac's
+# Keychain hold (~/.cocaine/relay.key, 0600). When the Mac isn't connected a hook prints nothing and exits 0: the agent asks in
+# its own terminal as usual. Nothing is ever decided here. Everything lives in ~/.cocaine; Cocaine removes it (and its hooks)
+# when you remove the host there.
+use strict;
+use warnings;
+use IO::Socket::UNIX;
+use IO::Select;
+use JSON::PP;
+use Digest::SHA qw(hmac_sha256_hex sha256_hex);
+use MIME::Base64 qw(encode_base64 decode_base64);
+use Encode ();
+use Fcntl qw(O_WRONLY O_CREAT O_EXCL O_APPEND S_IMODE);
+use File::Path ();
+use Cwd ();
+use POSIX ();
+
+my $PROTOCOL = 1;
+my $HOME = $ENV{HOME} // '';
+my $BASE = "$HOME/.cocaine";
+my $KEYF = "$BASE/relay.key";
+my $RUN = "$BASE/run";
+my $SOCK = "$RUN/relay.sock";
+my $PIDF = "$RUN/serve.pid";
+my $BACKLOG = "$RUN/backlog";
+my $BACKUP = "$BASE/backup";
+my $MAXLINE = 4_000_000;          # a Mac command (a config file to write) or a hook's line
+my $MAXFILE = 1_000_000;          # a config file read or written
+my $WAIT = 135;                   # how long a request waits for the Mac (the tools' own hook timeout is 150 s)
+my @FILES = ('.claude/settings.json', '.codex/hooks.json', '.gemini/settings.json', '.qwen/settings.json', '.cursor/hooks.json');
+my %SHELLS = map { $_ => 1 } qw(sh bash zsh dash fish env login ksh mksh tcsh csh perl cocaine-relay);
+my $JSON = JSON::PP->new->utf8->canonical;
+
+$SIG{PIPE} = 'IGNORE';
+umask 077;
+
+sub key {
+    my @st = lstat $KEYF or return;
+    return unless -f _ && $st[4] == $< && ($st[2] & 077) == 0;
+    open my $f, '<', $KEYF or return;
+    my $k = <$f>;
+    close $f;
+    return unless defined $k;
+    $k =~ s/\s+$//;
+    return $k =~ /^[0-9a-f]{64}$/ ? pack('H*', $k) : undef;
+}
+
+sub rand_hex {
+    my $n = shift;
+    open my $r, '<', '/dev/urandom' or die "no /dev/urandom\n";
+    my $got = read($r, my $b, $n);
+    close $r;
+    die "short random read\n" unless defined $got && $got == $n;
+    return unpack('H*', $b);
+}
+
+sub self_sha {
+    open my $f, '<', $0 or return '';
+    binmode $f;
+    local $/;
+    my $d = <$f>;
+    close $f;
+    return sha256_hex($d // '');
+}
+
+sub text { my $v = shift // ''; $v = Encode::decode('UTF-8', $v); return length($v) > 400 ? substr($v, 0, 400) : $v }
+
+# The agent's own process: the first non-shell up from this hook (Linux /proc, else ps).
+sub parent_of {
+    my $p = shift;
+    if (open my $f, '<', "/proc/$p/stat") {
+        local $/;
+        my $s = <$f> // '';
+        close $f;
+        return ($2, $1) if $s =~ /^\d+ \((.*)\) \S+ (\d+)/s;
+        return;
+    }
+    my $out = '';
+    if (open my $ph, '-|', 'ps', '-o', 'ppid=', '-o', 'comm=', '-p', $p) { local $/; $out = <$ph> // ''; close $ph }
+    return ($1, $2) if $out =~ /^\s*(\d+)\s+(\S+)/;
+    return;
+}
+
+sub agent_pid {
+    my $p = getppid();
+    for (1 .. 6) {
+        return undef if $p <= 1;
+        my ($pp, $name) = parent_of($p);
+        return undef unless defined $pp;
+        $name =~ s{.*/}{};
+        $name =~ s/^-//;
+        return $p + 0 unless $SHELLS{$name};
+        $p = $pp;
+    }
+    return undef;
+}
+
+sub read_all {
+    my ($fh, $seconds, $limit) = @_;
+    my $sel = IO::Select->new($fh);
+    my $end = time + $seconds;
+    my $data = '';
+    while (length($data) < $limit) {
+        my $left = $end - time;
+        last if $left <= 0 || !$sel->can_read($left);
+        my $n = sysread($fh, my $chunk, 65536);
+        last unless $n;
+        $data .= $chunk;
+    }
+    return $data;
+}
+
+sub write_all {
+    my ($fh, $data) = @_;
+    my $off = 0;
+    while ($off < length $data) {
+        my $n = syswrite($fh, $data, length($data) - $off, $off);
+        if (!defined $n) { next if $!{EINTR} || $!{EAGAIN}; return 0 }
+        return 0 if $n == 0;
+        $off += $n;
+    }
+    return 1;
+}
+
+# ---------------------------------------------------------------- hook
+
+sub hook {
+    my ($tool, $kind) = @_;
+    exit 0 unless defined $tool && $tool =~ /^[a-z]{2,12}$/ && defined $kind && $kind =~ /^[a-z]{2,12}$/;
+    my $req = $kind eq 'approve';
+    my $in = read_all(\*STDIN, $req ? 3 : 2, $MAXLINE);
+    my $key = key() or exit 0;
+    my $limit = $req ? 1_000_000 : 200_000;
+    my %env;
+    for my $k (qw(SSH_CONNECTION TMUX TMUX_PANE PWD TERM_PROGRAM ZELLIJ_SESSION_NAME ZELLIJ_PANE_ID)) {
+        $env{$k} = text($ENV{$k}) if defined $ENV{$k} && length $ENV{$k};
+    }
+    my $sid = $in =~ /"(?:session_id|sessionId|conversation_id|conversationId)"\s*:\s*"([A-Za-z0-9._:-]{1,80})"/ ? $1 : '';
+    my %m = (v => 1, t => $req ? 'req' : 'evt', id => rand_hex(16), nonce => rand_hex(16), ts => time, tool => $tool,
+             kind => $kind, sid => $sid, env => \%env);
+    my $pid = agent_pid();
+    $m{pid} = $pid if defined $pid;
+    if (length($in) <= $limit) { $m{in} = encode_base64($in, '') if length $in } else { $m{cut} = JSON::PP::true }
+    exit 0 if $req && $m{cut};                                      # too long to send whole: the terminal asks
+    my $s = -S $SOCK ? IO::Socket::UNIX->new(Type => SOCK_STREAM(), Peer => $SOCK) : undef;
+    if (!$s) {
+        backlog(\%m) unless $req;
+        exit 0;
+    }
+    my $json = $JSON->encode(\%m);
+    write_all($s, hmac_sha256_hex("cocaine-ssh-hook-v1\n$json", $key) . " $json\n") or exit 0;
+    if (!$req) { close $s; exit 0 }
+    my $wait = $ENV{COCAINE_HOOK_TIMEOUT} && $ENV{COCAINE_HOOK_TIMEOUT} =~ /^\d+$/ ? $ENV{COCAINE_HOOK_TIMEOUT} : $WAIT;
+    $wait = $WAIT if $wait > $WAIT || $wait < 1;
+    my $sel = IO::Select->new($s);
+    my $end = time + $wait;
+    my $buf = '';
+    while (length($buf) < $MAXLINE) {
+        my $left = $end - time;
+        last if $left <= 0 || !$sel->can_read($left);
+        my $n = sysread($s, my $chunk, 65536);
+        last unless $n;
+        $buf .= $chunk;
+        next unless $buf =~ /^([^\n]*)\n/;
+        my $a = eval { $JSON->decode($1) };
+        last unless ref $a eq 'HASH' && defined $a->{id} && $a->{id} eq $m{id};
+        my $out = $a->{out} // '';
+        last unless $out =~ /^[A-Za-z0-9+\/=]*$/ && defined $a->{mac};
+        my $want = hmac_sha256_hex("cocaine-ssh-answer-v1\n$m{id}\n$m{nonce}\n$out", $key);
+        last unless lc($a->{mac}) eq $want;
+        my $text = decode_base64($out);
+        print $text, "\n" if length $text;
+        last;
+    }
+    close $s;
+    exit 0;
+}
+
+# News while Cocaine isn't connected: kept (without any text) for the next connection, so the Mac's list catches up.
+sub backlog {
+    my $m = shift;
+    return unless -d $RUN;
+    my %b = (v => 1, t => 'evt', ts => $m->{ts}, tool => $m->{tool}, kind => $m->{kind}, sid => $m->{sid});
+    $b{pid} = $m->{pid} if defined $m->{pid};
+    $b{env} = { PWD => $m->{env}{PWD} } if defined $m->{env}{PWD};
+    my @st = lstat $BACKLOG;
+    unlink $BACKLOG if @st && (!-f _ || $st[7] > 65536);
+    sysopen(my $f, $BACKLOG, O_WRONLY | O_CREAT | O_APPEND, 0600) or return;
+    syswrite($f, $JSON->encode(\%b) . "\n");
+    close $f;
+}
+
+# ---------------------------------------------------------------- serve
+
+my ($key, $cn, $seq, $inseq) = (undef, '', 0, -1);
+my %conns;          # fileno => { s, buf, at, c, id, req }
+my %waiting;        # c => conn
+my $nextc = 1;
+
+sub frame {
+    my ($type, $rest) = @_;
+    my $mac = hmac_sha256_hex("cocaine-ssh-frame-v1\n$cn\n$seq\n$type\n$rest", $key);
+    my $line = "\@\@CR1 $mac $seq $type $rest\n";
+    $seq++;
+    write_all(\*STDOUT, $line) or exit 0;
+}
+
+sub reply { my ($type, $obj) = @_; frame($type, $JSON->encode($obj)) }
+
+sub drop_conn {
+    my ($c, $sel, $tell) = @_;
+    delete $conns{fileno $c->{s}};
+    $sel->remove($c->{s});
+    if (defined $c->{c} && $waiting{$c->{c}}) {
+        delete $waiting{$c->{c}};
+        reply('gone', { c => $c->{c}, id => $c->{id} }) if $tell;
+    }
+    close $c->{s};
+}
+
+sub allowed_file { my $r = shift // ''; return scalar grep { $_ eq $r } @FILES }
+
+sub target_of {
+    my $rel = shift;
+    my $p = "$HOME/$rel";
+    return -l $p ? Cwd::abs_path($p) : $p;
+}
+
+sub get_file {
+    my $o = shift;
+    my %r = (r => $o->{r}, path => $o->{path});
+    return { %r, ok => JSON::PP::false, err => 'path' } unless allowed_file($o->{path});
+    my $p = "$HOME/$o->{path}";
+    return { %r, ok => JSON::PP::true, exists => JSON::PP::false } unless -e $p || -l $p;
+    my $t = target_of($o->{path});
+    return { %r, ok => JSON::PP::false, err => 'notfile' } unless defined $t && -f $t;
+    return { %r, ok => JSON::PP::false, err => 'size' } if -s _ > $MAXFILE;
+    open my $f, '<', $t or return { %r, ok => JSON::PP::false, err => 'read' };
+    binmode $f;
+    local $/;
+    my $d = <$f> // '';
+    close $f;
+    return { %r, ok => JSON::PP::true, exists => JSON::PP::true, sha => sha256_hex($d), data => encode_base64($d, '') };
+}
+
+sub put_file {
+    my $o = shift;
+    my %r = (r => $o->{r}, path => $o->{path});
+    return { %r, ok => JSON::PP::false, err => 'path' } unless allowed_file($o->{path});
+    my $data = decode_base64($o->{data} // '');
+    return { %r, ok => JSON::PP::false, err => 'size' } if length($data) > $MAXFILE;
+    my $t = target_of($o->{path});
+    return { %r, ok => JSON::PP::false, err => 'notfile' } unless defined $t && (!-e $t || -f $t);
+    my ($cur, $mode);
+    if (-e $t) {
+        open my $f, '<', $t or return { %r, ok => JSON::PP::false, err => 'read' };
+        binmode $f;
+        local $/;
+        $cur = <$f> // '';
+        close $f;
+        $mode = S_IMODE((stat $t)[2]);
+    }
+    my $have = defined $cur ? sha256_hex($cur) : '';
+    return { %r, ok => JSON::PP::false, err => 'conflict', sha => $have } unless $have eq ($o->{old} // '');
+    my $backup = '';
+    if (defined $cur) {
+        File::Path::make_path($BACKUP, { mode => 0700 });
+        (my $flat = $o->{path}) =~ s{[/.]}{_}g;
+        $backup = "$flat." . time . ".$$";
+        sysopen(my $b, "$BACKUP/$backup", O_WRONLY | O_CREAT | O_EXCL, 0600) or return { %r, ok => JSON::PP::false, err => 'backup' };
+        write_all($b, $cur) or return { %r, ok => JSON::PP::false, err => 'backup' };
+        close $b;
+    }
+    if ($o->{delete}) {                                              # undoing a file Cocaine itself created
+        return { %r, ok => JSON::PP::true, sha => '' } unless defined $cur;
+        return { %r, ok => unlink($t) ? JSON::PP::true : JSON::PP::false, sha => '', backup => $backup };
+    }
+    (my $dir = $t) =~ s{/[^/]*$}{};
+    File::Path::make_path($dir, { mode => 0700 }) unless -d $dir;
+    my $tmp = "$t.cocaine-tmp.$$";
+    unlink $tmp;
+    sysopen(my $w, $tmp, O_WRONLY | O_CREAT | O_EXCL, 0600) or return { %r, ok => JSON::PP::false, err => 'write' };
+    my $ok = write_all($w, $data);
+    close $w or $ok = 0;
+    chmod $mode, $tmp if $ok && defined $mode;
+    if (!$ok || !rename($tmp, $t)) { unlink $tmp; return { %r, ok => JSON::PP::false, err => 'write' } }
+    return { %r, ok => JSON::PP::true, sha => sha256_hex($data), backup => $backup };
+}
+
+sub claude_version {
+    my $out = '';
+    for my $cmd ("$HOME/.local/bin/claude", "$HOME/.claude/local/claude", 'claude') {
+        my $pid = open(my $ph, '-|') // next;
+        if (!$pid) {
+            open STDERR, '>', '/dev/null';
+            alarm 10;
+            if ($cmd =~ m{^/}) { exec $cmd, '--version' if -x $cmd; exit 1 }
+            exec 'sh', '-lc', 'claude --version';
+            exit 1;
+        }
+        local $/;
+        $out = <$ph> // '';
+        close $ph;
+        return $1 if $out =~ /(\d+\.\d+\.\d+)/;
+    }
+    return '';
+}
+
+sub probe {
+    my $o = shift;
+    my %tools;
+    for my $t (['claude', '.claude'], ['codex', '.codex'], ['gemini', '.gemini'], ['qwen', '.qwen'], ['cursor', '.cursor']) {
+        $tools{$t->[0]} = -d "$HOME/$t->[1]" ? JSON::PP::true : JSON::PP::false;
+    }
+    return { r => $o->{r}, tools => \%tools, claude => claude_version() };
+}
+
+sub tmux_select {
+    my $o = shift;
+    my $pane = $o->{pane} // '';
+    return { ok => JSON::PP::false } unless $pane =~ /^%\d{1,6}$/;
+    my @s;
+    if (defined $o->{socket}) {
+        return { ok => JSON::PP::false } unless $o->{socket} =~ m{^/[A-Za-z0-9._/-]{1,200}$} && $o->{socket} !~ /\.\./ && -S $o->{socket} && -o _;
+        @s = ('-S', $o->{socket});
+    }
+    my $run = sub {
+        my $pid = fork() // return 1;
+        if (!$pid) { open STDOUT, '>', '/dev/null'; open STDERR, '>', '/dev/null'; exec 'tmux', @s, @_; exit 127 }
+        waitpid($pid, 0);
+        return $? >> 8;
+    };
+    my $ok = $run->('select-window', '-t', $pane) == 0;
+    $run->('select-pane', '-t', $pane) if $ok;
+    return { ok => $ok ? JSON::PP::true : JSON::PP::false };
+}
+
+sub alive {
+    my $o = shift;
+    my %r;
+    my $list = ref $o->{pids} eq 'ARRAY' ? $o->{pids} : [];
+    for my $p (@$list[0 .. ($#$list < 199 ? $#$list : 199)]) {
+        next unless defined $p && $p =~ /^\d{1,9}$/ && $p > 1;
+        $r{$p} = kill(0, $p) ? 1 : 0;
+    }
+    return { pids => \%r };
+}
+
+sub take_over {
+    if (open my $f, '<', $PIDF) {
+        my $old = <$f> // '';
+        close $f;
+        if ($old =~ /^(\d+)$/ && $1 != $$ && kill(0, $1)) {
+            my $cmd = '';
+            if (open my $c, '<', "/proc/$1/cmdline") { local $/; $cmd = <$c> // ''; close $c }
+            elsif (open my $ph, '-|', 'ps', '-o', 'command=', '-p', $1) { local $/; $cmd = <$ph> // ''; close $ph }
+            kill 'TERM', $1 if $cmd =~ /cocaine-relay/ && $cmd =~ /serve/;    # an older connection's relay, still waiting
+        }
+    }
+    unlink $SOCK if -S $SOCK || -l $SOCK;
+}
+
+sub serve {
+    $key = key();
+    if (!$key) { print STDERR "cocaine-relay: no key\n"; exit 3 }
+    File::Path::make_path($RUN, { mode => 0700 }) unless -d $RUN;
+    chmod 0700, $BASE, $RUN;
+    my $hello = '';
+    my $sel0 = IO::Select->new(\*STDIN);
+    my $end = time + 15;
+    while ($hello !~ /\n/ && length($hello) < 200) {
+        my $left = $end - time;
+        exit 0 if $left <= 0 || !$sel0->can_read($left);
+        my $n = sysread(STDIN, my $ch, 1);
+        exit 0 unless $n;
+        $hello .= $ch;
+    }
+    exit 0 unless $hello =~ /^hello ([0-9a-f]{32})\n$/;
+    $cn = $1;
+    take_over();
+    my $listen = IO::Socket::UNIX->new(Type => SOCK_STREAM(), Local => $SOCK, Listen => 16);
+    if (!$listen) { print STDERR "cocaine-relay: socket: $!\n"; exit 4 }
+    chmod 0600, $SOCK;
+    my $ino = (lstat $SOCK)[1];
+    if (sysopen(my $pf, "$PIDF.$$", O_WRONLY | O_CREAT | O_EXCL, 0600)) { print $pf "$$\n"; close $pf; rename "$PIDF.$$", $PIDF }
+    reply('hello', { proto => $PROTOCOL, sha => self_sha(), perl => "$]", os => $^O, ts => time, pid => $$ });
+    if (open my $bl, '<', $BACKLOG) {                                # the news missed while away, in order
+        my $n = 0;
+        while (my $l = <$bl>) {
+            chomp $l;
+            last if ++$n > 500;
+            my $o = eval { $JSON->decode($l) };
+            reply('late', $o) if ref $o eq 'HASH';
+        }
+        close $bl;
+        unlink $BACKLOG;
+    }
+    my $cleanup = sub { my @st = lstat $SOCK; unlink $SOCK if @st && $st[1] == $ino; unlink $PIDF };
+    $SIG{TERM} = $SIG{HUP} = $SIG{INT} = sub { $cleanup->(); exit 0 };
+    my $sel = IO::Select->new(\*STDIN, $listen);
+    my $in = '';
+    while (1) {
+        for my $fh ($sel->can_read(1)) {
+            if ($fh == $listen) {
+                my $s = $listen->accept or next;
+                if (keys(%conns) >= 32) { close $s; next }
+                $s->blocking(0);
+                $conns{fileno $s} = { s => $s, buf => '', at => time };
+                $sel->add($s);
+                next;
+            }
+            if (fileno($fh) == fileno(STDIN)) {
+                my $n = sysread(STDIN, my $chunk, 262144);
+                if (!$n) { $cleanup->(); exit 0 }                    # Cocaine went away: the hooks see their sockets close
+                $in .= $chunk;
+                if (length($in) > $MAXLINE && $in !~ /\n/) { $cleanup->(); exit 5 }
+                while ($in =~ s/^([^\n]*)\n//) { command($1, $sel) }
+                next;
+            }
+            my $c = $conns{fileno $fh} or next;
+            my $n = sysread($fh, my $chunk, 65536);
+            if (!$n) { next if !defined $n && $!{EAGAIN}; drop_conn($c, $sel, 1); next }
+            next if defined $c->{c};                                  # nothing more is expected after the line
+            $c->{buf} .= $chunk;
+            if (length $c->{buf} > $MAXLINE) { drop_conn($c, $sel, 0); next }
+            next unless $c->{buf} =~ /^([0-9a-f]{64}) (\{[^\n]*\})\n/;
+            my ($hm, $json) = ($1, $2);
+            my $o = eval { $JSON->decode($json) };
+            if (ref $o ne 'HASH' || hmac_sha256_hex("cocaine-ssh-hook-v1\n$json", $key) ne $hm) { drop_conn($c, $sel, 0); next }
+            $c->{c} = $nextc++;
+            $c->{id} = $o->{id};
+            frame('hook', "$c->{c} $hm $json");
+            if (($o->{t} // '') eq 'req') { $waiting{$c->{c}} = $c; $c->{at} = time }
+            else { drop_conn($c, $sel, 0) }
+        }
+        my $now = time;
+        for my $c (values %conns) {
+            if (!defined $c->{c} && $now - $c->{at} > 5) { drop_conn($c, $sel, 0) }
+            elsif (defined $c->{c} && $now - $c->{at} > $WAIT + 60) { drop_conn($c, $sel, 1) }
+        }
+    }
+}
+
+sub command {
+    my ($line, $sel) = @_;
+    return unless $line =~ /^([0-9a-f]{64}) (\d{1,12}) ([a-z]{2,12}) (\{.*\})$/s;
+    my ($mac, $n, $type, $json) = ($1, $2, $3, $4);
+    return unless hmac_sha256_hex("cocaine-ssh-cmd-v1\n$cn\n$n\n$type\n$json", $key) eq $mac && $n > $inseq;
+    $inseq = $n;
+    my $o = eval { $JSON->decode($json) };
+    return unless ref $o eq 'HASH';
+    if ($type eq 'ans') {
+        my $c = defined $o->{c} ? $waiting{$o->{c}} : undef;
+        return unless $c && defined $o->{id} && $c->{id} eq $o->{id};
+        $c->{s}->blocking(1);
+        write_all($c->{s}, $JSON->encode({ id => $o->{id}, out => $o->{out} // '', mac => $o->{mac} // '' }) . "\n");
+        drop_conn($c, $sel, 0);
+    } elsif ($type eq 'ping') { reply('pong', { n => $o->{n} }) }
+    elsif ($type eq 'alive') { reply('alive', alive($o)) }
+    elsif ($type eq 'get') { reply('file', get_file($o)) }
+    elsif ($type eq 'put') { reply('put', put_file($o)) }
+    elsif ($type eq 'probe') { reply('probe', probe($o)) }
+    elsif ($type eq 'tmux') { reply('tmux', tmux_select($o)) }
+    elsif ($type eq 'uninstall') {
+        my @st = lstat $SOCK;
+        unlink $SOCK;
+        File::Path::remove_tree($BASE, { safe => 1 }) if -d $BASE && !-l $BASE;
+        reply('bye', { r => $o->{r}, ok => -e $BASE ? JSON::PP::false : JSON::PP::true });
+        exit 0;
+    } elsif ($type eq 'bye') { unlink $SOCK; unlink $PIDF; exit 0 }
+}
+
+my $cmd = shift @ARGV // '';
+if ($cmd eq 'serve') { serve() }
+elsif ($cmd eq 'hook') { hook(@ARGV) }
+elsif ($cmd eq 'version') { print "cocaine-relay $PROTOCOL ", self_sha(), "\n"; exit 0 }
+else { print STDERR "usage: cocaine-relay serve | hook <tool> <kind> | version\n"; exit 64 }

@@ -143,11 +143,32 @@ enum AIHooks {
         /// Kinds whose news carries text (the last message, the error, the kind of notification) through `--agent-event`.
         var richKinds: Set<String> = []
         var activeEvents: [Event] {
-            events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true)
+            if relay != nil {                             // on an SSH host: its relay reads everything, its own Claude Code's version
+                return events.filter { e in e.minVersion.map { need in remoteVersion.map { !$0.lexicographicallyPrecedes(need) } ?? false } ?? true }
+            }
+            return events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true)
                 && ($0.kind != "approve" || id == "codex" || AIHooks.binary != nil)
                 && ($0.kind != "plan" || AIHooks.binary != nil) }     // only the app's own binary reads a plan
         }
         var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
+        /// On an SSH host (Sources/SSHInstall.swift): every hook runs the relay there instead of this app or a cocaine:// link.
+        var relay: String? = nil
+        var remoteVersion: [Int]? = nil                   // that host's Claude Code version, as its relay read it
+    }
+
+    /// The command a remote hook runs (expanded by the remote shell; the same on every host).
+    static let relayCommand = "\"$HOME/.cocaine/bin/cocaine-relay\""
+    /// The tools whose hooks can be put on an SSH host (JSON configs Cocaine can edit in place).
+    static let remoteIDs = ["claude", "codex", "gemini", "qwen", "cursor"]
+
+    /// Those tools as configured on a remote host whose home is `home` (a placeholder: paths are made relative to it).
+    static func remoteTools(home: String, claudeVersion: [Int]?) -> [Tool] {
+        tools(home: home).filter { remoteIDs.contains($0.id) }.map { t in
+            var t = t
+            t.relay = relayCommand
+            t.remoteVersion = claudeVersion
+            return t
+        }
     }
 
     static var home = NSHomeDirectory()                   // `--ai-alerts … --home <dir>` works on a copy
@@ -164,11 +185,14 @@ enum AIHooks {
     /// `{"type": "command", "command": …, "timeout": …}`: Claude Code, Codex and Qwen Code (seconds).
     private static func typed(timeout: String) -> (String, String) -> [JSONValue.Member] {
         { command, kind in [.init(key: "type", value: .string("command")), .init(key: "command", value: .string(command)),
-                            .init(key: "timeout", value: .scalar(kind == "approve" && AIHooks.binary != nil ? ApprovalTiming.config : timeout))] }
+                            .init(key: "timeout", value: .scalar(kind == "approve" && (AIHooks.binary != nil || command.contains(relayCommand))
+                                                                 ? ApprovalTiming.config : timeout))] }
     }
 
     /// The supported tools, most used first. Formats from each tool's hooks reference (checked September 2026).
-    static var tools: [Tool] {
+    static var tools: [Tool] { tools(home: home) }
+
+    static func tools(home: String) -> [Tool] {
         [Tool(id: "claude", name: "Claude Code", folder: home + "/.claude", file: home + "/.claude/settings.json",
               events: [.init(name: "Stop", kind: "done"),
                        .init(name: "Notification", kind: "input", matcher: "permission_prompt|elicitation_dialog|agent_needs_input"),
@@ -297,6 +321,11 @@ enum AIHooks {
     /// in, URL-encoded by the perl that comes with macOS. Change it only when needed: Codex asks to trust a hook again
     /// whenever its command changes.
     static func command(_ tool: Tool, _ kind: String) -> String {
+        if let relay = tool.relay {                               // on an SSH host: the relay there (relay/cocaine-relay)
+            let skip = tool.skipIf.map { "[ -z \"$\($0)\" ] && " } ?? ""
+            let out = kind == "approve" ? "2>/dev/null" : ">/dev/null 2>&1"   // only a request's answer is printed
+            return skip + relay + " hook \(tool.id) \(kind) \(out); true # \(marker)"
+        }
         let from = tool.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? tool.name
         let project = #"$(printf %s "$PWD" | /usr/bin/perl -pe 's|.*/||; s/([^A-Za-z0-9._~-])/sprintf("%%%02X", ord $1)/ge')"#
         // From the JSON the tool sends on stdin (read with the perl and JSON::PP every Mac has): the session, so a
@@ -349,7 +378,12 @@ enum AIHooks {
     static func load(_ path: String) -> JSONValue? {
         guard FileManager.default.fileExists(atPath: path) else { return .object([]) }
         guard let data = FileManager.default.contents(atPath: path) else { return nil }
-        var text = String(decoding: data, as: UTF8.self)
+        return parse(String(decoding: data, as: UTF8.self))
+    }
+
+    /// A config file's text as JSON this code can round-trip: {} when empty; nil when it can't be edited safely.
+    static func parse(_ raw: String) -> JSONValue? {
+        var text = raw
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .object([]) }
         guard let v = JSONValue.parse(text), v.members != nil,

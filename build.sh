@@ -89,6 +89,7 @@ lipo -create "$BUILD/arm64/Cocaine" "$BUILD/x86_64/Cocaine" -output "$APP/Conten
 iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 install -m 0755 cocaine.zsh "$APP/Contents/Resources/cocaine"
 install -m 0644 remote.zsh "$APP/Contents/Resources/remote.zsh"
+install -m 0644 relay/cocaine-relay "$APP/Contents/Resources/cocaine-relay"   # SSH hosts: copied to a remote host on the user's OK
 cp Info.plist "$APP/Contents/Info.plist"
 install -m 0644 Cocaine.sdef "$APP/Contents/Resources/Cocaine.sdef"   # the AppleScript dictionary (Sources/Scripting.swift)
 if [ "$INTENTS" = 1 ]; then                   # the actions' metadata from the compiler's const values, before signing

@@ -82,6 +82,7 @@ enum AgentFocus {
     /// The ways to get there, best first. Pure: what is possible is decided by the executor.
     static func plan(_ o: AgentOrigin) -> [Step] {
         var steps: [Step] = []
+        if o.isRemote { return [] }                      // nothing of this Mac's: SSHJump finds the local end (see go)
         if let url = o.url, url.hasPrefix("https://"), let b = o.browser {          // a web chat
             return [.browserTab(browser: b, url: url), .activate(app: b)]
         }
@@ -156,7 +157,8 @@ enum AgentFocus {
     /// Why it didn't get further than `level`.
     /// noDeepLink: the app came forward, but it can't be told from outside which conversation to show.
     /// kittyRemoteOff: kitty came forward, but its remote control (allow_remote_control, listen_on) is off.
-    enum Note: Equatable { case none, automationDenied, tabNotFound, appNotRunning, noInfo, noDeepLink, kittyRemoteOff }
+    /// sshTabNotFound: a session on an SSH host whose local ssh tab couldn't be found (Sources/SSHJump.swift).
+    enum Note: Equatable { case none, automationDenied, tabNotFound, appNotRunning, noInfo, noDeepLink, kittyRemoteOff, sshTabNotFound }
     struct Result: Equatable { var level: Level; var appName: String?; var note: Note }
 
     // MARK: running it
@@ -175,6 +177,16 @@ enum AgentFocus {
 
     /// Runs the plan off the main thread (a user's click: asking for Automation is expected then); `done` on main.
     static func go(_ o: AgentOrigin, done: @escaping (Result) -> Void) {
+        if o.isRemote {                                  // on an SSH host: the local tab holding its ssh connection
+            let ssh = SSHHostManager.shared
+            let alias = ssh.host(o.remoteHost)?.alias
+            if let id = o.remoteHost, let pane = o.remoteTmuxPane { ssh.selectRemoteTmux(host: id, pane: pane, socket: o.remoteTmuxSocket) }
+            queue.async {
+                let r = SSHJump.go(o, alias: alias)
+                DispatchQueue.main.async { done(r) }
+            }
+            return
+        }
         let steps = plan(o)
         queue.async {
             let r = execute(steps, appID: appID(o))
