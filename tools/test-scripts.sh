@@ -5,7 +5,9 @@
 set -uo pipefail
 ROOT="${0:A:h:h}"
 T=$(mktemp -d)
-trap 'rm -rf "$T"' EXIT
+LSR=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+# Throwaway bundles are forgotten by Launch Services before they go (a stale "Cocaine" entry could be what `open` picks).
+trap 'for a in "$T"/**/*.app(N/); do "$LSR" -u "$a" 2>/dev/null; done; rm -rf "$T"' EXIT
 FAILED=0
 pass() { print -- "PASS  $1"; }
 fail() { print -- "FAIL  $1${2:+  [$2]}"; FAILED=$((FAILED + 1)); }
@@ -114,8 +116,20 @@ expect "build: unknown option fails" 1 "unknown option" -- env PATH="$FP" zsh "$
 COPY="$T/repo"; mkdir -p "$COPY"
 cp -R "$ROOT/build.sh" "$ROOT/make-signing-identity.sh" "$ROOT/Info.plist" "$ROOT/Cocaine.entitlements" "$ROOT/tools" "$ROOT/Sources" "$COPY/"
 sed -i '' -E 's|(publicKeyBase64 = )"[^"]*"|\1"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' "$COPY/Sources/UpdateKey.swift"
-grep -q 'publicKeyBase64 = ""' "$ROOT/Sources/UpdateKey.swift" && \
-  expect "build: a release needs the update key embedded" 1 "no update key embedded" -- env PATH="$FP" zsh "$ROOT/build.sh" --dmg --release --sign local
+# …and one without, whatever this tree has (the test never depends on the real key being there or not).
+NOKEY="$T/nokey"; mkdir -p "$NOKEY"
+cp -R "$ROOT/build.sh" "$ROOT/make-signing-identity.sh" "$ROOT/Info.plist" "$ROOT/Cocaine.entitlements" "$ROOT/tools" "$ROOT/Sources" "$NOKEY/"
+sed -i '' -E 's|(publicKeyBase64 = )"[^"]*"|\1""|' "$NOKEY/Sources/UpdateKey.swift"
+: > "$FAKE_LOG"
+expect "build: a DMG needs the update key embedded (--dmg alone is a release)" 1 "no update key embedded" -- env PATH="$FP" zsh "$NOKEY/build.sh" --dmg --sign local
+expect "build: …also with --release" 1 "no update key embedded" -- env PATH="$FP" zsh "$NOKEY/build.sh" --dmg --release --sign local
+grep -q "swiftc called" "$FAKE_LOG" && fail "build: nothing compiled without the key" || pass "build: nothing compiled without the key"
+expect "build: --allow-unsigned-updates passes the key gate (stops later, at the missing identity)" 1 "no local signing identity" -- \
+  env PATH="$FP" HOME="$T/home" COCAINE_LOCAL_KEYCHAIN="$T/home/none.keychain" zsh "$NOKEY/build.sh" --dmg --allow-unsigned-updates --sign local
+expect "build: --allow-unsigned-updates goes with --dmg" 1 "goes with --dmg" -- env PATH="$FP" zsh "$NOKEY/build.sh" --allow-unsigned-updates --no-install
+expect "build: COCAINE_NO_NEW_IDENTITY never makes an identity (what verify.sh sets)" 1 "no local signing identity" -- \
+  env PATH="$FP" HOME="$T/home" COCAINE_NO_NEW_IDENTITY=1 COCAINE_LOCAL_KEYCHAIN="$T/home/.cocaine-signing/cocaine-signing.keychain" zsh "$NOKEY/build.sh" --no-install --sign local
+[ ! -e "$T/home/.cocaine-signing" ] && pass "build: no identity was made by a plain build with COCAINE_NO_NEW_IDENTITY" || fail "build: no identity made with COCAINE_NO_NEW_IDENTITY"
 : > "$FAKE_LOG"
 expect "build: a release never creates a new local identity" 1 "no local signing identity" -- \
   env PATH="$FP" HOME="$T/home" COCAINE_LOCAL_KEYCHAIN="$T/home/.cocaine-signing/cocaine-signing.keychain" zsh "$COPY/build.sh" --dmg --release --sign local
@@ -149,10 +163,9 @@ expect "notarize: Gatekeeper not seeing notarization fails" 1 "doesn't see it as
 touch "$T/Cocaine-9.9.9.dmg"
 expect "release-sign: ad hoc can't be declared" 1 "ad hoc releases aren't allowed" -- zsh "$ROOT/tools/release-sign.sh" "$T/Cocaine-9.9.9.dmg" adhoc
 expect "release-sign: missing private key fails" 1 "no release key" -- env COCAINE_UPDATE_KEY="$T/nokey" zsh "$ROOT/tools/release-sign.sh" "$T/Cocaine-9.9.9.dmg" local
-touch "$ROOT/.test-key-inside"
+touch "$COPY/.test-key-inside"                        # in the copy of the tree: nothing is written into the repository
 expect "release-sign: a key inside the repository is refused" 1 "outside the repository" -- \
-  env COCAINE_UPDATE_KEY="$ROOT/.test-key-inside" zsh "$ROOT/tools/release-sign.sh" "$T/Cocaine-9.9.9.dmg" local
-rm -f "$ROOT/.test-key-inside"
+  env COCAINE_UPDATE_KEY="$COPY/.test-key-inside" zsh "$COPY/tools/release-sign.sh" "$T/Cocaine-9.9.9.dmg" local
 mkdir -p "$T/bin2"; printf '#!/bin/sh\nexit 0\n' > "$T/bin2/Cocaine"; chmod +x "$T/bin2/Cocaine"
 expect "update-key: a key inside the repository is refused" 1 "outside the repository" -- \
   env COCAINE_BIN="$T/bin2/Cocaine" COCAINE_UPDATE_KEY="$ROOT/k" zsh "$ROOT/tools/update-key.sh" init

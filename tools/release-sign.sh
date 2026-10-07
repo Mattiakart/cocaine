@@ -41,14 +41,32 @@ BUILDNO=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Inf
 [ "$VERSION" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Info.plist")" ] || die "the DMG's version ($VERSION) isn't Info.plist's"
 [ "$BUILDNO" = "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/Info.plist")" ] || die "the DMG's build ($BUILDNO) isn't Info.plist's"
 [ "${DMG:t}" = "Cocaine-$VERSION.dmg" ] || die "the DMG must be named Cocaine-$VERSION.dmg"
+# The designated requirement of the app in the DMG goes into the signed manifest (format 2): a copy signed by another
+# certificate then knows before downloading that this release can't replace it.
+REQ=$("$BIN" --signature-tier "$APP" | sed -n 's/^designated=//p')
+[ -n "$REQ" ] && [ "$REQ" != "-" ] || die "can't read the app's designated requirement"
+
+# The build number must grow with every release: an installed copy refuses a newer version whose build isn't higher.
+SIGNER="$ROOT/build.noindex/Cocaine.app/Contents/MacOS/Cocaine"
+[ -x "$SIGNER" ] || die "build the app first (./build.sh): the manifest is signed by this tree's build, not by the DMG's app"
+LAST="$ROOT/tools/last-release"
+if [ -f "$LAST" ]; then
+  read -r LASTV LASTB < "$LAST"
+  if [ "$VERSION" != "$LASTV" ]; then
+    "$SIGNER" --version-newer "$VERSION" "$LASTV" || die "version $VERSION isn't newer than the last release ($LASTV, tools/last-release)"
+    [ "$BUILDNO" -gt "$LASTB" ] || die "build $BUILDNO isn't higher than the last release's ($LASTB): raise CFBundleVersion in Info.plist"
+  else
+    [ "$BUILDNO" = "$LASTB" ] || die "version $VERSION was released with build $LASTB, the DMG has $BUILDNO: raise the version too"
+  fi
+fi
 
 OUT="$DMG.manifest.json"
 # The private key only ever goes to this tree's own build, never to a binary taken from the DMG being signed (a swapped
 # DMG would get the key). That build refuses a key that doesn't match its embedded public key; then the app in the DMG
 # must accept the manifest with ITS embedded key (verifying needs no secret).
-SIGNER="$ROOT/build/Cocaine.app/Contents/MacOS/Cocaine"
-[ -x "$SIGNER" ] || die "build the app first (./build.sh): the manifest is signed by this tree's build, not by the DMG's app"
-"$SIGNER" --update-sign "$KEY" "$DMG" "$VERSION" "$BUILDNO" "$TIER" "$OUT" || die "signing the manifest failed"
+"$SIGNER" --update-sign "$KEY" "$DMG" "$VERSION" "$BUILDNO" "$TIER" "$OUT" "$REQ" || die "signing the manifest failed"
 "$BIN" --update-verify "$OUT" "$DMG" >/dev/null || { rm -f "$OUT"; die "the manifest doesn't verify with the key embedded in the DMG's app"; }
-print -- "made $OUT (tier $TIER, version $VERSION, build $BUILDNO)."
+print -r -- "$VERSION $BUILDNO" > "$LAST"
+print -- "made $OUT (tier $TIER, version $VERSION, build $BUILDNO, format 2)."
+print -- "Recorded $VERSION ($BUILDNO) in tools/last-release: commit it with the release."
 print -- "Upload BOTH $DMG:t and $OUT:t to the GitHub release v$VERSION. Nothing was published."

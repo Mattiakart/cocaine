@@ -7,7 +7,9 @@
 set -uo pipefail
 ROOT="${0:A:h:h}"
 T=$(mktemp -d)
-trap 'rm -rf "$T"' EXIT
+LSR=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+# The copy's builds are forgotten by Launch Services before they go (a stale "Cocaine" entry could be what `open` picks).
+trap 'for a in "$T"/**/*.app(N/); do "$LSR" -u "$a" 2>/dev/null; done; rm -rf "$T"' EXIT
 FAILED=0
 pass() { print -- "PASS  $1"; }
 fail() { print -- "FAIL  $1${2:+  [$2]}"; FAILED=$((FAILED + 1)); }
@@ -42,24 +44,24 @@ out=$(zsh "$R/tools/release-sign.sh" "$DMG" developer-id 2>&1) && fail "release-
   || { print -r -- "$out" | grep -q 'declared tier "developer-id" but the app is "local"' && pass "release-sign: a wrong declared tier is refused" || fail "release-sign: wrong tier message" "$out"; }
 [ ! -e "$DMG.manifest.json" ] && pass "release-sign: no manifest after a refusal" || fail "release-sign: no manifest after a refusal"
 mkdir -p "$T/other"
-"$R/build/Cocaine.app/Contents/MacOS/Cocaine" --update-keygen "$T/other/key" >/dev/null
+"$R/build.noindex/Cocaine.app/Contents/MacOS/Cocaine" --update-keygen "$T/other/key" >/dev/null
 out=$(COCAINE_UPDATE_KEY="$T/other/key" zsh "$R/tools/release-sign.sh" "$DMG" local 2>&1) && fail "release-sign: another key is refused" "$out" \
   || { print -r -- "$out" | grep -q "doesn't match the public key embedded" && pass "release-sign: a key that isn't the embedded one is refused" || fail "release-sign: other key message" "$out"; }
 
 if zsh "$R/tools/release-sign.sh" "$DMG" local >"$T/rs.log" 2>&1; then pass "release-sign: signed manifest made for the local tier"
 else fail "release-sign: signed manifest made for the local tier" "$(cat "$T/rs.log")"; fi
-COCAINE_BIN="$R/build/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" local >"$T/cr.log" 2>&1 \
+COCAINE_BIN="$R/build.noindex/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" local >"$T/cr.log" 2>&1 \
   && pass "check-release: DMG, manifest and tier agree" || fail "check-release: DMG, manifest and tier agree" "$(cat "$T/cr.log")"
-COCAINE_BIN="$R/build/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" notarized >/dev/null 2>&1 \
+COCAINE_BIN="$R/build.noindex/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" notarized >/dev/null 2>&1 \
   && fail "check-release: expecting notarized refuses a local release" || pass "check-release: expecting notarized refuses a local release"
 
 cp "$DMG.manifest.json" "$T/manifest.bak"
 sed -i '' -E 's/"tier" : "local"/"tier" : "notarized"/' "$DMG.manifest.json"
-COCAINE_BIN="$R/build/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" >/dev/null 2>&1 \
+COCAINE_BIN="$R/build.noindex/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" >/dev/null 2>&1 \
   && fail "check-release: a manifest edited to claim a higher tier is refused" || pass "check-release: a manifest edited to claim a higher tier is refused"
 cp "$T/manifest.bak" "$DMG.manifest.json"
 printf 'x' >> "$DMG"
-COCAINE_BIN="$R/build/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" >/dev/null 2>&1 \
+COCAINE_BIN="$R/build.noindex/Cocaine.app/Contents/MacOS/Cocaine" zsh "$R/tools/check-release.sh" "$DMG" >/dev/null 2>&1 \
   && fail "check-release: a modified DMG is refused" || pass "check-release: a modified DMG is refused"
 # The ROOT tree's key file is untouched.
 grep -q 'publicKeyBase64 = ""' "$ROOT/Sources/UpdateKey.swift" && pass "release flow: this tree's UpdateKey.swift untouched" || print -- "INFO  this tree has a real key embedded"
