@@ -67,7 +67,28 @@ final class CloudShareCenter: ObservableObject {
         }
     }
 
-    func secrets(_ id: String) -> [String: String] { (try? store.secrets.load(id)) ?? [:] }
+    /// The Keychain is read once per provider (the settings card asks on every redraw; each read could otherwise ask macOS
+    /// again for an ad-hoc signed build); writes go through `setSecrets`.
+    private var secretCache: [String: [String: String]] = [:]
+    private let cacheLock = NSLock()
+
+    func secrets(_ id: String) -> [String: String] {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if let s = secretCache[id] { return s }
+        let s = (try? store.secrets.load(id)) ?? [:]
+        secretCache[id] = s
+        return s
+    }
+
+    func setSecrets(_ id: String, _ values: [String: String]) throws {
+        try store.secrets.save(id, values)
+        cacheLock.lock(); secretCache[id] = values.filter { !$0.value.isEmpty }; cacheLock.unlock()
+    }
+
+    func removeProvider(_ id: String) {
+        store.remove(id)
+        cacheLock.lock(); secretCache[id] = nil; cacheLock.unlock()
+    }
 
     func context(_ id: String, cancel: CancelToken, progress: @escaping (Double) -> Void) -> ShareContext {
         var c = ShareContext(cancel: cancel, progress: progress, http: http(), secrets: secrets(id), now: now)

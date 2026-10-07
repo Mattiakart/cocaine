@@ -661,8 +661,16 @@ enum CloudShareTests {
         let result = cloud.runTest(c)
         if case .success(let s) = result { check("Test connection: uploads, opens the link, deletes it", !s.isEmpty && fake.objects.count == 1) }
         else { check("Test connection (\(result))", false) }
+        try? cloud.setSecrets(c.id, ["accessKey": creds.accessKey, "secretKey": "rotated"])
+        check("secrets: a change made in Settings is used at once (the cache follows the Keychain)", cloud.secrets(c.id)["secretKey"] == "rotated"
+              && secrets.items[c.id]?["secretKey"] == "rotated")
+        try? secrets.save(c.id, ["secretKey": "changed-behind-our-back"])
+        check("secrets: the Keychain is read once per provider, not on every redraw", cloud.secrets(c.id)["secretKey"] == "rotated")
+        try? cloud.setSecrets(c.id, ["accessKey": creds.accessKey, "secretKey": creds.secretKey])
         fake.fail = 401
         if case .failure(let e) = cloud.runTest(c) { check("Test connection: a refusal is said plainly", e == .unauthorized) } else { check("Test connection: refusal", false) }
         fake.fail = nil
+        cloud.removeProvider(c.id)
+        check("secrets: removing a provider forgets its secrets too", cloud.secrets(c.id).isEmpty && secrets.items[c.id] == nil && CloudShareHook.providers().isEmpty)
     }
 }

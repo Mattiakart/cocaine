@@ -177,7 +177,7 @@ struct CloudShareSettingsBody: View {
         DialogCenter.shared.present(spec) { r in
             guard r.buttonID == "remove" else { return }
             if ed.editing == p.id { close() }
-            store.remove(p.id)
+            center.removeProvider(p.id)
         }
     }
 
@@ -317,7 +317,7 @@ struct CloudShareSettingsBody: View {
         for (k, v) in ed.secrets where !v.isEmpty { all[k] = v.trimmingCharacters(in: .whitespacesAndNewlines) }
         if let p = ShareProviders.make(c).validate(secrets: all) { ed.problem = p; return }
         if c.kind == .uploader && c.approved != nil && ShareUploader.needsApproval(c) { c.approved = nil }    // a changed command asks again
-        do { try store.secrets.save(c.id, all) } catch {
+        do { try center.setSecrets(c.id, all) } catch {
             ed.problem = L("The Keychain didn't save the secrets: ") + String(describing: error)
             return
         }
