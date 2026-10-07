@@ -79,7 +79,7 @@ enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys", "Screens"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"
@@ -147,17 +147,66 @@ enum System {
 
 // MARK: - Haptic feedback
 
-/// A light tap on the trackpad (Force Touch) when you change something; nothing on a mouse. Can be turned off in the panel.
-enum Haptic {
-    static var enabled: Bool { AppDefaults.store.object(forKey: "haptics") as? Bool ?? true }
-    static func tap(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
-        guard enabled else { return }
+/// Where a haptic tap goes: the trackpad in the app, a counter in the tests.
+protocol HapticSink: AnyObject {
+    func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern)
+}
+
+/// The Force Touch trackpad (nothing happens on a mouse).
+final class TrackpadHaptics: HapticSink {
+    func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
     }
-    /// Three quick taps: something finished.
-    static func finished() {
-        for i in 0..<3 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.14) { tap(.levelChange) } }
+}
+
+/// A light tap on the trackpad (Force Touch) when you change something; nothing on a mouse. Can be turned off in the panel.
+///
+/// One feedback per action, never two (the "double tap" of 2.5.0 had two causes):
+/// - A click on a Force Touch trackpad is itself a tap: the trackpad has no real switch, its Taptic Engine plays the click.
+///   A tap of ours on top of it, in the button's action a few milliseconds later, was felt as a second click. So a tap asked for
+///   while a pointer click is being handled is not played (`clickInProgress`): that click already said it. Taps that come with
+///   no click (dragging the ruler or a slider onto a magnet, two-finger scroll steps, the island opening under the pointer, the
+///   keyboard) are played as before.
+/// - Some actions tapped twice in code (the time stepper's scroll steps: once in ScrollSteps, once in its step function; the
+///   strip's back button: once in the button, once when the island reopened). Each control kind now taps in one place, and
+///   `tap` drops the same pattern asked for again within `coalesce` seconds as a safety net.
+enum Haptic {
+    static var enabled: Bool { AppDefaults.store.object(forKey: "haptics") as? Bool ?? true }
+    /// Replaced in the tests by a counter.
+    static var sink: HapticSink = TrackpadHaptics()
+    static var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    /// Is a pointer click (mouse or trackpad button, down or up) being handled right now? The tests set it.
+    static var clickInProgress: () -> Bool = { Haptic.isClick(NSApp?.currentEvent, now: ProcessInfo.processInfo.systemUptime) }
+    static let coalesce: TimeInterval = 0.06
+    private static var last: (pattern: Int, at: TimeInterval)?
+
+    /// A click event handled within the last moment (NSApp.currentEvent stays the last event after it is handled: its age counts).
+    static func isClick(_ e: NSEvent?, now: TimeInterval) -> Bool {
+        guard let e else { return false }
+        let clicks: Set<NSEvent.EventType> = [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp, .pressure]
+        return clicks.contains(e.type) && now - e.timestamp < 0.25
     }
+
+    static func tap(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
+        guard enabled, !clickInProgress() else { return }
+        play(pattern)
+    }
+
+    /// Plays it unless the same pattern was just played (the coalescing safety net).
+    private static func play(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
+        let now = clock()
+        if let l = last, l.pattern == pattern.rawValue, now - l.at < coalesce { return }
+        last = (pattern.rawValue, now)
+        sink.perform(pattern)
+    }
+
+    /// Three quick taps: something finished (a timer; never during a click, and spaced well apart from coalescing).
+    static func finished() {
+        for i in 0..<3 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.14) { if enabled { play(.levelChange) } } }
+    }
+
+    /// The tests: forget the last tap.
+    static func resetForTests() { last = nil }
 }
 
 // MARK: - Settings
