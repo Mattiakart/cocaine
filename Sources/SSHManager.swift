@@ -255,8 +255,8 @@ final class SSHHostManager: ObservableObject {
     /// A remote session's process: true while its host is unreachable (kept, for up to 6 hours), else what its relay said.
     func liveness(_ e: AgentEntry) -> Bool? {
         guard let h = e.origin?.remoteHost else { return nil }
-        if !isUp(h) {
-            let since = downSince[h] ?? Date()
+        if !isUp(h) {                                    // down since when it dropped; never connected here: the usual rules
+            guard let since = downSince[h] else { return nil }
             return Date().timeIntervalSince(since) < 6 * 3600 ? true : nil
         }
         guard let pid = e.origin?.remotePid else { return nil }

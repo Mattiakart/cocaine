@@ -60,6 +60,14 @@ enum SSHTests {
         let script = SSHCommand.terminalScript(alias: "u@h:2200", control: "/tmp/c-x")!
         check("terminal login: ssh -M with the control path, the port and the host quoted", script.contains("exec /usr/bin/ssh -M -S '/tmp/c-x' -o ControlPersist=8h -p 2200 -- 'u@h'"))
         check("terminal login: refused for a control path with a quote", SSHCommand.terminalScript(alias: "h", control: "/tmp/it's") == nil)
+        // The real ssh reads these arguments as meant (-G prints the resulting configuration and connects to nothing).
+        var g = SSHCommand.arguments(alias: "me@example.invalid:2222", remote: SSHCommand.serve, control: "/tmp/a b/c-abc123")!
+        g.insert(contentsOf: ["-G", "-F", "/dev/null"], at: 0)                // never the user's own ~/.ssh/config
+        let out = AgentFocus.runTool("/usr/bin/ssh", g, timeout: 10).out
+        let lines = Set(out.split(separator: "\n").map(String.init))
+        check("ssh -G: the system's ssh takes every option as meant (user, port, BatchMode, host keys, no agent, control path)",
+              ["user me", "hostname example.invalid", "port 2222", "batchmode yes", "stricthostkeychecking true", "forwardagent no",
+               "clearallforwardings yes", "controlmaster false", "controlpath /tmp/a b/c-abc123", "escapechar none", "requesttty false"].allSatisfy(lines.contains))
     }
 
     // MARK: ~/.ssh/config and known_hosts
