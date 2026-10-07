@@ -454,6 +454,9 @@ struct PanelView: View {
                 row(L("Show on all screens"), detail: L("An island at the top of every connected screen: the notch where there is one, a slim bar on the others. Off: only on the main screen.")) {
                     toggle(L("Show on all screens"), $m.islandAllScreens)
                 }
+                row(L("Hide in full-screen apps"), detail: L("Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces.")) {
+                    toggle(L("Hide in full-screen apps"), $m.islandHidesInFullScreen)
+                }
             }
             card("rectangle.3.group", L("Screens")) { ScreensEditor() }        // Sources/ScreensEditor.swift
             card("tray.and.arrow.down.fill", L("Shelf")) { ShelfSettingsView() }   // Sources/ShelfSettings.swift

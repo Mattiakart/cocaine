@@ -51,3 +51,5 @@
 "Batteries" = "電池";
 "AI usage" = "AI 用量";
 "Cocaine" = "Cocaine";
+"Hide in full-screen apps" = "在全螢幕 App 中隱藏";
+"Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces." = "關閉(預設):在全螢幕 App 中以及在全螢幕空間之間切換時,動態島保持顯示。";

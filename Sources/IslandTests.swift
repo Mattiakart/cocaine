@@ -27,6 +27,11 @@ private let right = S(frame: rightF, visibleTop: rightF.maxY - 25, safeTop: 0, a
 private let above = S(frame: aboveF, visibleTop: aboveF.maxY - 25, safeTop: 0, auxLeft: nil, auxRight: nil, builtin: false, id: 3)
 
 private func islandScreensTest(_ check: (String, Bool) -> Void) {
+    // Moving between full-screen Spaces must never make the island disappear (the user's report): hidden only by choice.
+    check("full screen: by default the island stays on a full-screen Space", !IslandRouting.hidden(fullScreen: true, hideInFullScreen: false))
+    check("full screen: hidden under a full-screen app only when the user chose so",
+          IslandRouting.hidden(fullScreen: true, hideInFullScreen: true) && !IslandRouting.hidden(fullScreen: false, hideInFullScreen: true))
+    check("full screen: the setting is off unless it was set", !Settings().islandHidesInFullScreen)
     let all = NotchGeometry.all([right, builtin, above], barThickness: 24, allScreens: true)
     check("screens: one island per connected screen, the notch's first", all.map(\.display) == [1, 2, 3])
     check("screens: a notch on the notched screen, the pill on the others",

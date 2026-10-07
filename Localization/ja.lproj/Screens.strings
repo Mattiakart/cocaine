@@ -51,3 +51,5 @@
 "Batteries" = "バッテリー";
 "AI usage" = "AIの使用量";
 "Cocaine" = "Cocaine";
+"Hide in full-screen apps" = "フルスクリーンのアプリで隠す";
+"Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces." = "オフ(初期設定):フルスクリーンのアプリや、フルスクリーンのSpace間の移動中も、アイランドは画面に表示されたままです。";

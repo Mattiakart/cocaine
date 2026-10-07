@@ -80,6 +80,7 @@ final class PanelModel: ObservableObject {
     @Published var replaceHUD: Bool { didSet { settings.replaceHUD = replaceHUD; hudReplaceChanged() } }
     /// An island on every connected screen (default), or only on the main one (Sources/IslandController.swift).
     @Published var islandAllScreens: Bool { didSet { settings.islandAllScreens = islandAllScreens; islandScreensChanged() } }
+    @Published var islandHidesInFullScreen: Bool { didSet { settings.islandHidesInFullScreen = islandHidesInFullScreen } }
     var islandScreensChanged: () -> Void = {}
     @Published var presenceAccess = Presence.hasAccess
     @Published var permissionProblems: [Permission] = []
@@ -216,6 +217,7 @@ final class PanelModel: ObservableObject {
         stayActiveApps = settings.stayActiveApps
         replaceHUD = settings.replaceHUD
         islandAllScreens = settings.islandAllScreens
+        islandHidesInFullScreen = settings.islandHidesInFullScreen
     }
 
     /// Free movement in whole percents, but values near a magnet snap to it, with a trackpad "click".

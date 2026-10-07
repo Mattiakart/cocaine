@@ -454,10 +454,15 @@ final class IslandController {
         if ticks % 4 == 0 {
             relayout()
             let windows = Self.windowList()                                 // read once for every screen
+            let hide = Settings().islandHidesInFullScreen
             for s in spots.values {
-                s.covered = Self.fullScreenCovers(s.g, windows: windows)
-                // A pill under a hidden menu bar stays away until the pointer reaches the top edge (pointerMoved brings it).
-                let tucked = s.g.menuBarHidden && state.open != s.id && state.hovering != s.id
+                let fullScreen = Self.fullScreenCovers(s.g, windows: windows)
+                // Moving between full-screen Spaces must not make the island disappear: it hides under a full-screen app only
+                // when the user asked for that (General → Island → *Hide in full-screen apps*, off by default).
+                s.covered = IslandRouting.hidden(fullScreen: fullScreen, hideInFullScreen: hide)
+                // A pill under a hidden menu bar stays away until the pointer reaches the top edge (pointerMoved brings it),
+                // except in a full-screen Space, where the menu bar is always hidden.
+                let tucked = s.g.menuBarHidden && !fullScreen && state.open != s.id && state.hovering != s.id
                 if s.covered || tucked {
                     if s.covered && state.open == s.id { apply(state.closeNow()) }
                     if s.panel.isVisible { s.panel.orderOut(nil) }
@@ -605,11 +610,17 @@ final class IslandController {
 extension Settings {
     /// *Show on all screens* (the Island tab): an island on every connected screen; off, only the main one (2.5.0).
     var islandAllScreens: Bool { get { flag("islandAllScreens", true) } nonmutating set { d.set(newValue, forKey: "islandAllScreens") } }
+    /// *Hide in full-screen apps* (the Island tab): off by default, so the island stays on screen when you move between full-screen Spaces.
+    var islandHidesInFullScreen: Bool { get { flag("islandHidesInFullScreen", false) } nonmutating set { d.set(newValue, forKey: "islandHidesInFullScreen") } }
 }
 
 /// The pure parts of having one island per screen (tested with fake screens in Sources/IslandTests.swift).
 enum IslandRouting {
     enum Action: Equatable { case open(CGDirectDisplayID), close(CGDirectDisplayID) }
+
+    /// Is an island hidden because a full-screen app covers its screen? Only when the user chose to hide it there: by default it stays
+    /// put, through every move between full-screen Spaces.
+    static func hidden(fullScreen: Bool, hideInFullScreen: Bool) -> Bool { fullScreen && hideInFullScreen }
 
     /// Which island is open and which one the pointer is over. Only one island is open at a time (there is one pointer); hovering
     /// the notch of screen B opens B's island and closes A's. An island with a dialog in it stays (and keeps the others closed)

@@ -51,3 +51,5 @@
 "Batteries" = "电池";
 "AI usage" = "AI 用量";
 "Cocaine" = "Cocaine";
+"Hide in full-screen apps" = "在全屏应用中隐藏";
+"Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces." = "关闭(默认):在全屏应用中以及在全屏空间之间切换时,灵动岛保持显示。";

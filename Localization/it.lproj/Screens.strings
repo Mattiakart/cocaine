@@ -51,3 +51,5 @@
 "Batteries" = "Batterie";
 "AI usage" = "Uso delle AI";
 "Cocaine" = "Cocaine";
+"Hide in full-screen apps" = "Nascondi nelle app a schermo intero";
+"Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces." = "Spento (predefinito): l'isola resta sullo schermo nelle app a schermo intero e quando passi da uno Space a schermo intero all'altro.";

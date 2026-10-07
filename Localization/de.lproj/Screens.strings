@@ -51,3 +51,5 @@
 "Batteries" = "Batterien";
 "AI usage" = "KI-Nutzung";
 "Cocaine" = "Cocaine";
+"Hide in full-screen apps" = "In Vollbild-Apps ausblenden";
+"Off (default): the island stays on screen in full-screen apps and when you move between full-screen Spaces." = "Aus (Standard): Die Insel bleibt in Vollbild-Apps und beim Wechsel zwischen Vollbild-Spaces sichtbar.";
