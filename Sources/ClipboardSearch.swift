@@ -143,7 +143,7 @@ struct ClipQuery: Equatable {
     /// Does the item pass every filter? `appName` names a source; `boards` resolves names to pinboards.
     func matches(_ item: ClipItem, boards: [ClipBoard], appName: (String?) -> String?, describe: (ClipItem) -> String) -> Bool {
         if let s = since, item.date < s { return false }
-        if let r = remote, item.remote != r { return false }
+        if let r = remote, item.fromDevice != r { return false }      // Universal Clipboard or Cocaine's iPhone sync
         if !kinds.isEmpty, kinds.isDisjoint(with: kind(of: item)) { return false }
         for a in apps {
             let src = item.source ?? "", name = appName(item.source) ?? ""

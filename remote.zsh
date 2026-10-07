@@ -423,6 +423,7 @@ cmd_gate() {
         send) [[ $#a -ge 2 && $a[1] =~ '^[A-Za-z0-9][A-Za-z0-9._-]*$' ]] && ok=1 ;;
         start|resume) [[ $#a -ge 2 && $a[1] =~ '^[A-Za-z0-9-]+$' && $a[2] =~ '^[A-Za-z0-9][A-Za-z0-9._ -]*$' ]] && ok=1 ;;   # names only, never paths
       esac ;;
+    clip) deny "clipboard commands are answered inside the app, never here" ;;   # Sources/ClipRemote.swift
     *) deny "unknown command" ;;
   esac
   (( ok )) || deny "bad arguments for $sub"

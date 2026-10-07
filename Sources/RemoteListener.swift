@@ -9,6 +9,9 @@ final class RemoteListener {
         var store: RemoteReplayStore
         /// Runs an accepted command through the gate (`cocaine remote gate --tier=…`) and returns its output.
         var execute: (_ command: String, _ tier: String) -> String
+        /// Commands the app answers itself, before the gate (the clipboard's `clip …`: ClipRemote.swift); nil: not one of them.
+        /// `authenticated`: it came with a v2 nonce (never an old plain-text Shortcut).
+        var intercept: (_ command: String, _ pairing: Pairing, _ authenticated: Bool) -> String? = { _, _, _ in nil }
         /// Posts `body` to `topic` on `relay`; the HTTP status (2xx: the relay took it; 0: no answer at all).
         var publish: (_ body: String, _ topic: String, _ relay: String, _ session: URLSession) async -> Int
         var configuration: () -> URLSessionConfiguration = {
@@ -183,8 +186,8 @@ final class RemoteListener {
             recent.append(now)
             note(p, nonce == nil ? "legacy-accepted" : "accepted", nonce == nil ? "old Shortcut, basic level, unauthenticated" : "\(tier) level, \(age)")
             hooks.willRun()
-            let execute = hooks.execute
-            let output = await Task.detached { execute(command, tier) }.value
+            let execute = hooks.execute, intercept = hooks.intercept, authenticated = nonce != nil
+            let output = await Task.detached { intercept(command, p, authenticated) ?? execute(command, tier) }.value
             guard isActive(p) else { note(p, "revoked", "while it ran: no answer"); return }
             if let nonce, let keys = p.keys {
                 body = RemoteProtocol.sealReply(output, pairingID: p.id, keys: keys, nonce: nonce, now: hooks.now())
