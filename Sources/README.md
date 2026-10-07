@@ -14,8 +14,9 @@ Where things are:
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
 - The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
   Controls.swift, Tokens.swift, InAppDialog.swift and Dialogs.swift (the app's dialogs).
-- The island: IslandModel.swift, IslandController.swift (the window, and its keyboard mode), IslandView.swift, IslandLayout.swift
-  (geometry), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
+- The island: IslandModel.swift, IslandController.swift (one window per screen, IslandRouting, the keyboard mode), IslandView.swift,
+  IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
+  the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
   IslandStatus (batteries; usage in Usage.swift), IslandCalendar, IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
   IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift).
 - AI: AIHooks.swift (the hooks), Alerts.swift (alerts, voices), Agent*.swift (sessions, approvals, focus, list).
