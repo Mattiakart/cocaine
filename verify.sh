@@ -109,6 +109,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--clipboard-test" "$ISO" --clipboard-test
   run "--calendar-test" "$ISO" --calendar-test
   run "--shelf-test (temporary folders, generated files)" "$ISO" --shelf-test
+  run "--media-test (music players and Pear Desktop on fakes, keyboard backlight on a fake, shelf extras)" "$ISO" --media-test
   run "--cloud-test (local fake S3/WebDAV servers on 127.0.0.1, fake sftp, temporary keychain; no real network)" "$ISO" --cloud-test
   run "--mcp-test (AI context: fake MCP client over pipes, temporary socket and homes)" "$ISO" --mcp-test
   run "--dialogs-test" "$ISO" --dialogs-test

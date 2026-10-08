@@ -210,6 +210,7 @@ func cliRenderIsland() {
     AIContextFixtures.apply(args)                               // --aicontext-fixture <name>: the basket, the notch questions
     ClipSyncFixtures.apply(args, im.clipboard)                  // --clipsync-fixture: an item from the iPhone, Send to iPhone (Sources/ClipSync.swift)
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
+    MediaFixtures.apply(args, im)                              // --media-fixture sources|pear|nolight (Sources/MediaSettings.swift)
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
     CloudShareFixtures.apply(args)                             // --cloud-fixture toast: the link under the shelf (Sources/CloudShareFixtures.swift)
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true

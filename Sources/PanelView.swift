@@ -461,6 +461,7 @@ struct PanelView: View {
             card("rectangle.3.group", L("Screens")) { ScreensEditor() }        // Sources/ScreensEditor.swift
             card("tray.and.arrow.down.fill", L("Shelf")) { ShelfSettingsView() }   // Sources/ShelfSettings.swift
             card("link", L("Sharing")) { CloudShareSettingsView() }            // Sources/CloudShareSettings.swift
+            card("music.note", L("Music and keyboard")) { MediaSettingsView() }   // Sources/MediaSettings.swift
             clipboardCard
             card("iphone", L("iPhone clipboard sync")) { ClipSyncSettingsView() }   // Sources/ClipSyncSettings.swift
             pinboardsCard

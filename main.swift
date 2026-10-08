@@ -67,6 +67,7 @@ if CommandLine.arguments.count <= 3, CommandLine.arguments.count >= 2, CommandLi
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--calendar-test" { exit(CalendarTests.run() == 0 ? 0 : 1) }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--screens-test" { cliScreensTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--shelf-test" { exit(ShelfTests.run() == 0 ? 0 : 1) }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--media-test" { exit(MediaTests.run() == 0 ? 0 : 1) }   // Sources/MediaTests.swift
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--cloud-test" { exit(CloudShareTests.run() == 0 ? 0 : 1) }   // Sources/CloudShareTests.swift
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--shelf" { exit(ShelfCLI.run(Array(CommandLine.arguments.dropFirst(2)))) }   // cocaine shelf …
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--render-island" { cliRenderIsland() }

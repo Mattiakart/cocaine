@@ -95,6 +95,8 @@ final class MusicWatch: ObservableObject {
     var commandSink: ((String, PlayerCommand) -> Void)?
     /// The running apps' bundle ids (tests hand in their own).
     var running: () -> Set<String> = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
+    /// Tests: false, so no script is ever sent to the real Music or Spotify.
+    var scriptsEnabled = true
     /// The island's watch, for the settings card (nil while the island is off).
     static weak var current: MusicWatch?
 
@@ -332,7 +334,7 @@ final class MusicWatch: ObservableObject {
         let run = running()
         for a in Self.scripted where !PlayerApp.isRunning(a, running: run) && states[a] != nil { update(a, nil) }
         let candidates = Self.scripted.filter { PlayerApp.isRunning($0, running: run) }
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty, scriptsEnabled else { return }
         busy = true
         ScriptThread.shared.async {
             var found: [(String, PlayerSnapshot?)] = []
@@ -763,7 +765,8 @@ enum MusicTests {
     static func run(_ check: (String, Bool) -> Void) {
         let m = MusicWatch(pear: PearClient(transport: { _, done in done(PearClient.Reply(status: 0, data: nil)) }, secrets: MemorySecretStore()))
         m.commandSink = { _, _ in }
-        m.running = { [] }
+        m.scriptsEnabled = false
+        m.running = { ["com.apple.Music", "com.spotify.client"] }
         m.announced(app: "Spotify", ["Player State": "Playing", "Name": "Song", "Artist": "A", "Album": "B", "Duration": 200_000,
                                      "Playback Position": 12.5, "Track ID": "spotify:track:1"])
         check("music: Spotify's announcement sets the track, playing and position, with no script",
