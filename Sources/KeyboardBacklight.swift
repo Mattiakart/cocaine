@@ -92,7 +92,9 @@ final class KeyboardBacklight: ObservableObject {
     /// The HUD under the notch (the island sets it).
     var hud: ((Double) -> Void)?
     /// Seconds since the last keyboard, mouse or trackpad input; whether Cocaine keeps the Mac awake (tests hand in their own).
-    var idleSeconds: () -> Double = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!) }
+    /// The user's own input (UserIdle: Stay active's nudges are not input, or the light came back on at each nudge while you were
+    /// away, and never went off with a 5-minute delay).
+    var idleSeconds: () -> Double = { UserIdle.seconds }
     var keepingAwake: () -> Bool = { System.cocaineOn }
     let defaults: UserDefaults
     private var saved: Double?

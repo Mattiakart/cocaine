@@ -802,8 +802,14 @@ enum RecoveryCLI {
             if r == 0 { Recovery.removeLease() } else { result = released(r) }
         }
         guard result == done else { return result }               // sleep not back yet: keep the state (and the sudo rule)
-        for f in ["recovery.lock", "sleep-claim", "state.lock", "hold.lock", "hold.pid", "until", "instance.lock"] { unlink(Recovery.directory + "/" + f) }
+        for f in stateFiles { unlink(Recovery.directory + "/" + f) }
         try? FileManager.default.removeItem(atPath: Recovery.engineCopyDirectory)
+        // Keep disks awake's tiny hidden file on each chosen disk that is mounted now (Sources/DriveAlive.swift).
+        DriveAliveRunner.removeFiles(names: Settings().driveAliveVolumes, mounted: DriveAlive.mounted())
         return done
     }
+
+    /// The state files the app and the engine keep in $SUPPORT (cocaine.zsh: HLOCK, HPID, DARK, SLOCK, CLAIM, UNTIL), all
+    /// removed by an uninstall. "screen-off" (the engine's display mode) used to stay behind.
+    static let stateFiles = ["recovery.lock", "sleep-claim", "state.lock", "hold.lock", "hold.pid", "until", "instance.lock", "screen-off"]
 }

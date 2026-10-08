@@ -202,13 +202,31 @@ final class DriveAliveRunner {
         })
     }
 
+    /// The mounted volumes (tests: a stand-in). Read on the runner's queue, never on the main thread: a network volume that stopped
+    /// answering can keep `mountedVolumeURLs`' name and flag lookups waiting for a long time, and this used to run in the app's
+    /// 0.5 s tick.
+    var mountedReader: () -> [DriveVolume] = DriveAlive.mounted
+    private var looking = false
+
     func tick(settings: Settings, on: Bool, now: Date = Date()) {
         let chosen = settings.driveAliveVolumes
-        guard !chosen.isEmpty, now.timeIntervalSince(lastLook) >= 5 || now < lastLook else { return }    // a look every 5 s is plenty
+        guard !chosen.isEmpty, !looking, now.timeIntervalSince(lastLook) >= 5 || now < lastLook else { return }    // a look every 5 s is plenty
         lastLook = now
-        let due = schedule.due(chosen: chosen, mounted: DriveAlive.mounted(), interval: settings.driveAliveInterval, on: on,
-                               always: settings.driveAliveAlways, now: now)
-        let method = settings.driveAliveMethod
+        looking = true
+        let interval = settings.driveAliveInterval, always = settings.driveAliveAlways, method = settings.driveAliveMethod
+        let read = mountedReader
+        queue.async { [weak self] in
+            let mounted = read()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.looking = false
+                self.touchDue(chosen: chosen, mounted: mounted, interval: interval, on: on, always: always, method: method, now: now)
+            }
+        }
+    }
+
+    private func touchDue(chosen: [String], mounted: [DriveVolume], interval: Int, on: Bool, always: Bool, method: String, now: Date) {
+        let due = schedule.due(chosen: chosen, mounted: mounted, interval: interval, on: on, always: always, now: now)
         for v in due where !inFlight.contains(v.path) {
             inFlight.insert(v.path)
             schedule.touched(v.path, at: now)
@@ -242,8 +260,19 @@ final class DriveAliveRunner {
 
     /// A volume taken off the list: its tiny file goes too (when mounted and ours).
     func removed(_ names: [String]) {
-        let gone = DriveAlive.mounted().filter { m in names.contains { $0.caseInsensitiveCompare(m.name) == .orderedSame } && !m.readOnly }
-        guard !gone.isEmpty else { return }
-        queue.async { for v in gone { DriveToucher.remove(root: v.path) } }
+        queue.async { Self.removeFiles(names: names, mounted: DriveAlive.mounted()) }
+    }
+
+    /// The method changed to "Read only" (nothing written from now on): the tiny files already written go too.
+    func methodChanged(to method: String, names: [String]) {
+        guard method == "read", !names.isEmpty else { return }
+        queue.async { Self.removeFiles(names: names, mounted: DriveAlive.mounted()) }
+    }
+
+    /// Deletes the tiny file (if it is ours) on each of `names` that is mounted and writable. Returns how many went.
+    @discardableResult
+    static func removeFiles(names: [String], mounted: [DriveVolume]) -> Int {
+        mounted.filter { m in !m.readOnly && names.contains { $0.caseInsensitiveCompare(m.name) == .orderedSame } }
+            .filter { DriveToucher.remove(root: $0.path) }.count
     }
 }

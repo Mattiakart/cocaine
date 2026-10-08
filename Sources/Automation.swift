@@ -100,6 +100,7 @@ struct AutoOn {
     var lastActive = Date.distantPast
 
     mutating func step(active: Bool, isOn: Bool, now: Date, grace: TimeInterval = 180) -> Step {
+        if now < lastActive { lastActive = now }    // the clock went back: the grace counts from now (it never waits for the old time)
         if active {
             lastActive = now
             if !isOn && !suppressed { owned = true; return .turnOn }
@@ -121,6 +122,10 @@ struct AutoOn {
     /// A new instance took over a session a trigger had turned on (an update, a crash): it stays the trigger's, so it
     /// ends when the trigger does (after the grace), instead of becoming an ON nobody turns off.
     mutating func resume(now: Date) { owned = true; lastActive = now }
+
+    /// The Mac woke from sleep: a trigger's reason (the Wi-Fi, a VPN, a display) takes a moment to come back, so the grace of an ON
+    /// a trigger made counts from the wake, not from before the sleep (which ended it at the first look after any long sleep).
+    mutating func woke(now: Date) { if owned { lastActive = max(lastActive, now) } }
 }
 
 // AgentEntry and AgentBoard (what each AI session is doing) live in Sources/AgentSessions.swift.

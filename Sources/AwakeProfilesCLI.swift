@@ -31,6 +31,14 @@ enum ProfileLink {
 enum ProfilesCLI {
     struct Output { var text = ""; var code: Int32 = 0 }
 
+    /// The app's settings domain: its own when run from the bundle; from the engine's copy of the executable
+    /// ($SUPPORT/engine/cocaine-app, used by `cocaine profiles` once the bundle is gone) there is no bundle id, and the
+    /// standard domain would be the executable's name ("cocaine-app"): empty, so `cocaine profiles` said there were none.
+    static func appDefaults(bundleID: String?) -> UserDefaults {
+        if bundleID != nil { return .standard }
+        return UserDefaults(suiteName: Installer.bundleID) ?? .standard
+    }
+
     /// The work of `--profiles`, on a given settings domain (the app's own when run by `cocaine`, a test's in memory).
     static func run(_ args: [String], defaults d: UserDefaults, mounted: () -> [DriveVolume] = DriveAlive.mounted,
                     open: (URL) -> Bool) -> Output {
@@ -84,7 +92,7 @@ enum ProfilesCLI {
 /// `Cocaine --profiles …` (from `cocaine profiles` / `cocaine disks`).
 func cliProfiles() {
     let args = Array(CommandLine.arguments.dropFirst(2))
-    let out = ProfilesCLI.run(args, defaults: UserDefaults.standard) { url in       // the real app's domain, read only
+    let out = ProfilesCLI.run(args, defaults: ProfilesCLI.appDefaults(bundleID: Bundle.main.bundleIdentifier)) { url in   // read only
         Proc.run("/usr/bin/open", ["-g", url.absoluteString], timeout: 10).status == 0
     }
     if out.code == 0 { FileHandle.standardOutput.write(Data(out.text.utf8)) } else { FileHandle.standardError.write(Data(out.text.utf8)) }
