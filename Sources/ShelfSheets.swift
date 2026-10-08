@@ -103,6 +103,7 @@ struct ShelfSheetCard: View {
                             (c.id.uuidString, c.title, "arrow.right.circle", false, { center.moveSelection(to: c.id) })
                         })
                     }
+                    ShelfMenuExtras(center: center, store: store)          // select, sort, clear (Sources/ShelfMore.swift)
                 }
             }
         }

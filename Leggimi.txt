@@ -37,6 +37,8 @@ ATTENZIONE
 - Col coperchio chiuso lo schermo integrato va alla luminosità minima e torna al suo livello quando lo riapri;
   i monitor esterni non vengono mai abbassati dal coperchio.
 - "Resta disponibile" (Automazioni), mentre agisce, impedisce anche che lo schermo si abbassi, si spenga e si blocchi da solo.
+- Pagina Musica: Apple Music, Spotify e YouTube Music in Pear Desktop (collegalo in Impostazioni → Isola → Musica e tastiera).
+  Lì si regola anche la retroilluminazione della tastiera, che può spegnersi da sola quando sei via.
 - Quando chiudi l'app (Esci, Cmd-Q, disconnessione, spegnimento, kill o crash) lo stop torna com'era prima.
   Dopo un'interruzione di corrente lo stop resta disattivato finché Cocaine non si riapre (o esegui: cocaine off).
 

@@ -211,6 +211,7 @@ func cliRenderIsland() {
     AIContextFixtures.apply(args)                               // --aicontext-fixture <name>: the basket, the notch questions
     ClipSyncFixtures.apply(args, im.clipboard)                  // --clipsync-fixture: an item from the iPhone, Send to iPhone (Sources/ClipSync.swift)
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
+    MediaFixtures.apply(args, im)                              // --media-fixture sources|pear|nolight (Sources/MediaSettings.swift)
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
     NotchFixtures.apply(args, im)                              // --notch-fixture charging|full|low|reminders… (Sources/NotchTests.swift)
     CloudShareFixtures.apply(args)                             // --cloud-fixture toast: the link under the shelf (Sources/CloudShareFixtures.swift)
@@ -307,6 +308,7 @@ func cliRenderPanel() {
     applyScreensFixture(CommandLine.arguments)                  // --screens-fixture <name>, --screens-edit <screen id>
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
     CloudShareFixtures.apply(CommandLine.arguments)             // --cloud-fixture <name>: Settings → Island → Sharing samples
+    MediaFixtures.applyPanel(CommandLine.arguments)             // --media-fixture pearon: Settings → Island → Music and keyboard
     AIContextFixtures.apply(CommandLine.arguments)              // --aicontext-fixture l: a filled AI context card in Settings → AI
     NotchFixtures.layout(CommandLine.arguments)                 // --notch-fixture reminders: sample lists in Settings → Island → Notch
     SSHHostManager.shared.applyFixture(CommandLine.arguments)   // --ssh-sample / --ssh-review: sample SSH hosts in Settings → AI

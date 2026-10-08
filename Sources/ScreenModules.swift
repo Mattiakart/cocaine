@@ -35,6 +35,7 @@ extension IslandView {
         case "monitors": displayTab
         case "reminders": remindersModule(b)         // Sources/IslandReminders.swift
         case "controls": controlsModule(b)           // Sources/NotchControls.swift
+        case "keyboard": keyboardModule(b)              // Sources/KeyboardBacklight.swift
         default: EmptyView()
         }
     }

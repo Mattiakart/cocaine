@@ -46,6 +46,13 @@ results (the archive, the new images, the recognized text) land in the collectio
 - **Recognize Text** reads images and the first 5 pages of PDFs with macOS's Vision (on this Mac, nothing is uploaded),
   your languages first; a PDF that already contains text gives that text. The result goes to the clipboard and onto the shelf.
 
+**More in the actions menu** (round 6): **AirDrop** sends the selected files and links straight to AirDrop (macOS asks for
+the device) without going through Share…; **Copy Names** copies the names, one per line (a link's address). Under the
+operations: **Select** (Select All, Invert Selection, or only the Images, Files and Folders, Links, Texts or Missing Items of
+the collection), **Sort by** Name (numbers by value, as in Finder), Date Added (oldest first), Kind or Size (largest first), and
+**Clear**: Remove Missing Items, or **Remove All…** (asked first when there is more than one item; the files stay where they
+are). Sorting changes the collection's order for good (drag to reorder again).
+
 **Your actions** (Settings → Island → Shelf → Your actions) add your own entries to the actions menu: a **shell script**, a
 **Shortcut** (Shortcuts app), an **Automator workflow**, an **AppleScript or JavaScript** file, **Open with an app**, **Move to
 a folder**. They can be added only there, by you; never from a link, a dropped file or another app. Files are passed as

@@ -514,6 +514,8 @@ final class ShelfStore: ObservableObject {
     func clear() { remove(Set(items.map(\.id))) }
 
     func reorder(_ ids: Set<UUID>, to index: Int) { change { $0.reorder(ids, to: index, in: $0.current) } }
+    /// The current collection in this order (a sort: Sources/ShelfMore.swift).
+    func arrange(_ order: [UUID]) { change { $0.arrange(order, in: $0.current) } }
 
     @discardableResult
     func transfer(_ ids: Set<UUID>, to collection: UUID) -> Int {

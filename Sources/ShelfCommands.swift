@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 /// The shelf's group operations, as listed in its menu.
 enum ShelfOp: String, CaseIterable, Identifiable {
-    case open, openWith, reveal, quickLook, share, shareLink, copy, copyPaths, copyTo, moveTo, rename, zip, images, ocr, pdf,
+    case open, openWith, reveal, quickLook, share, airDrop, shareLink, copy, copyPaths, copyNames, copyTo, moveTo, rename, zip, images, ocr, pdf,
          stitchV, stitchH, aiContext, remove, trash
     var id: String { rawValue }
 
@@ -19,9 +19,11 @@ enum ShelfOp: String, CaseIterable, Identifiable {
         case .reveal: return L("Show in Finder")
         case .quickLook: return L("Quick Look")
         case .share: return L("Share…")
+        case .airDrop: return L("AirDrop")
         case .shareLink: return L("Share link…")
         case .copy: return L("Copy")
         case .copyPaths: return L("Copy Path")
+        case .copyNames: return L("Copy Names")
         case .copyTo: return L("Copy to…")
         case .moveTo: return L("Move to…")
         case .rename: return L("Rename…")
@@ -44,9 +46,11 @@ enum ShelfOp: String, CaseIterable, Identifiable {
         case .reveal: return "folder"
         case .quickLook: return "eye"
         case .share: return "square.and.arrow.up"
+        case .airDrop: return "dot.radiowaves.left.and.right"
         case .shareLink: return "link"
         case .copy: return "doc.on.doc"
         case .copyPaths: return "text.alignleft"
+        case .copyNames: return "list.bullet"
         case .copyTo: return "plus.rectangle.on.folder"
         case .moveTo: return "folder.badge.plus"
         case .rename: return "pencil"
@@ -76,9 +80,10 @@ enum ShelfOp: String, CaseIterable, Identifiable {
         if !files.isEmpty || hasLinks { out.append(.open) }
         if !files.isEmpty { out += [.openWith, .reveal] }
         if !present.isEmpty { out += [.quickLook, .share] }
+        if !files.isEmpty || hasLinks { out.append(.airDrop) }
         if cloud && !files.isEmpty { out.append(.shareLink) }
         if !present.isEmpty { out.append(.copy) }
-        if !files.isEmpty { out += [.copyPaths, .copyTo] }
+        if !files.isEmpty { out += [.copyPaths, .copyNames, .copyTo] }
         if !realFiles.isEmpty { out += [.moveTo, .rename] }
         if !files.isEmpty { out.append(.zip) }
         if !images.isEmpty { out.append(.images) }
@@ -221,6 +226,8 @@ final class ShelfCenter: ObservableObject {
             quickLook(items)
         case .share:
             Motion.with(.dialog) { sheet = .share }
+        case .airDrop:
+            airDrop(items)
         case .shareLink:
             Motion.with(.dialog) { sheet = .links }
         case .copy:
@@ -228,6 +235,8 @@ final class ShelfCenter: ObservableObject {
         case .copyPaths:
             let pb = pasteboard(); pb.clearContents(); pb.setString(ShelfFiles.paths(urls), forType: .string)
             say("doc.on.clipboard.fill", urls.count == 1 ? L("Path copied") : String(format: L("%d paths copied"), urls.count))
+        case .copyNames:
+            copyNames(items)
         case .copyTo, .moveTo:
             chooseFolder(move: op == .moveTo) { [weak self] dir in self?.transfer(items, into: dir, move: op == .moveTo) }
         case .rename:

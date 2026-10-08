@@ -164,7 +164,10 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
 - **Music**: Apple Music and Spotify, with artwork, scrubber, play/pause/next/previous/shuffle and, if you switch them on,
   synced lyrics (looked up by title and artist on lrclib.net, nothing else is sent; a network problem is said as such). What
   plays comes from the apps' own announcements; their scripting (the Automation permission) is used for the artwork and, while
-  this page is open, the position.
+  this page is open, the position. Also **YouTube Music via Pear Desktop** (its API Server plugin, on this Mac only, after you
+  connect it), a switcher when several players have a track, skip back/forward (5–30 s), favourite/like where the player allows
+  it, and the player's own volume. The **keyboard backlight** (MacBooks) has a module, a HUD and an optional auto-off when idle.
+  See [docs/music-and-backlight.en.md](docs/music-and-backlight.en.md).
 - **Calendar**: Day, Week and Month views with previous/next, *Today* and the arrow keys; click an event for its details
   (time, calendar, place, video-call link, people, notes) and *Open in Calendar*. Asks for Calendar access the first time; if
   it was refused, a button opens System Settings. See [docs/calendar.en.md](docs/calendar.en.md).

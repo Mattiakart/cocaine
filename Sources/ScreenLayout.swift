@@ -73,6 +73,7 @@ enum ModuleCatalog {
         ModuleSpec(id: "monitors", title: "Monitors", icon: "display", home: "display", sizes: [.l], width: .full),
         ModuleSpec(id: "reminders", title: "Reminders", icon: "checklist", home: "reminders", sizes: [.s, .m, .l], width: .narrow),   // Sources/IslandReminders.swift
         ModuleSpec(id: "controls", title: "Controls", icon: "slider.horizontal.3", home: "home", sizes: [.s, .m], width: .narrow),     // Sources/NotchControls.swift
+        ModuleSpec(id: "keyboard", title: "Keyboard backlight", icon: "light.max", home: "status", sizes: [.s], width: .narrow),   // Sources/KeyboardBacklight.swift
     ]
 
     static let screens: [ScreenSpec] = [

@@ -109,6 +109,7 @@ final class IslandModel: ObservableObject {
                     screens.$layout.dropFirst().sink { [weak self] l in self?.refreshTabs(l) },
                     // A chosen start screen: the island opens on it every time (set once it has closed, so closing shows no jump).
                     $open.removeDuplicates().dropFirst().sink { [weak self] isOpen in if !isOpen { self?.scheduleStart() } }]
+        MediaWiring.attach(self)                                   // keyboard backlight HUD and auto-off (Sources/MediaSettings.swift)
     }
 
     /// The modules of the screen shown.

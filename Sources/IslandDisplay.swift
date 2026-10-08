@@ -231,6 +231,7 @@ extension IslandView {
 
     var displayTab: some View {
         VStack(alignment: .leading, spacing: Space.l) {
+            KeyboardBacklightRow()                                 // the built-in keyboard's light, when it has one (Sources/KeyboardBacklight.swift)
             if model.ddc.monitors.isEmpty {
                 Text(L("No external monitor found, or it doesn't support DDC/CI")).font(UI.value).foregroundStyle(UI.hint)
             }
