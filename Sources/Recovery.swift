@@ -128,6 +128,15 @@ enum Recovery {
         return lease.ownsSleep ? .release : .drop
     }
 
+    /// At a fresh launch (no session adopted), the saved deadline is a leftover unless it is the engine's own command-line or
+    /// iPhone deadline ($SUPPORT/until holds the same epoch): a panel timer from before a normal quit (sleep was released then)
+    /// would otherwise end, at once and with a "Timer over" alert, an ON made later with a plain `cocaine on`.
+    static func staleDeadline(_ until: Date?, engineUntil: String?, adopted: Bool) -> Bool {
+        guard let until, !adopted else { return false }
+        guard let e = engineUntil.flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) else { return true }
+        return abs(Double(e) - until.timeIntervalSince1970) >= 1
+    }
+
     /// Put a dimmed screen back only while it still shows Cocaine's dimming (from `to` up to just below `from`):
     /// a brightness the user chose since then, higher or lower, is kept.
     static func shouldRestoreBrightness(current: Float, from: Float, to: Float) -> Bool {

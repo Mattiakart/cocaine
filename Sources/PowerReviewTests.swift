@@ -183,6 +183,15 @@ enum PowerReviewTests {
         let wanted = Set(files).subtracting(["recovery.json"]).filter { !$0.hasPrefix("engine") }
         check("uninstall: found the engine's state files (\(wanted.sorted().joined(separator: " ")))", wanted.count >= 6)
         check("uninstall: every one of them is removed (screen-off used to stay)", wanted.isSubset(of: Set(RecoveryCLI.stateFiles)))
+
+        // A fresh launch drops a deadline that isn't the engine's command-line one (a panel timer from before a normal quit).
+        let u = Date(timeIntervalSince1970: 1_791_390_600)
+        check("launch: a panel timer left from before a quit is dropped (no instant “Timer over” for a later `cocaine on`)",
+              Recovery.staleDeadline(u, engineUntil: nil, adopted: false))
+        check("launch: the engine's own command-line deadline is kept", !Recovery.staleDeadline(u, engineUntil: "1791390600\n", adopted: false))
+        check("launch: another value in the engine's file doesn't make it the engine's", Recovery.staleDeadline(u, engineUntil: "1791300000", adopted: false))
+        check("launch: an adopted session (an update, a crash) keeps its deadline", !Recovery.staleDeadline(u, engineUntil: nil, adopted: true))
+        check("launch: no deadline, nothing to drop", !Recovery.staleDeadline(nil, engineUntil: nil, adopted: false))
     }
 
     // MARK: Keep disks awake: the tiny file goes with an uninstall or a switch to "Read only"; no disk reading on the main thread
@@ -233,6 +242,23 @@ enum PowerReviewTests {
         check("disks: the 5 s look returns at once with a slow disk reading (\(Int(blocked * 1000)) ms)", blocked < 0.2)
         check("disks: …and touches the disk once the reading arrives", wait { touched == "Photos" } && fm.fileExists(atPath: b + "/" + DriveAlive.fileName))
         settings.driveAliveVolumes = []
+
+        // The triggers' and profiles' "a disk is connected", and the panel, read the list in the background too.
+        let vols = MountedVolumes()
+        vols.reader = { Thread.sleep(forTimeInterval: 0.8); return mounted }
+        let t1 = Date()
+        let first = vols.current()
+        let quick = Date().timeIntervalSince(t1)
+        check("volumes: the list is answered at once with a slow reading (\(Int(quick * 1000)) ms)", quick < 0.2 && first.isEmpty)
+        check("volumes: …and has the volumes once the background reading is in", wait { vols.current().map(\.name) == ["Backup", "Photos"] })
+        let shared = MountedVolumes.shared, savedReader = shared.reader
+        shared.reader = { Thread.sleep(forTimeInterval: 0.8); return mounted }
+        shared.refresh()
+        let t2 = Date()
+        _ = SystemAwakeProbe().mountedVolumes()
+        check("volumes: the Smart Trigger's reading never waits for the disks (it used to read them on the main thread)", Date().timeIntervalSince(t2) < 0.2)
+        _ = wait { shared.current().count == 2 }
+        shared.reader = savedReader
     }
 
     // MARK: `cocaine profiles` from the engine's copy of the executable

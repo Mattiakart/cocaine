@@ -44,7 +44,7 @@ it on or off.
 Every condition except Processor, Idle time and Battery level can be turned around with **Is / Is not**. A reading that can't be made
 (the Wi-Fi name without Location Services, Bluetooth before its first reading, the Downloads folder unreadable, no battery) is
 **never met, not even with "Is not"**: an unknown never keeps the Mac awake by mistake. A list condition with nothing chosen is never
-met (the row says *Choose at least one*). *Type a name…* in each list adds a name that isn't around now (a network you're not on, a
+met, not even with "Is not" (the row says *Choose at least one*). *Type a name…* in each list adds a name that isn't around now (a network you're not on, a
 device that's off).
 
 Only what the enabled profiles use is read, every 5 seconds with the Smart Triggers: no Bluetooth reading, Wi-Fi name or Downloads
@@ -60,7 +60,9 @@ look unless a profile asks for it.
   if on, still keeps the displays awake.
 - **Start after** (at once / 10 s / 30 s / 1 min / 5 min) and **Stop after** (at once / 30 s / 1 / 5 / 15 min): the conditions must
   hold, or stop holding, that long **without a break**. This is the hysteresis: a Wi-Fi that drops for a few seconds or a CPU reading
-  that wobbles never toggles the profile (tested: flapping every 5 s for two minutes changes nothing).
+  that wobbles never toggles the profile (tested: flapping every 5 s for two minutes changes nothing). A processor reading taken less
+  than 2 s after the previous one (the triggers are also looked at when a setting changes or a disk mounts) is not a sample. If the
+  clock is set back, every delay starts again from the new time instead of waiting for the old one.
 - **At most** (no limit / 30 min … 8 h): the longest the profile keeps the Mac awake in one go; then it stops and waits until its
   conditions break before it can start again.
 - **Notices**: a short notice (island, or VoiceOver) when it starts and ends.
@@ -94,13 +96,15 @@ default, or *Always*). Each chosen volume is touched only while it is mounted; t
   `.cocaine-drive-alive` (hidden, left out of Time Machine), with `F_NOCACHE` and `F_FULLFSYNC` so the write really reaches the disk
   instead of staying in memory. Always the same file and size: nothing piles up. It is opened with `O_NOFOLLOW` and only if it is a
   small regular file with a single link: a link or someone else's file with that name is left alone (the row says so). Removing a disk
-  from the list deletes the file (if the disk is mounted). A read-only volume can't use this method.
+  from the list deletes the file (if the disk is mounted), and so do switching to *Read only* and uninstalling Cocaine (on the chosen
+  disks mounted then). A read-only volume can't use this method.
 - **Read only**: nothing is ever written. Cocaine reads 4 KB with `F_NOCACHE` (read-ahead off) from a different spot of the largest
   visible file near the top of the volume (its top level and one level down). **Best effort**: if macOS already has that piece in
   memory the disk isn't touched, so on a volume of small files it may not keep the disk spinning. Some file systems record an access time.
 
 Each touch opens and closes the file at once (an eject is never blocked), never happens while macOS is unmounting that volume (a minute
-of pause), and runs off the main thread, one at a time per volume. Limits: some USB enclosures have their own firmware sleep timer that
+of pause), and runs off the main thread, one at a time per volume; the list of mounted volumes is read off the main thread too
+(a network volume that stopped answering never freezes the app). Limits: some USB enclosures have their own firmware sleep timer that
 may ignore this activity; a disk asleep because the Mac slept wakes with the Mac; macOS may ask once whether Cocaine may use files on a
 removable or network volume (Privacy & Security → Files and Folders). `cocaine disks` lists the chosen disks and whether each is mounted.
 

@@ -61,6 +61,43 @@ enum DriveAlive {
     }
 }
 
+/// The mounted volumes for the triggers, the profiles' "a disk is connected" and the panel, read in the background: a network
+/// volume that stopped answering can keep `mountedVolumeURLs`' name lookups waiting, and those readings ran on the main thread
+/// every 5 s (the Smart Trigger and the profile condition) and in the panel's drawing. The last list is returned at once; a new
+/// reading starts when it is older than 5 s, and right after a volume mounts or unmounts (AwakeCenter).
+final class MountedVolumes {
+    static let shared = MountedVolumes()
+    static let maxAge: TimeInterval = 5
+    private let queue = DispatchQueue(label: "cocaine.volumes", qos: .utility)
+    private let lock = NSLock()
+    private var list: [DriveVolume] = []
+    private var readAt = Date.distantPast
+    private var busy = false
+    /// Tests: a stand-in.
+    var reader: () -> [DriveVolume] = DriveAlive.mounted
+
+    /// The last list read (empty before the first reading).
+    func current(now: Date = Date()) -> [DriveVolume] {
+        lock.lock()
+        let l = list, stale = !busy && (now.timeIntervalSince(readAt) >= Self.maxAge || now < readAt)
+        lock.unlock()
+        if stale { refresh() }
+        return l
+    }
+
+    /// Reads again in the background; `done` on the main thread once the new list is in.
+    func refresh(_ done: (() -> Void)? = nil) {
+        lock.lock(); busy = true; lock.unlock()
+        let read = reader
+        queue.async { [weak self] in
+            let l = read()
+            guard let self else { return }
+            self.lock.lock(); self.list = l; self.readAt = Date(); self.busy = false; self.lock.unlock()
+            if let done { DispatchQueue.main.async(execute: done) }
+        }
+    }
+}
+
 /// When each volume is due: chosen, mounted, not being unmounted, and the interval passed since its last touch (the first
 /// touch at once). Only while Cocaine is on unless "always".
 struct DriveAliveSchedule {

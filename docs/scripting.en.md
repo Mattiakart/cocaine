@@ -61,6 +61,18 @@ go to Shortcuts' own answer address. See [Power and triggers](power-and-triggers
 The engine inside the app (`/Applications/Cocaine.app/Contents/Resources/cocaine`): `cocaine on`, `on 90m`, `on until 18:30`,
 `on until 08:00 tomorrow`, `off`, `status --json`, `mode screen-off|normal`. It needs no permission question (it's you, in a terminal).
 
+**"On" with no length, everywhere** (checked against the code in the round-7 review):
+
+| Way | No length given means |
+|---|---|
+| AppleScript `keep awake` | until stopped (no timer) |
+| Link `cocaine://on` | the panel's timer (General → *Keep awake for*); `on?timer=off` for none |
+| `toggle` (link, AppleScript, shortcut) | on with the panel's timer, or off |
+| Command line `cocaine on` | a deadline already set stays; otherwise none |
+| iPhone / `cocaine remote on` | until stopped (a deadline already set is cleared) |
+
+`off` from any of them ends every deadline.
+
 ## Testing (maintainers)
 
 - `Cocaine --awake-test`: the rules, the dictionary as Cocoa loads it from the bundle, the commands run on a fake app (the gate

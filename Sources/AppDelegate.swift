@@ -85,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if adopted { log.notice("recovered a previous session; its sleep setting goes on") }
         if adopted && settings.triggerOwned && System.cocaineOn { autoOn.resume(now: Date()) }    // still the trigger's ON
         else if settings.triggerOwned { settings.triggerOwned = false }
+        if Recovery.staleDeadline(settings.onUntil, engineUntil: try? String(contentsOfFile: Recovery.directory + "/until", encoding: .utf8), adopted: adopted) {
+            log.notice("a deadline left from an earlier session: dropped")
+            settings.onUntil = nil
+        }
         // A link that started us during an update's hand-over (or after a crash) must not end that session 6 s later.
         launchedForAlert = Recovery.alertOnly(launchedForAlert: launchedForAlert, adoptedSession: adopted)
         CloudShareCenter.shared.install()            // the shelf's "Share link…" (Sources/CloudShare.swift)

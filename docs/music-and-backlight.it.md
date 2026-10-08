@@ -53,7 +53,7 @@ Sui Mac con la tastiera retroilluminata (i MacBook), Cocaine può mostrarla e re
   una riga in cima alla pagina Monitor, ognuno con un interruttore e un cursore. Quando Cocaine cambia il livello, l'HUD sotto il
   notch lo mostra.
 - **Nelle Impostazioni** → Isola → *Musica e tastiera*: il livello, **Spegni quando inattivo** (mai, 30 s, 1, 2 o 5 min senza un
-  tasto, un clic o un tocco; si riaccende al primo input) e **Solo mentre Cocaine tiene sveglio il Mac** (la regola vale solo
+  tasto, un clic o un tocco; si riaccende al primo input; gli eventi invisibili di Resta disponibile non contano come input) e **Solo mentre Cocaine tiene sveglio il Mac** (la regola vale solo
   allora). Se cambi tu il livello mentre è spenta per inattività, Cocaine lascia il tuo livello. Quando Cocaine si chiude
   riaccende ciò che aveva spento.
 

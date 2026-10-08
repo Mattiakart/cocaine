@@ -353,7 +353,7 @@ struct DriveAliveCard: View {
     @ObservedObject var am = AwakeModel.shared
     let kit = AwakeRowKit()
 
-    private var mountedNames: [String] { am.sample?["volumes"] ?? DriveAlive.mounted().map(\.name) }
+    private var mountedNames: [String] { am.sample?["volumes"] ?? MountedVolumes.shared.current().map(\.name) }
 
     private func statusLine() -> String? {
         guard !am.driveAliveVolumes.isEmpty else { return nil }

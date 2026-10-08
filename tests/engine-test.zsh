@@ -128,6 +128,9 @@ check "on 1 writes the deadline for the helper too" '$E on 1 && u=$(<$T/support/
 check "a deadline the app extended meanwhile is kept" 'print $(( EPOCHSECONDS - 5 )) > $T/support/until; /usr/bin/defaults write $T/prefs onUntil -int $(( EPOCHSECONDS + 600 )); /bin/sleep 2.5; [[ $(<$T/state) == 1 && $(<$T/support/until) == $(( $(/usr/bin/defaults read $T/prefs onUntil) )) ]]'
 check "a passed deadline turns it off with no app running" '/usr/bin/defaults write $T/prefs onUntil -int $(( EPOCHSECONDS - 5 )); print $(( EPOCHSECONDS - 5 )) > $T/support/until; waitfor "[[ \$(<$T/state) == 0 ]]" 40 && waitfor "! helper_up" && [[ ! -e $T/support/until ]] && ! /usr/bin/defaults read $T/prefs onUntil >/dev/null 2>&1'
 check "off removes the deadline file" '$E on 5 && $E off && [[ ! -e $T/support/until ]]'
+check "off ends a command-line deadline in the settings too (no stale onUntil for the app)" '$E on 5 && $E off && ! /usr/bin/defaults read $T/prefs onUntil >/dev/null 2>&1'
+check "off leaves the app's own timer (another value) to the app" '$E on 5 && /usr/bin/defaults write $T/prefs onUntil -int $(( EPOCHSECONDS + 7200 )) && $E off && /usr/bin/defaults read $T/prefs onUntil >/dev/null 2>&1'
+/usr/bin/defaults delete $T/prefs onUntil 2>/dev/null
 check "expire (boot check) ends a passed deadline at once" '$E on 5 && helper_up && kill -KILL $(<$T/support/hold.pid) && print $(( EPOCHSECONDS - 1 )) > $T/support/until && /usr/bin/defaults write $T/prefs onUntil -int $(( EPOCHSECONDS - 1 )) && $E expire && [[ $(<$T/state) == 0 ]]'
 $E off >/dev/null 2>&1
 

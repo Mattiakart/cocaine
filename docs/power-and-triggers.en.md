@@ -33,7 +33,9 @@ running: downloads, builds and AI agents go on. **Screens off now** (in the same
 - **Idle dimming** lowers every display that is on: Apple displays through their backlight, others through their own colour
   table (saved and put back exactly, other displays untouched; it saves no power, the monitor's backlight stays on). A display
   already darker than the chosen level is left alone. Any input brings everything back; automatic brightness creeping up on a
-  dimmed screen is put back, but a big change someone makes (a slider, a script) is kept until the next idle stretch.
+  dimmed screen is put back, but a big change someone makes (a slider, a script) is kept until the next idle stretch. Two
+  jumps are never taken for someone's choice and are put back: the built-in display's behind a closed lid, and any jump in the
+  10 seconds after the charger is plugged in or out (macOS raises or lowers the brightness by itself then).
 - **Every case ends back where it started:** a quick close-open-close, an alert, switching to *Screen off*, unplugging a
   display (the others stay dimmed; one plugged back still dimmed is put back), quitting in the middle of a fade, or a crash
   (the watchdog restores backlights that still show Cocaine's level).

@@ -213,10 +213,12 @@ final class AwakeCenter {
             self?.model.triggersChanged()
         }
         if AwakeProfiles.needs(model.profiles).contains(.wifi) { model.locationAllowed = LocationAccess.shared.allowed }
-        // A volume coming or going: the triggers look again soon (they also look every 5 s).
-        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+        // A volume coming or going: the list is read again (in the background), then the triggers look at once (they also look
+        // every 5 s).
+        MountedVolumes.shared.refresh()
+        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in
-                self?.model.triggersChanged()
+                MountedVolumes.shared.refresh { self?.model.triggersChanged() }
             })
         }
     }

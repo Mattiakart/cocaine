@@ -493,14 +493,8 @@ struct SystemAwakeProbe: AwakeProbe {
         return n as String
     }
 
-    func mountedVolumes() -> [String] {
-        let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeNameKey, .volumeIsRootFileSystemKey],
-                                                         options: [.skipHiddenVolumes]) ?? []
-        return urls.compactMap { u in
-            let v = try? u.resourceValues(forKeys: [.volumeNameKey, .volumeIsRootFileSystemKey])
-            return v?.volumeIsRootFileSystem == true ? nil : v?.volumeName
-        }
-    }
+    /// The mounted volumes other than the startup disk, from MountedVolumes' background reading (never read here on the main thread).
+    func mountedVolumes() -> [String] { MountedVolumes.shared.current().map(\.name) }
 
     func usbDevices() -> [String] {
         var it: io_iterator_t = 0
