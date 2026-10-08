@@ -1,0 +1,11 @@
+/* 設定の検索とパネル共通のコントロール(第7ラウンド)。 */
+"Search settings" = "設定を検索";
+"Clear the search" = "検索を消去";
+"Finds any setting: type what you're looking for, in your words" = "どの設定も見つかります:探しているものを自分の言葉で入力してください";
+"No settings match “%@”" = "“%@”に一致する設定はありません";
+"Try another word, or fewer words" = "別の言葉か、少ない言葉で試してください";
+"Search results" = "検索結果";
+"Opens this setting" = "この設定を開きます";
+"Turn on “%@” first" = "先に“%@”をオンにしてください";
+"No settings found" = "設定が見つかりません";
+"%d settings found" = "%d件の設定が見つかりました";

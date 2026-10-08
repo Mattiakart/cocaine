@@ -113,6 +113,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--cloud-test (local fake S3/WebDAV servers on 127.0.0.1, fake sftp, temporary keychain; no real network)" "$ISO" --cloud-test
   run "--mcp-test (AI context: fake MCP client over pipes, temporary socket and homes)" "$ISO" --mcp-test
   run "--dialogs-test" "$ISO" --dialogs-test
+  run "--ui-test (settings panel: row layout, settings search in 8 languages, focus ring, panel motion; offscreen)" "$ISO" --ui-test
   run "--remote-test" "$ISO" --remote-test
   run "--ssh-test (fake ssh + the real relay, temporary homes, keys in memory)" "$ISO" --ssh-test
   run "--keyboard-test (keyboard clipboard: search modes, keys, placement; exact session links; temporary folders)" "$ISO" --keyboard-test

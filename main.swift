@@ -49,6 +49,7 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" { 
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--display-test" { cliDisplayTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test" { cliDialogsTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--ux-test" { cliUXTest() }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--ui-test" { cliUITest() }                 // Sources/UITests.swift
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--ai-alerts" { cliAIAlerts() }
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--ai-environments" { cliAIEnvironments() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--permissions" { cliPermissions() }

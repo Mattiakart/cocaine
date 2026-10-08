@@ -1,0 +1,11 @@
+/* Settings search and the panel's shared controls (round 7). */
+"Search settings" = "Search settings";
+"Clear the search" = "Clear the search";
+"Finds any setting: type what you're looking for, in your words" = "Finds any setting: type what you're looking for, in your words";
+"No settings match “%@”" = "No settings match “%@”";
+"Try another word, or fewer words" = "Try another word, or fewer words";
+"Search results" = "Search results";
+"Opens this setting" = "Opens this setting";
+"Turn on “%@” first" = "Turn on “%@” first";
+"No settings found" = "No settings found";
+"%d settings found" = "%d settings found";

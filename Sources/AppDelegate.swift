@@ -252,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = MenuPanel(content: hostView, overlay: overlay)
         // A dropdown that ends below the visible part of a long page: the page scrolls so all of it shows.
         PickerCenter.shared.reveal = { [weak self] r in self?.hostView.scrollToVisible(r) }
+        SettingsSearch.shared.reveal = { [weak self] r in self?.hostView.scrollToVisible(r) }   // a search result's row (Sources/SettingsSearch.swift)
         model.pageChanged = { [weak self] in                     // a new page starts at its top
             PickerCenter.shared.close()
             guard let scroll = self?.panel.scroll else { return }
@@ -954,8 +955,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelTop = settings.island ? screen.frame.maxY : (screen.visibleFrame.maxY - 6).rounded()   // from the notch, or under the menu bar
         panel.attach(toTop: settings.island)
         model.page = ""                                              // always opens on the home
+        SettingsSearch.shared.query = ""                             // …with no search left from last time
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
-        panel.makeKeyAndOrderFront(nil)
+        panel.present(at: panel.frame)                               // drops from the notch / slides from the icon (Sources/MenuPanel.swift)
         if settings.island { island.setSuspended(true) }
         statusItem.button?.highlight(true)
         // Clicks elsewhere close it; a click on the icon itself (which also arrives here on macOS 27) toggles instead.
@@ -968,6 +970,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if ClipShortcutRecorder.shared.handle(keyCode: e.keyCode, flags: e.modifierFlags) { return nil }   // …a clipboard one too
             if DialogCenter.shared.isShowing(on: .panel), DialogCenter.shared.handleKey(e) { return nil }   // Return/Esc: the dialog's
             if PickerCenter.shared.isOpen(on: .panel), PickerCenter.shared.handleKey(e) { return nil }     // ↑↓, Return, Space, Esc: the dropdown's
+            if !DialogCenter.shared.isShowing(on: .panel), !PickerCenter.shared.isOpen(on: .panel),
+               SettingsSearch.shared.handleKey(e) { return nil }         // ⌘F, typing, ↑↓, Return, Esc: the settings search's
             if e.keyCode == 53 {                                   // Esc: closes the panel
                 self?.hidePanel()
                 return nil
@@ -1017,7 +1021,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island.setSuspended(false)
         panelMonitors.forEach(NSEvent.removeMonitor)
         panelMonitors.removeAll()
-        panel.orderOut(nil)
+        panel.dismiss()                                     // fades out (back into the notch), then orders out
         NSCursor.arrow.set()                                // in case it closed with the pointer on the mirror
         statusItem.button?.highlight(false)
         DialogCenter.shared.surfaceClosed(.panel)           // a question on it is answered Cancel (the next one, if any, reopens it)
@@ -1040,7 +1044,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.changed = { [weak self] in
             if center.current != nil { PickerCenter.shared.close() }        // a question replaces an open dropdown
             self?.island.dialogChanged()
-            self?.panel?.overlay.isHidden = !center.isShowing(on: .panel)
+            self?.panel?.setOverlay(visible: center.isShowing(on: .panel))   // hidden after the card's exit, not before
         }
     }
 

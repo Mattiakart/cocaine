@@ -325,6 +325,12 @@ func cliRenderPanel() {
         model.triggerAgents = true; model.triggerApps = ["Xcode"]; model.timerMinutes = 120; model.batteryThreshold = 20
         model.phoneCount = CommandLine.arguments.contains("--no-phone") ? 0 : 1; model.phoneLinkUp = true; model.battery = "80%"
         model.phone = "Comando Rapido “Avvisa iPhone”"
+        // --trigger-power ac|battery, --trigger-display connected|disconnected, --live power,display: the Smart Triggers rows
+        // with a value chosen and their green "true now" dot (the rows the user saw overlapping).
+        func arg(_ name: String) -> String? { CommandLine.arguments.firstIndex(of: name).flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil } }
+        if let v = arg("--trigger-power") { model.triggerPower = v }
+        if let v = arg("--trigger-display") { model.triggerDisplay = v }
+        if let v = arg("--live") { model.liveTriggers = Set(v.split(separator: ",").map(String.init)) }
     }
     if CommandLine.arguments.contains("--agents") {
         let t = Date().timeIntervalSince1970
@@ -338,6 +344,11 @@ func cliRenderPanel() {
     if CommandLine.arguments.contains("--speak") {                  // the longest voice name: the widest thing a row can hold
         model.alertSpeak = true
         model.alertVoice = Voices.available.map(\.identifier).max { Voices.name($0).count < Voices.name($1).count } ?? ""
+    }
+    if CommandLine.arguments.contains("--all-rows") {              // every optional row shown (--ui-test's layout check)
+        model.triggerSchedule = true; model.scheduleDays = [2, 3, 4, 5, 6]; model.stayActive = true; model.alertSpeak = true
+        model.dimEnabled = true; model.phoneCount = max(1, model.phoneCount); model.phone = model.phone.isEmpty ? "Shortcut" : model.phone
+        model.triggerApps = model.triggerApps.isEmpty ? ["Xcode"] : model.triggerApps; AgentPrefs.shared.quietHours = true
     }
     if CommandLine.arguments.contains("--longsound") { model.alertDuration = 0; model.alertRepeatMinutes = 10 }
     AwakeModel.shared.fillSample(rows: CommandLine.arguments.contains("--awake"))   // keep-awake rows: sample lists, never this Mac's
@@ -387,6 +398,11 @@ func cliRenderPanel() {
         print("\(ok ? "PASS" : "FAIL")  rightmost painted \(String(format: "%.1f", right)) pt (limit \(Layout.width - 14))")
     }
     if let pickerReport { print(pickerReport) }
+    if CommandLine.arguments.contains("--dump-frames") {           // the rows', controls' and cards' frames as drawn (--ui-test reads them)
+        for (k, r) in SettingsSearch.shared.frames.sorted(by: { $0.value.minY < $1.value.minY }) {
+            print(String(format: "frame %.1f %.1f %.1f %.1f ", r.minX, r.minY, r.width, r.height) + k)
+        }
+    }
     print(Bundle.main.preferredLocalizations.first ?? "?")
 
     exit(0)

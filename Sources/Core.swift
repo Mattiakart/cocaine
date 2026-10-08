@@ -31,6 +31,8 @@ enum Language {
 
     /// nil = same as the Mac.
     static var chosen: String? { AppDefaults.store.string(forKey: "language") }
+    /// The language the app speaks now: the one in use (also unsaved, in renders), else the Mac's.
+    static var current: String { active ?? system }
 
     static func set(_ code: String?, persist: Bool = true) {
         if persist {
@@ -79,7 +81,7 @@ enum Language {
 
     /// Per-feature string tables (Localization/<lang>.lproj/<Table>.strings) looked up after the main one, so features can be
     /// developed side by side without editing the same file.
-    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys", "Screens", "Calendar", "Shelf", "Awake", "Plans", "Paste", "Cloud", "MCP", "SSH", "Sync", "Notch", "Media", "Keyboard", "Triggers"]
+    static let extraTables = ["Remote", "Agents", "Power", "Clipboard", "Updates", "Recovery", "Dialogs", "Design", "Keys", "Screens", "Calendar", "Shelf", "Awake", "Plans", "Paste", "Cloud", "MCP", "SSH", "Sync", "Notch", "Media", "Keyboard", "Triggers", "Search"]
 
     static func text(_ key: String) -> String {
         let miss = "\u{0}missing"

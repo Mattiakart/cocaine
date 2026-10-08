@@ -77,6 +77,7 @@ struct CocaineSwitch: View {
 private struct PressScale: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.pressable(configuration.isPressed, scale: Motion.Distance.pressScaleSmall)
+            .keyboardFocusRing()                          // keyboard navigation only (Sources/Controls.swift)
     }
 }
 
