@@ -82,8 +82,8 @@ a web page can never read or paste it.
 
 The secrets filter and your patterns apply to `put` too.
 
-**Keyboard** (with the island opened by ⌃⌥⌘I, or the search field focused): ↑ ↓ move, Return / ⇧Return paste, ⌘1…9 quick
-paste, ⇧↑ ⇧↓ ⌘A select, Space details, ⌘C copy, ⌘E edit, ⌘R rename, Delete deletes (or edits what you typed), ⌘Z undo,
+**Keyboard** (with the clipboard opened by ⌃⌘V, the island opened by ⌃⌥⌘I, or the search field focused; all the keys, the floating panel near the pointer and the search modes: [clipboard-keyboard.en.md](clipboard-keyboard.en.md)): ↑ ↓ move, Return / ⇧Return paste, ⌘1…9 quick
+paste, ⇧↑ ⇧↓ ⌘A select, Space (nothing typed) or ⌘Y details, ⌥P favourite, ⌘P pin, ⌥Return copy only, ⌘C copy, ⌘E edit, ⌘R rename, Delete deletes (or edits what you typed), ⌘Z undo,
 ⌥0…9 and ⌘[ ⌘] pinboards, Esc clears the selection, leaves the details or closes. VoiceOver: activating a row pastes it; its
 actions are Copy, Details, Select, Pin to…, Delete. The module can be S (the newest items), M (search and list) or L.
 

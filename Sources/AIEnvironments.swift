@@ -117,6 +117,11 @@ enum AIEnvironments {
               matrix: "PNNNPP"),
         .init(id: "ms-copilot", name: "Microsoft Copilot", kind: .desktop, bundleIDs: ["com.microsoft.copilot-mac", "com.microsoft.m365copilot"],
               methods: [.app], matrix: "PNNNPP"),
+        // Agents Open Island also follows, seen here by their process only (their hooks aren't written by Cocaine).
+        .init(id: "kimi-cli", name: "Kimi CLI", kind: .cli, executables: ["kimi"], methods: [.process], matrix: "UNNNUP"),
+        .init(id: "droid", name: "Factory Droid", kind: .cli, executables: ["droid"], methods: [.process], matrix: "UNNNUP"),
+        .init(id: "qoder-cli", name: "Qoder CLI", kind: .cli, executables: ["qodercli"], methods: [.process], matrix: "UNNNUP"),
+        .init(id: "codebuddy", name: "CodeBuddy Code", kind: .cli, executables: ["codebuddy"], methods: [.process], matrix: "UNNNUP"),
         .init(id: "web-claude", name: "Claude (web)", kind: .web, hosts: ["claude.ai"], methods: [.browserTab], matrix: "PNNNPS"),
         .init(id: "web-chatgpt", name: "ChatGPT (web)", kind: .web, hosts: ["chatgpt.com", "chat.openai.com"], methods: [.browserTab], matrix: "PNNNPS"),
         .init(id: "web-gemini", name: "Gemini (web)", kind: .web, hosts: ["gemini.google.com"], methods: [.browserTab], matrix: "PNNNPS"),
@@ -192,14 +197,23 @@ enum AIEnvironments {
         if s.range(of: #"^codex://threads/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"#, options: .regularExpression) != nil {
             return s
         }
+        if s.range(of: #"^claude://code/continue\?session=local_[A-Za-z0-9-]{1,64}$"#, options: .regularExpression) != nil { return s }
         return forURL(s) != nil ? s : nil
     }
 
     /// The documented link to a session inside its app, when there is one: the ChatGPT app opens a Codex thread by its id
     /// (learn.chatgpt.com/docs/reference/commands: codex://threads/<thread-id>; the hook's session_id is that id).
+    /// Claude Desktop's Code sessions: its own link opens one by the desktop's id (claude://code/continue?session=local_…, the
+    /// link its Dock menu uses), which the desktop keeps next to the Claude Code session id in its session files.
     static func deepLink(env: String, session: String?) -> String? {
-        guard env == "codex-app", let s = session else { return nil }
-        return safeChatURL("codex://threads/" + s)
+        guard let s = session else { return nil }
+        switch env {
+        case "codex-app": return safeChatURL("codex://threads/" + s)
+        case "claude-desktop-code":
+            guard let local = ClaudeDesktopSessions.localID(s) else { return nil }
+            return safeChatURL("claude://code/continue?session=" + local)
+        default: return nil
+        }
     }
 
     /// The address prefixes a scan keeps, as AppleScript `starts with` tests (the script itself drops every other tab, so no
@@ -343,4 +357,63 @@ func cliAIEnvironments() {
     }
     print(AIEnvironments.markdownMatrix(italian: args.contains("--it")), terminator: "")
     exit(0)
+}
+
+/// Claude Desktop's Code sessions on disk (~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_<id>.json,
+/// each with its `sessionId` and the Claude Code `cliSessionId`): only to find the desktop's id of a session a hook reported.
+/// Read-only, bounded (files, sizes, depth), never any content but those two ids; a miss is remembered for a while.
+enum ClaudeDesktopSessions {
+    static var root: URL {
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Claude/claude-code-sessions")
+    }
+    /// Tests set their own.
+    static var lookup: (String) -> String? = { find($0, in: root) }
+    private static var cache: [String: String] = [:]
+    private static var misses: [String: Date] = [:]
+    private static let lock = NSLock()
+
+    static func localID(_ cliSession: String) -> String? {
+        guard cliSession.range(of: #"^[0-9A-Fa-f-]{8,64}$"#, options: .regularExpression) != nil else { return nil }
+        lock.lock()
+        if let hit = cache[cliSession] { lock.unlock(); return hit }
+        if let m = misses[cliSession], Date().timeIntervalSince(m) < 20 { lock.unlock(); return nil }
+        lock.unlock()
+        let found = lookup(cliSession)
+        lock.lock(); defer { lock.unlock() }
+        if let found { cache[cliSession] = found; misses[cliSession] = nil } else { misses[cliSession] = Date() }
+        return found
+    }
+
+    static func forget() { lock.lock(); cache = [:]; misses = [:]; lock.unlock() }
+
+    /// The desktop id in one session file's JSON when it is the file of `cliSession` (pure).
+    static func localID(json: Data, cliSession: String) -> String? {
+        guard json.count <= 512 * 1024, let o = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+              (o["cliSessionId"] as? String)?.lowercased() == cliSession.lowercased(),
+              let id = o["sessionId"] as? String, id.range(of: #"^local_[A-Za-z0-9-]{1,64}$"#, options: .regularExpression) != nil else { return nil }
+        return id
+    }
+
+    /// Looks through at most 400 files `local_*.json`, two folders deep, the newest first.
+    static func find(_ cliSession: String, in root: URL) -> String? {
+        let fm = FileManager.default
+        var files: [(URL, Date)] = []
+        func scan(_ dir: URL, depth: Int) {
+            guard depth <= 2, files.count < 400,
+                  let list = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .isSymbolicLinkKey]) else { return }
+            for u in list {
+                let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .isSymbolicLinkKey])
+                if v?.isSymbolicLink == true { continue }
+                if v?.isDirectory == true { scan(u, depth: depth + 1) }
+                else if u.lastPathComponent.hasPrefix("local_"), u.pathExtension == "json" { files.append((u, v?.contentModificationDate ?? .distantPast)) }
+                if files.count >= 400 { return }
+            }
+        }
+        scan(root, depth: 0)
+        for (u, _) in files.sorted(by: { $0.1 > $1.1 }) {
+            guard let d = try? Data(contentsOf: u, options: .mappedIfSafe), let id = localID(json: d, cliSession: cliSession) else { continue }
+            return id
+        }
+        return nil
+    }
 }

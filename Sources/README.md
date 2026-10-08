@@ -23,7 +23,9 @@ Where things are:
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
   IslandStatus (batteries; usage in Usage.swift), IslandCalendar (logic in CalendarGrid.swift, --calendar-test in CalendarTests.swift), IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
-  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). Cloud links from the shelf: ShareProviders.swift (the
+  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The keyboard-only clipboard: ClipKeyboard.swift (⌃⌘V,
+  the floating panel, search modes and order, the extra keys; docs/clipboard-keyboard.en.md), KeyboardTests.swift
+  (--keyboard-test, also the exact session links of AgentFocus/AIEnvironments). Strings: Localization/<lang>.lproj/Keyboard.strings. Cloud links from the shelf: ShareProviders.swift (the
   provider protocol, rules, HTTP, Keychain, history, engine), ShareProviders{S3,WebDAV,SFTP}.swift, SigV4.swift, ShareUploader.swift
   (the user's command, webhooks), CloudShare.swift (the hook, confirmations, toast), CloudShareSettings.swift (Settings → Sharing),
   ShelfActionsIO.swift (action keys, chains, import/export), CloudShareTests.swift + CloudShareFakes.swift (--cloud-test).

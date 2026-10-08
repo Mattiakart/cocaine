@@ -1,7 +1,9 @@
 // Going back to a session: from an agent row or an alert, bring forward the exact terminal tab (Terminal, iTerm2, tmux,
-// WezTerm, Ghostty, kitty, cmux, Zellij) or IDE window (VS Code and its forks) it runs in, or what a jump rule of the user's
-// opens; else its app; else its folder in Finder. Every outcome comes back with what was and wasn't possible, for the app
-// to say it (never a silent failure). Warp, Alacritty, Hyper, Tabby: their app only (no safe way to pick a tab from outside).
+// WezTerm, Ghostty, kitty, cmux, Zellij) or IDE window (VS Code and its forks, Zed, JetBrains IDEs: the window with the
+// session's folder) or desktop-app session (the ChatGPT app's Codex thread, Claude Desktop's Code session by its link) it runs
+// in, or what a jump rule of the user's opens; else its app; else its folder in Finder. Every outcome comes back with what was
+// and wasn't possible, for the app to say it (never a silent failure). Warp, Alacritty, Hyper, Tabby: their app only (no
+// documented way to pick a tab from outside; Warp's own links only open new tabs). Details: docs/ai-integrations.en.md.
 
 import AppKit
 
@@ -17,7 +19,15 @@ enum AgentFocus {
                                             "com.google.antigravity", "dev.kiro.desktop"]
     /// $TERM_PROGRAM → bundle id, for when the hook didn't get __CFBundleIdentifier (tmux, ssh, …).
     static let termPrograms = ["Apple_Terminal": terminal, "iTerm.app": iterm, "WezTerm": wezterm, "ghostty": ghostty,
-                               "WarpTerminal": "dev.warp.Warp-Stable", "Hyper": "co.zeit.hyper", "Tabby": "org.tabby", "kitty": "net.kovidgoyal.kitty"]
+                               "WarpTerminal": "dev.warp.Warp-Stable", "Hyper": "co.zeit.hyper", "Tabby": "org.tabby", "kitty": "net.kovidgoyal.kitty",
+                               "zed": zed]
+    static let zed = "dev.zed.Zed"
+    /// Editors that bring forward the window holding a folder when asked to open it again (Zed, JetBrains IDEs reuse an open
+    /// project's window); the VS Code family does the same.
+    static let folderWindowApps: Set<String> = [zed, "dev.zed.Zed-Preview", "com.google.android.studio"]
+    static func opensFolderWindow(_ app: String) -> Bool {
+        vscodeFamily.contains(app) || folderWindowApps.contains(app) || app.hasPrefix("com.jetbrains.")
+    }
 
     static func appID(_ o: AgentOrigin) -> String? { o.app ?? o.term.flatMap { termPrograms[$0] } ?? (o.kittyWindow != nil ? kitty : nil) }
 
@@ -67,6 +77,7 @@ enum AgentFocus {
         case terminalTab(tty: String)                     // Terminal: the tab on that tty
         case itermSession(tty: String?, uuid: String?)    // iTerm2: the session on that tty / with that id
         case weztermPane(String)
+        case weztermTTY(String)                           // WezTerm: the pane on that tty (`wezterm cli list`)
         case ghosttyTerminal(id: String?, cwd: String?)   // Ghostty ≥ 1.3: the terminal with that id (or that folder)
         case kittyWindow(listen: String, window: String)  // kitty's remote control: `kitten @ focus-window`
         case cmuxSurface(socket: String, workspace: String?, surface: String)
@@ -89,6 +100,7 @@ enum AgentFocus {
         let app = appID(o)
         if let app, let url = rules.first(where: { $0.app == app }).flatMap({ $0.url(for: o) }) { steps.append(.custom(url: url, app: app)) }
         if let url = o.url, url.hasPrefix("codex://") { steps.append(.deepLink(url: url, app: AIEnvironments.codexApp)) }
+        if let url = o.url, url.hasPrefix("claude://") { steps.append(.deepLink(url: url, app: AIEnvironments.claudeDesktop)) }   // Claude Desktop's Code session
         if let pane = o.tmuxPane { steps.append(.tmux(socket: o.tmuxSocket, pane: pane)) }
         if let s = o.zellijSession, let p = o.zellijPane, o.tmuxPane == nil { steps.append(.zellijPane(session: s, pane: p)) }
         if o.tmuxPane == nil && o.zellijPane == nil {                // inside a multiplexer the tty is its, not the terminal's
@@ -97,9 +109,10 @@ enum AgentFocus {
             if app == terminal, let t = o.tty { steps.append(.terminalTab(tty: t)) }
             if app == iterm, o.tty != nil || o.termSession != nil { steps.append(.itermSession(tty: o.tty, uuid: o.termSession)) }
             if app == wezterm, let p = o.weztermPane { steps.append(.weztermPane(p)) }
+            else if app == wezterm, let t = o.tty { steps.append(.weztermTTY(t)) }      // no $WEZTERM_PANE: its pane by tty
             if let w = o.kittyWindow, let l = o.kittyListen { steps.append(.kittyWindow(listen: l, window: w)) }
         }
-        if let app, vscodeFamily.contains(app), let cwd = o.cwd { steps.append(.openFolder(app: app, path: cwd)) }
+        if let app, opensFolderWindow(app), let cwd = o.cwd { steps.append(.openFolder(app: app, path: cwd)) }
         if let app { steps.append(.activate(app: app)) }
         if let cwd = o.cwd { steps.append(.revealFolder(cwd)) }
         return steps
@@ -148,6 +161,31 @@ enum AgentFocus {
         end tell
         return "missing"
         """
+    }
+
+    /// WezTerm's pane on `tty` in `wezterm cli list --format json` (each pane has pane_id and tty_name), or nil.
+    static func weztermPane(tty: String, listJSON: Data) -> String? {
+        guard tty.range(of: #"^ttys[0-9]{1,4}$"#, options: .regularExpression) != nil,
+              let list = (try? JSONSerialization.jsonObject(with: listJSON)) as? [[String: Any]] else { return nil }
+        for p in list where (p["tty_name"] as? String) == "/dev/" + tty {
+            if let id = p["pane_id"] as? Int { return String(id) }
+        }
+        return nil
+    }
+
+    /// WezTerm's command line inside the running app, when it can be used.
+    private static func weztermCLI() -> String? {
+        guard let url = running(wezterm)?.bundleURL else { return nil }
+        let bin = url.appendingPathComponent("Contents/MacOS/wezterm").path
+        return FileManager.default.isExecutableFile(atPath: bin) ? bin : nil
+    }
+
+    /// Selects the WezTerm pane on `tty`: true when it was found and selected (WezTerm then comes forward).
+    private static func weztermSelect(tty: String) -> Bool {
+        guard let bin = weztermCLI() else { return false }
+        let list = runTool(bin, ["cli", "list", "--format", "json"])
+        guard list.status == 0, let pane = weztermPane(tty: tty, listJSON: Data(list.out.utf8)) else { return false }
+        return runTool(bin, ["cli", "activate-pane", "--pane-id", pane]).status == 0 && activate(wezterm)
     }
 
     enum Level: Int, Comparable {
@@ -302,6 +340,7 @@ enum AgentFocus {
                     if app == iterm, let s = itermScript(tty: tty, uuid: nil), running(app) != nil {
                         let x = runScript(s, app: app); if x.ok { return Result(level: .exact, appName: name, note: .none) }; if x.denied { note = .automationDenied }
                     }
+                    if app == wezterm, weztermSelect(tty: tty) { return exact() }      // the WezTerm pane running that tmux client
                 }
             case .terminalTab(let tty):
                 guard running(terminal) != nil else { note = .appNotRunning; continue }
@@ -321,6 +360,10 @@ enum AgentFocus {
                 if FileManager.default.isExecutableFile(atPath: bin), runTool(bin, ["cli", "activate-pane", "--pane-id", pane]).status == 0, activate(wezterm) {
                     return Result(level: .exact, appName: name, note: .none)
                 }
+                note = .tabNotFound
+            case .weztermTTY(let tty):
+                guard running(wezterm) != nil else { note = .appNotRunning; continue }
+                if weztermSelect(tty: tty) { return exact() }
                 note = .tabNotFound
             case .ghosttyTerminal(let id, let cwd):
                 guard running(ghostty) != nil else { note = .appNotRunning; continue }

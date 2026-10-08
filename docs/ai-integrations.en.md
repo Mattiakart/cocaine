@@ -4,7 +4,7 @@ Cocaine learns about AI sessions in five ways, and only these:
 
 1. **Hooks** — the tool's own documented hook (or plugin) system. Cocaine writes its hooks into the tool's config when you turn the tool on in *AI alerts → Detected environments* and removes only its own when you turn it off. This is the only way to know a session is *working*, *finished* or *waiting for you*.
 2. **Claude Code's session files** — `~/.claude/sessions/<pid>.json`, which Claude Code keeps for each running session (seen on 2.1.292). The file holds the session id, folder, process and `busy` / `idle`. It is **undocumented**: Cocaine reads only those fields, never the conversation or the `name` field, which is taken from it.
-3. **CLI processes** — a known CLI (`codex`, `opencode`, `goose`, `kiro-cli`, `cursor-agent`) started from a shell on a terminal is an open session. When the process exits, the session has ended. Cocaine reads the process's name, path, parent, terminal and folder, never its arguments, which can hold a prompt.
+3. **CLI processes** — a known CLI (`codex`, `opencode`, `goose`, `kiro-cli`, `cursor-agent`, `kimi`, `droid`, `qodercli`, `codebuddy`) started from a shell on a terminal is an open session. When the process exits, the session has ended. Cocaine reads the process's name, path, parent, terminal and folder, never its arguments, which can hold a prompt.
 4. **Apps** — an app starting or quitting (NSWorkspace). When an app quits, the sessions that ran inside it end too. This fixes ChatGPT-app threads that stayed "working" after the app was quit.
 5. **Web chats** — opt-in, *Web chats* switch. The script asks each open browser (Safari, Chrome, Edge, Brave, Vivaldi, Chromium, Arc) only for the **addresses** of chat-site tabs. It filters inside the browser, so no other tab's address leaves the browser, and it never reads titles or page content. It needs *Automation* permission for each browser, asked only when you turn the switch on. Without permission, that browser is skipped.
 
@@ -48,6 +48,10 @@ The table is generated from the code: `Cocaine --ai-environments matrix`. A test
 | Qwen Code | cli | Not possible | Supported | Supported | Unverified | Not possible | Supported | no |
 | Perplexity | desktop | Partial | Not possible | Not possible | Not possible | Partial | Partial | no |
 | Microsoft Copilot | desktop | Partial | Not possible | Not possible | Not possible | Partial | Partial | no |
+| Kimi CLI | cli | Unverified | Not possible | Not possible | Not possible | Unverified | Partial | no |
+| Factory Droid | cli | Unverified | Not possible | Not possible | Not possible | Unverified | Partial | no |
+| Qoder CLI | cli | Unverified | Not possible | Not possible | Not possible | Unverified | Partial | no |
+| CodeBuddy Code | cli | Unverified | Not possible | Not possible | Not possible | Unverified | Partial | no |
 | Claude (web) | web | Partial | Not possible | Not possible | Not possible | Partial | Supported | no |
 | ChatGPT (web) | web | Partial | Not possible | Not possible | Not possible | Partial | Supported | no |
 | Gemini (web) | web | Partial | Not possible | Not possible | Not possible | Partial | Supported | no |
@@ -73,7 +77,7 @@ The table is generated from the code: `Cocaine --ai-environments matrix`. A test
 - **Claude Desktop · Code tab**
   - "Hooks and skills defined in settings apply to both" the CLI and Desktop ([code.claude.com/docs/en/desktop](https://code.claude.com/docs/en/desktop)). The same hooks therefore report open, working and finished; the app is recognised by its bundle id `com.anthropic.claudefordesktop`.
   - Needs-you and ended: whether Desktop fires `Notification` and `SessionEnd` was not verified.
-  - Going back: there is no documented `claude://` link to a session (the app registers `claude://`; `NSUserActivityTypes` includes `com.anthropic.claude.code.session`, for Handoff only). Cocaine brings Claude forward and says it can't pick the conversation.
+  - Going back: Claude's own link `claude://code/continue?session=local_<id>` (the link its Dock menu uses for a Code session; its documented links, [support.claude.com](https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link), only start new sessions). The `local_` id is the desktop's, not the hook's: Cocaine finds it in `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_<id>.json`, reading only `sessionId` and `cliSessionId` (at most 400 files, two folders deep). Without that file (or with the app's desktop links turned off) Claude comes forward and Cocaine says it couldn't pick the session. **Not verified live**: no Code session ran in Claude Desktop on the Mac this was built on; the link's handler was read in the installed app.
 - **Claude Cowork**
   - Cowork runs Claude Code in a sandboxed VM, which does not read the host's `~/.claude/settings.json`, so hooks don't fire. This is reported in [issue 40495](https://claudeissues.com/issue/40495-bug-cowork-sessions-ignore-user-hooks-and-managed-settings-sandbox-platform-mism).
   - Cocaine only knows whether Claude is open, and that its sessions end when it quits.
@@ -146,6 +150,33 @@ The table is generated from the code: `Cocaine --ai-environments matrix`. A test
 - **Goose, Amp**
   - Goose: no hooks found. Its CLI process is seen when it runs in a terminal.
   - Amp: no documented hook or local state was found.
+
+- **Kimi CLI, Factory Droid, Qoder CLI, CodeBuddy Code** (followed by [Open Island](https://github.com/Octane0411/open-vibe-island))
+  - Seen by their process only (`kimi`, `droid`, `qodercli`, `codebuddy` started on a terminal): open and ended, and going back to that terminal tab. Cocaine doesn't write their hooks (not checked against their docs here), so working, finished and needs-you aren't shown. *Unverified*: none of them is installed on this Mac.
+
+#### Going back to the exact session: terminals, editors, desktop apps
+
+Clicking a session (or its alert) tries these, best first, and says how far it got: the exact pane or tab, the window, the app, or the folder in Finder.
+
+| Where the session runs | How Cocaine goes back | Needs | Tried here |
+|---|---|---|---|
+| Terminal | the tab on the session's tty (AppleScript) | Automation → Terminal | yes (Claude Code, see the matrix) |
+| iTerm2 | the session by tty or `$ITERM_SESSION_ID` (AppleScript) | Automation → iTerm2 | no |
+| Ghostty ≥ 1.3 | the terminal by its id, else by folder (AppleScript) | Automation → Ghostty | no |
+| kitty | `kitten @ focus-window --match id:$KITTY_WINDOW_ID` | `allow_remote_control` and `listen_on` | no |
+| WezTerm | `wezterm cli activate-pane` by `$WEZTERM_PANE`, else the pane on the tty (`wezterm cli list`) | nothing | no |
+| tmux | `select-window`/`select-pane`, then the terminal tab of its client (Terminal, iTerm2, WezTerm) | nothing | no |
+| Zellij | `zellij --session S action focus-pane-id P`, then the terminal app | nothing | no |
+| cmux | its socket: `workspace.select`, `surface.focus` | nothing | no |
+| VS Code, Cursor, Windsurf, VSCodium, Trae, Kiro, Antigravity | the window with the session's folder (open the folder with that app) | nothing | no |
+| Zed, JetBrains IDEs, Android Studio | the window with the session's folder (they reuse the project's window) | nothing | no (not installed) |
+| ChatGPT app (Codex) | `codex://threads/<id>` | nothing | link resolved only |
+| Claude Desktop (Code) | `claude://code/continue?session=local_<id>` (above) | nothing | link read in the app only |
+| Web chats | the browser tab with that address | Automation → the browser | no |
+| Warp, Alacritty, Hyper, Tabby | the app only: none has a documented way to select an existing tab (Warp's `warp://action/new_tab` opens a new one; Open Island's Warp jump reads Warp's private database and clicks its menus through Accessibility, which Cocaine doesn't require) | — | — |
+| Anything else | your own jump rule (`jump-rules.json`, see [ai-sessions](ai-sessions.en.md)), else the app, else the folder | — | — |
+
+**Compared with Open Island** ([Octane0411/open-vibe-island](https://github.com/Octane0411/open-vibe-island), a notch app for coding agents): its jump targets (Terminal, iTerm2, Ghostty, kitty, WezTerm, tmux, Zellij, cmux, the VS Code family, Zed, JetBrains, the Codex app by `codex://threads`) are all covered here, plus Claude Desktop's Code sessions and web chats. Not taken over: Warp's precise tab (private database plus Accessibility clicks), Kaku and Conductor (not available to check here), and its agents' own hooks for Kimi, Grok, Pi, Qoder, Factory and CodeBuddy (only their processes are followed).
 
 #### What is not done, on purpose
 

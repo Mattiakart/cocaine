@@ -215,7 +215,7 @@ enum ClipKeyCommand: Equatable {
 // MARK: - Placing the floating clipboard (pure)
 
 enum ClipPopupGeometry {
-    static let size = CGSize(width: 460, height: 480)
+    static let size = CGSize(width: 440, height: 480)       // one column, like a menu (its box says under 400: ClipPopupView)
     static let margin: CGFloat = 8
 
     /// Where the panel goes: `screens` are the screens' visible frames (AppKit coordinates), the first the main one.
@@ -317,7 +317,7 @@ final class ClipPopup: ObservableObject {
         let p = panel ?? makePanel()
         panel = p
         let screens = NSScreen.screens.map(\.visibleFrame)
-        let last = (UserDefaults.standard.array(forKey: Self.lastKey) as? [Double]).flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+        let last = (AppDefaults.store.array(forKey: Self.lastKey) as? [Double]).flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
         p.setFrame(ClipPopupGeometry.frame(place, pointer: NSEvent.mouseLocation, screens: screens, last: last), display: false)
         isOpen = true
         ClipPageState.shared.keyboardHints = true
@@ -337,7 +337,7 @@ final class ClipPopup: ObservableObject {
     func close(restore: Bool) {
         guard isOpen, let p = panel else { return }
         isOpen = false
-        UserDefaults.standard.set([Double(p.frame.minX), Double(p.frame.minY)], forKey: Self.lastKey)
+        AppDefaults.store.set([Double(p.frame.minX), Double(p.frame.minY)], forKey: Self.lastKey)
         DialogCenter.shared.surfaceClosed(.popup)
         monitors.forEach(NSEvent.removeMonitor); monitors.removeAll()
         observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
@@ -432,7 +432,7 @@ private struct ClipPopupView: View {
         let s = ClipPopupGeometry.size, pad = Space.l
         VStack(alignment: .leading, spacing: Space.s) {
             header
-            ClipboardPopupContent(box: ModuleBox(size: .l, width: s.width - 2 * pad, height: s.height - 2 * pad - 24), keyable: { ClipPopup.shared.keyable($0) })
+            ClipboardPopupContent(box: ModuleBox(size: .l, width: min(s.width - 2 * pad, 399), height: s.height - 2 * pad - 24), keyable: { ClipPopup.shared.keyable($0) })
         }
         .padding(pad)
         .frame(width: s.width, height: s.height, alignment: .topLeading)
@@ -464,4 +464,44 @@ private struct ClipPopupView: View {
         }
         .frame(height: 24)
     }
+}
+
+// MARK: - Render (checking translations fit; sample items only, never the user's history)
+
+/// `--render-clip-popup <out.png> [--lang de] [--noaccess] [--query text] [--dialog trash]`, run from main.swift: the floating
+/// clipboard as opened from the keyboard, drawn offscreen with the clipboard fixtures (Sources/ClipboardFixtures.swift).
+func cliRenderClipPopup() -> Never {
+    _ = NSApplication.shared
+    precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
+    Motion.disabled = true
+    let args = CommandLine.arguments
+    let pm = PanelModel()
+    pm.persistLanguage = false
+    pm.language = args.firstIndex(of: "--lang").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
+    ClipboardFixtures.apply(["--clipboard-fixture", args.contains("--noaccess") ? "noaccess" : "list"], nil)
+    let h = ClipboardHistory.shared, ui = ClipPageState.shared
+    h.hovered = h.items.dropFirst().first?.id
+    ui.keyboardHints = true
+    if let i = args.firstIndex(of: "--query"), i + 1 < args.count { h.query = args[i + 1] }
+    if args.contains("--dialog") {                                   // Clear's question, inside the panel
+        DialogCenter.shared.show = { _ in .popup }
+        var spec = IslandChoices.spec(L("Clear"), icon: "trash", IslandChoices.clipboardTrash)
+        spec.surface = .popup
+        DialogCenter.shared.present(spec) { _ in }
+    }
+    let s = ClipPopupGeometry.size
+    let view = ZStack {
+        LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        ClipPopupView()
+    }.frame(width: s.width + 40, height: s.height + 40)
+    let host = NSHostingView(rootView: view)
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+    host.layoutSubtreeIfNeeded()
+    let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+    host.cacheDisplay(in: host.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[2]))
+    exit(0)
 }

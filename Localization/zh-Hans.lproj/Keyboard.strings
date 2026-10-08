@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "指针";
+"Centre" = "居中";
+"Last place" = "上次位置";
+"In the island" = "在岛中";
+"Near the pointer" = "指针旁边";
+"In the middle of the screen" = "屏幕中央";
+"Where it was last left" = "上次放置的位置";
+"Words" = "词语";
+"Fuzzy" = "模糊";
+"Regex" = "正则";
+"Mixed" = "混合";
+"Every word, anywhere" = "每个词,任意位置";
+"Letters in order, gaps allowed" = "字母按顺序,可有间隔";
+"Words, then regular expression, then fuzzy" = "先词语,再正则表达式,再模糊";
+"Newest" = "最新";
+"Most pasted" = "最常粘贴";
+"A–Z" = "名称";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "剪贴板,%d 项。输入以搜索,方向键选择,Return 粘贴,Esc 关闭。";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ 选择 · ↩ 粘贴 · ⇧↩ 纯文本 · ⌥↩ 拷贝 · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ 粘贴 · ⇧↩ 纯文本 · esc";
+"Close (Esc)" = "关闭 (Esc)";
+"Added to favorites" = "已添加到收藏";
+"Removed from favorites" = "已从收藏中移除";
+"History cleared" = "历史记录已清除";
+"Paste with formatting" = "带格式粘贴";
+"Command %d pastes it" = "Command %d 粘贴它";
+"Open the clipboard" = "打开剪贴板";
+"From any app, with the keyboard in it: type to search, Return pastes" = "在任何应用中,键盘直接可用:输入以搜索,Return 粘贴";
+"Opens" = "打开位置";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "岛的剪贴板页面,或 Cocaine 自己的浮动面板(可拖动;“上次位置”会在那里打开)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "混合:先按词语;没有结果时按正则表达式;再按字母顺序";
+"Order" = "排序";
+"Show ⌘1…9 on the rows" = "在行上显示 ⌘1…9";
+"While the clipboard was opened with the keyboard" = "用键盘打开剪贴板时";

@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "Pointer";
+"Centre" = "Centre";
+"Last place" = "Last place";
+"In the island" = "In the island";
+"Near the pointer" = "Near the pointer";
+"In the middle of the screen" = "In the middle of the screen";
+"Where it was last left" = "Where it was last left";
+"Words" = "Words";
+"Fuzzy" = "Fuzzy";
+"Regex" = "Regex";
+"Mixed" = "Mixed";
+"Every word, anywhere" = "Every word, anywhere";
+"Letters in order, gaps allowed" = "Letters in order, gaps allowed";
+"Words, then regular expression, then fuzzy" = "Words, then regular expression, then fuzzy";
+"Newest" = "Newest";
+"Most pasted" = "Most pasted";
+"A–Z" = "A–Z";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes.";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ paste · ⇧↩ plain · esc";
+"Close (Esc)" = "Close (Esc)";
+"Added to favorites" = "Added to favorites";
+"Removed from favorites" = "Removed from favorites";
+"History cleared" = "History cleared";
+"Paste with formatting" = "Paste with formatting";
+"Command %d pastes it" = "Command %d pastes it";
+"Open the clipboard" = "Open the clipboard";
+"From any app, with the keyboard in it: type to search, Return pastes" = "From any app, with the keyboard in it: type to search, Return pastes";
+"Opens" = "Opens";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "Mixed: whole words first; if nothing matches, a regular expression; then letters in order";
+"Order" = "Order";
+"Show ⌘1…9 on the rows" = "Show ⌘1…9 on the rows";
+"While the clipboard was opened with the keyboard" = "While the clipboard was opened with the keyboard";

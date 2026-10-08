@@ -19,6 +19,7 @@ USE
   panel. (With the island off, or while VoiceOver runs, the baggie is in the menu bar: click it to open the panel.)
 - Keyboard: Control-Option-Command-C turns Cocaine on or off, -O opens the panel, -P pauses alerts, -I opens the island with the
   keyboard in it. Change them in General > Keyboard shortcuts.
+- Control-Command-V opens the clipboard from any app: type to search, Return pastes into the app you were in (Island > Clipboard).
 - In the panel, the switch at the top turns Cocaine on or off.
 - Full baggie = Cocaine is on: your Mac doesn't sleep, not even with the lid closed.
 - Empty baggie = Cocaine is off: your Mac behaves normally.
