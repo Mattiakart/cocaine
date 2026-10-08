@@ -10,7 +10,12 @@ struct ModuleBox: Equatable {
     var size: ModuleSize
     var width: CGFloat
     var height: CGFloat
-    static func of(_ m: ResolvedScreen.Module) -> ModuleBox { ModuleBox(size: m.size, width: m.frame.width, height: m.frame.height) }
+    /// Its box in the standard 640 × 214 island (Sources/IslandScale.swift): what it grows from in a bigger one. Zero: unknown.
+    var standard: CGSize = .zero
+    static func of(_ m: ResolvedScreen.Module, standard: ResolvedScreen? = nil) -> ModuleBox {
+        ModuleBox(size: m.size, width: m.frame.width, height: m.frame.height,
+                  standard: standard?.modules.first { $0.kind == m.kind }?.frame.size ?? .zero)
+    }
 }
 
 extension IslandView {
@@ -20,9 +25,9 @@ extension IslandView {
         case "cocaine": cocaineModule(b)
         case "agents": agentsModule(b)
         case "music": musicTab
-        case "media": mediaTab
+        case "media": mediaModule(b)
         case "calendar": calendarTab
-        case "focus": focusTab
+        case "focus": focusModule(b)
         case "downloads": downloadsModule(b)
         case "screenshots": screenshotsModule(b)
         case "shelf": shelfModule(b)
@@ -31,8 +36,8 @@ extension IslandView {
         case "usage": usageModule(b)
         case "quotas": quotasModule(b)
         case "aicontext": aiContextModule(b)         // Sources/AIContextViews.swift
-        case "mirror": mirrorTab
-        case "monitors": displayTab
+        case "mirror": mirrorModule(b)
+        case "monitors": displayModule(b)
         case "reminders": remindersModule(b)         // Sources/IslandReminders.swift
         case "controls": controlsModule(b)           // Sources/NotchControls.swift
         case "keyboard": keyboardModule(b)              // Sources/KeyboardBacklight.swift
@@ -47,30 +52,32 @@ extension IslandView {
         let box = ScreenLayout.contentSize(stripHeight: g.height)
         let config = model.layout.config(id) ?? ScreenLayout.standard.config("home")!
         let r = ScreenLayout.resolve(config, in: box)
+        // The same screen in the standard island: each module's box there is what it grows from (Sources/IslandScale.swift).
+        let std = ScreenLayout.resolve(config, in: IslandScale.standardBox(stripHeight: g.height))
         if r.modules.isEmpty {
             emptyScreen
         } else if r.columns == 1 && r.modules.count == 1 && r.modules[0].size == .l {
-            module(r.modules[0].kind, .of(r.modules[0])).modifier(ModuleStagger(order: 0))
+            module(r.modules[0].kind, .of(r.modules[0], standard: std)).modifier(ModuleStagger(order: 0))
         } else if r.columns == 2 {
             HStack(alignment: .top, spacing: ScreenLayout.gutter) {
-                screenColumn(r, 0).frame(width: r.widths[0], alignment: .topLeading)
-                screenColumn(r, 1).frame(maxWidth: .infinity, alignment: .topLeading)
+                screenColumn(r, std, 0).frame(width: r.widths[0], alignment: .topLeading)
+                screenColumn(r, std, 1).frame(maxWidth: .infinity, alignment: .topLeading)
             }
         } else {
-            screenColumn(r, 0).frame(maxWidth: .infinity, alignment: .topLeading)
+            screenColumn(r, std, 0).frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
-    @ViewBuilder private func screenColumn(_ r: ResolvedScreen, _ c: Int) -> some View {
+    @ViewBuilder private func screenColumn(_ r: ResolvedScreen, _ std: ResolvedScreen, _ c: Int) -> some View {
         let mods = r.modules(in: c)
         // The order they arrive in when the island opens: down the left column, then down the right one.
         let first = c == 0 ? 0 : r.modules(in: 0).count
         if mods.count == 1 && mods[0].size == .l {
-            module(mods[0].kind, .of(mods[0])).modifier(ModuleStagger(order: first))
+            module(mods[0].kind, .of(mods[0], standard: std)).modifier(ModuleStagger(order: first))
         } else {
             VStack(alignment: .leading, spacing: ScreenLayout.gap) {
                 ForEach(Array(mods.enumerated()), id: \.element.kind) { i, m in
-                    module(m.kind, .of(m)).frame(height: m.frame.height, alignment: .top).modifier(ModuleStagger(order: first + i))
+                    module(m.kind, .of(m, standard: std)).frame(height: m.frame.height, alignment: .top).modifier(ModuleStagger(order: first + i))
                 }
                 Spacer(minLength: 0)
             }

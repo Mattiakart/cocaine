@@ -374,6 +374,8 @@ struct ScreenLayout: Codable, Equatable {
         if cols.count == 1 {
             widths = [box.width]
         } else {
+            // The narrow column grows with a bigger island as the wide one does (250 pt in the standard one).
+            let narrowColumn = IslandScale.narrowColumn(boxWidth: box.width, standardWidth: IslandScale.standardBox(stripHeight: 0).width)
             let wide = box.width - narrowColumn - gutter
             func needsWide(_ c: Int) -> Bool { cols[c].contains { $0.spec.width == .wide } }
             func biggest(_ c: Int) -> Int { cols[c].map { $0.spec.fit($0.p.size).units }.max() ?? 0 }

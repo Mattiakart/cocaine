@@ -74,7 +74,7 @@ struct NotchControlsConfig: Codable, Equatable {
 extension IslandView {
     /// The controls module: the picked controls, one row; at M a label under each.
     func controlsModule(_ b: ModuleBox) -> some View {
-        NotchControlsRow(model: model, m: m, focus: focus, music: model.music, prefs: prefs, labels: b.size != .s)
+        NotchControlsRow(model: model, m: m, focus: focus, music: model.music, prefs: prefs, labels: b.size != .s, scale: b.factor)
     }
 }
 
@@ -85,7 +85,9 @@ struct NotchControlsRow: View {
     @ObservedObject var music: MusicWatch
     @ObservedObject var prefs: NotchPrefs
     var labels = true
-    static let size: CGFloat = 30                  // the one size of a round control
+    /// A bigger island: the round controls grow with the module (Sources/IslandScale.swift).
+    var scale: CGFloat = 1
+    static let size: CGFloat = 30                  // the one size of a round control (standard island)
 
     var body: some View {
         let ids = prefs.controls.shown
@@ -126,11 +128,11 @@ struct NotchControlsRow: View {
             VStack(spacing: Space.xs) {
                 ZStack {
                     Circle().fill(st.on ? Island.accent : Color.white.opacity(0.12))
-                    Image(systemName: st.icon).font(.system(size: 12, weight: .semibold))
+                    Image(systemName: st.icon).font(.system(size: IslandScale.grow(12, scale), weight: .semibold))
                         .foregroundStyle(st.on ? CTL.onAccentInk : Color.white)
                         .contentTransition(Motion.reduce || Motion.disabled ? .opacity : .symbolEffect(.replace))
                 }
-                .frame(width: Self.size, height: Self.size)
+                .frame(width: IslandScale.grow(Self.size, scale), height: IslandScale.grow(Self.size, scale))
                 .animation(Motion.animation(.stateSwap), value: st.on)
                 .animation(Motion.animation(.stateSwap), value: st.icon)
                 if labels {

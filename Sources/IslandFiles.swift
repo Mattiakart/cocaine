@@ -190,7 +190,7 @@ extension IslandView {
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Downloads")).font(UI.section).foregroundStyle(UI.secondary)
                 if files.downloads.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
-                FadingScroll(cap: b.size == .l ? 112 : max(20, b.height - 24)) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
+                FadingScroll(cap: b.size == .l ? 112 + b.extraHeight : max(20, b.height - 24)) { VStack(alignment: .leading, spacing: Space.m) { ForEach(files.downloads) { it in
                     Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: {
                         HStack(spacing: Space.m) {
                             Image(nsImage: IconCache.icon(it.url.path)).resizable().frame(width: 20, height: 20)
@@ -217,7 +217,7 @@ extension IslandView {
                 if files.shots.isEmpty { Text(L("Nothing here yet")).font(UI.value).foregroundStyle(UI.hint) }
                 ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: Space.m) {
                     ForEach(files.shots) { it in
-                        Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: { FileThumb(url: it.url, side: 62) }
+                        Button { NSWorkspace.shared.activateFileViewerSelecting([it.url]) } label: { FileThumb(url: it.url, side: IslandScale.grow(62, b.factor)) }
                             .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScale))
                             .onDrag { NSItemProvider(object: it.url as NSURL) }
                             .help(it.name)

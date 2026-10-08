@@ -229,8 +229,10 @@ final class DDCDisplays: ObservableObject {
 extension IslandView {
     // MARK: external monitors
 
-    var displayTab: some View {
-        VStack(alignment: .leading, spacing: Space.l) {
+    /// The name column and the three sliders share the module's extra width (130 and 96 pt in the standard island).
+    func displayModule(_ b: ModuleBox) -> some View {
+        let nameW = IslandScale.grow(130, b.factor), sliderW = (96 + max(0, b.extraWidth - (nameW - 130)) / 3).rounded(.down)
+        return VStack(alignment: .leading, spacing: Space.l) {
             KeyboardBacklightRow()                                 // the built-in keyboard's light, when it has one (Sources/KeyboardBacklight.swift)
             if model.ddc.monitors.isEmpty {
                 Text(L("No external monitor found, or it doesn't support DDC/CI")).font(UI.value).foregroundStyle(UI.hint)
@@ -243,7 +245,7 @@ extension IslandView {
                             Text(L("Not answering over DDC/CI")).font(UI.detail).foregroundStyle(UI.hint).lineLimit(1)
                         }
                     }
-                    .frame(width: 130, alignment: .leading)
+                    .frame(width: nameW, alignment: .leading)
                     ForEach([("sun.max.fill", UInt8(0x10), "b"), ("circle.lefthalf.filled", UInt8(0x12), "c"), ("speaker.wave.2.fill", UInt8(0x62), "v")], id: \.1) { k in
                         HStack(spacing: Space.s) {
                             Image(systemName: k.0).font(.system(size: 11)).foregroundStyle(UI.secondary).frame(width: 14)   // a glyph
@@ -251,7 +253,7 @@ extension IslandView {
                             let v = known ?? 50
                             CocaineSlider(value: v, range: 0...100, step: 5, name: k.2 == "b" ? L("Brightness") : k.2 == "c" ? L("Contrast") : L("Volume"),
                                           valueText: known.map { "\(Int($0))%" } ?? "–") { model.ddc.set(mon, code: k.1, value: Int($0)) }
-                                .frame(width: 96)
+                                .frame(width: sliderW)
                         }
                     }
                     IslandValueButton(title: L("Input"), value: L("Input")) {

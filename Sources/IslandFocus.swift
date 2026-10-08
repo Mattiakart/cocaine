@@ -133,15 +133,17 @@ final class FocusTimer: ObservableObject {
 extension IslandView {
     // MARK: focus
 
-    var focusTab: some View {
-        HStack(alignment: .top, spacing: Space.gutter) {
+    /// Its left column (250 pt in the standard island) and the Focus/Break switch grow with the module's box.
+    func focusModule(_ b: ModuleBox) -> some View {
+        let f = b.factor
+        return HStack(alignment: .top, spacing: Space.gutter) {
             VStack(alignment: .leading, spacing: Space.l) {
                 Segments(selection: Binding(get: { focus.isBreak }, set: { focus.setBreak($0) }), values: [false, true], name: L("Focus")) {
                     $0 ? L("Break") : L("Focus")
                 }
-                .frame(width: 180)
+                .frame(width: IslandScale.grow(180, f))
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    Text(focus.text).font(UI.hero)
+                    Text(focus.text).font(IslandScale.hero(f))
                         .accessibilityLabel(focus.spoken)
                 }
                 HStack(spacing: Space.m) {
@@ -154,7 +156,7 @@ extension IslandView {
                     }
                 }
             }
-            .frame(width: 250, alignment: .leading)
+            .frame(width: IslandScale.grow(250, f), alignment: .leading)
             VStack(alignment: .leading, spacing: Space.m) {
                 Text(L("Minutes")).font(UI.section).foregroundStyle(UI.secondary)
                 MinuteRuler(minutes: Binding(get: { focus.minutes }, set: { if !focus.active { focus.minutes = $0 } }))
