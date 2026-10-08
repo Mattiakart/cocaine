@@ -134,26 +134,36 @@ final class NotchGestureMonitor {
     func stop() { monitors.forEach(NSEvent.removeMonitor); monitors.removeAll() }
 
     private func handle(_ e: NSEvent) {
-        let ev = NotchSwipe.event(e)
+        handle(NotchSwipe.event(e), at: NSEvent.mouseLocation) { Self.scrollsItself(e, in: $0) }
+    }
+
+    /// The last gesture's start, for the diagnostics (`--island-review-test` and the log): where it began and what it found.
+    private(set) var lastStart: (point: CGPoint, display: CGDirectDisplayID?, open: Bool, owned: Bool)?
+
+    /// One scroll event in the finger's terms, with the pointer where it is (the tests drive it with synthetic sequences).
+    func handle(_ ev: NotchSwipe.Event, at p: CGPoint, scrollsItself: (NotchGestureTarget) -> Bool = { _ in false }) {
         if ev.phase == .began {
-            let t = target(NSEvent.mouseLocation)
+            let t = target(p)
+            // A gesture already followed (mayBegin, then began) keeps its owner; a new one over no island has none.
             owner = t?.display
-            let owned = t.map { !blocked() && !Self.scrollsItself(e, in: $0) } ?? false
+            let owned = t.map { !blocked() && !scrollsItself($0) } ?? false
+            lastStart = (p, t?.display, t?.open ?? false, owned)
+            if let t { log.debug("swipe began over island \(t.display, privacy: .public) open=\(t.open, privacy: .public) owned=\(owned, privacy: .public)") }
             _ = swipe.feed(ev, open: t?.open ?? false, owned: owned, settings: settings)
             return
         }
         guard let id = owner else { return }
-        let isOpen = target(NSEvent.mouseLocation).map { $0.display == id && $0.open } ?? false
+        let isOpen = target(p).map { $0.display == id && $0.open } ?? false
         let before = swipe.progress
         let action = swipe.feed(ev, open: isOpen, owned: true, settings: settings)
         if swipe.progress != before { feedback(swipe.progress) }
         switch action {
         case .none: break
-        case .open: Haptic.tap(.alignment); open(id)
-        case .close: Haptic.tap(.alignment); close()
+        case .open: Haptic.tap(.alignment); log.debug("swipe: open"); open(id)
+        case .close: Haptic.tap(.alignment); log.debug("swipe: close"); close()
         case .screen(let n): screen(n)                      // the island's own step: its haptic and VoiceOver
         }
-        if ev.phase == .ended { owner = nil; feedback(0) }
+        if ev.phase == .ended { owner = nil; if before != 0 || swipe.progress != 0 { feedback(0) } }
     }
 
     /// Over something in the open island that scrolls (a list taller than its box, a horizontal row, a stepper that takes
