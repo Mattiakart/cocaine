@@ -158,7 +158,12 @@ final class NotchPowerWatch {
         feed(r)
     }
 
+    /// The charger went in or out (whatever the HUD setting): macOS is about to set the brightness by itself, which must not
+    /// get a brightness bar over this HUD (HUDWatch.systemChanged).
+    var onSourceChange: (() -> Void)?
+
     func feed(_ r: PowerReading) {
+        if let prev = events.last, prev.onAC != r.onAC { onSourceChange?() }
         let s = Settings()
         let low = s.notchLowBattery
         guard let e = events.feed(r, low: low), s.notchChargeHUD, let post else { return }

@@ -17,9 +17,40 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
+/// Which brightness changes get a bar in the island. Only the user's: macOS changes the brightness by itself too (automatic
+/// brightness's drift and jumps, the charger plugged in or out with "Slightly dim the display on battery", the displays waking),
+/// and a bar for those covered the battery's own HUD the moment the charger went in (2.8.0). A change is the user's when it
+/// follows a brightness key (handled or left to macOS) pressed after the last system change, or, for a bigger jump (a slider in
+/// Control Center, System Settings or the island), when the pointer or the keyboard was used a moment ago. Within
+/// `systemQuiet` of a power-source change or a display wake only a key counts. Pure (--island-review-test).
+enum BrightnessHUDRule {
+    static let keyWindow: TimeInterval = 1.5
+    static let systemQuiet: TimeInterval = 6
+    static let inputWindow: TimeInterval = 2
+    static func reports(delta: Float, sinceKey: TimeInterval, sinceSystem: TimeInterval, sinceInput: TimeInterval) -> Bool {
+        let quiet = sinceSystem < systemQuiet
+        // A key counts only when it came after the system's change (a key pressed just before plugging in doesn't own the ramp).
+        if sinceKey < keyWindow && (!quiet || sinceKey < sinceSystem) { return HUDWatch.reports(delta: delta, sinceKey: sinceKey) }
+        if quiet { return false }
+        return HUDWatch.reports(delta: delta, sinceKey: .infinity) && sinceInput < inputWindow
+    }
+
+    /// Seconds since the user last clicked, dragged or typed (the window server's own count; no event monitor, no permission).
+    static func secondsSinceInput() -> TimeInterval {
+        let kinds: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown]
+        return kinds.map { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: $0) }.min() ?? .infinity
+    }
+
+    /// The power source powering the Mac now ("AC Power", "Battery Power"; nil when IOKit has none).
+    static func powerSource() -> String? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return nil }
+        return IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?
+    }
+}
+
 /// Volume and brightness changes (the keys, the menu bar, Control Center) as a bar in the island's HUD below the notch: CoreAudio tells us about
-/// the volume itself; the brightness of every backlit display is read four times a second. Automatic brightness drifts on its own,
-/// so a change is shown only right after a brightness key, or when it is bigger than that drift.
+/// the volume itself; the brightness of every backlit display is read four times a second. Only the user's brightness changes
+/// are shown (BrightnessHUDRule): never automatic brightness's, the charger's or a wake's.
 final class HUDWatch {
     /// icon, label, level, and the display it is about (brightness; nil for the volume): the island's HUD goes to that screen.
     var onChange: ((String, String, Double, CGDirectDisplayID?) -> Void)?
@@ -38,8 +69,18 @@ final class HUDWatch {
     private static let volumeSelector: AudioObjectPropertySelector = 0x766D_7663       // 'vmvc': the virtual main volume
     static let pollInterval = 0.25
 
+    private var systemAt = Date.distantPast
+    private var lastSource: String?
+    private var wakeObservers: [NSObjectProtocol] = []
+    /// Injected by the tests (--island-review-test): the clock, the input idle time, the power source.
+    var now: () -> Date = { Date() }
+    var sinceInput: () -> TimeInterval = { BrightnessHUDRule.secondsSinceInput() }
+    var powerSource: () -> String? = { BrightnessHUDRule.powerSource() }
+
     /// A brightness key went by (handled or left to macOS): small changes in the next moment are that key's.
-    func brightnessKey() { keyAt = Date() }
+    func brightnessKey() { keyAt = now() }
+    /// macOS is about to set the brightness by itself (the charger plugged in or out, the displays waking): quiet for a moment.
+    func systemChanged() { systemAt = now() }
 
     /// Shown in the island? Right after a key any change counts; otherwise only one bigger than automatic brightness's drift
     /// (a key step is 1/16, a Control Center slider jumps; the ambient ramp moves a few thousandths per poll).
@@ -55,6 +96,12 @@ final class HUDWatch {
         systemListener = l
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l)
         bind()
+        lastSource = powerSource()
+        for name in [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification] {
+            wakeObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.systemChanged()
+            })
+        }
         let t = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in self?.pollBrightness() }
         t.tolerance = 0.05
         RunLoop.main.add(t, forMode: .common)
@@ -65,6 +112,8 @@ final class HUDWatch {
         guard started else { return }
         started = false
         timer?.invalidate(); timer = nil
+        wakeObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
+        wakeObservers.removeAll()
         if let l = systemListener {
             var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, l)
@@ -118,16 +167,28 @@ final class HUDWatch {
     private func pollBrightness() {
         if polls % 16 == 0 { backlit = screens.online.filter(screens.hasBacklight) }
         polls += 1
-        let sinceKey = Date().timeIntervalSince(keyAt)
         var seen: [CGDirectDisplayID: Float] = [:]
         for id in backlit {
             guard let b = screens.brightness(id) else { continue }
             seen[id] = b
-            if let l = lastBrightness[id], Self.reports(delta: b - l, sinceKey: sinceKey), !suppressBrightness() {
-                onChange?("sun.max.fill", L("Brightness"), Double(b), id)
-            }
+            observe(id, b)
         }
         lastBrightness = seen
+    }
+
+    /// One display's brightness as read now: a bar if the change is the user's. (The tests feed it directly.)
+    func observe(_ id: CGDirectDisplayID, _ b: Float) {
+        defer { lastBrightness[id] = b }
+        guard let l = lastBrightness[id], Self.reports(delta: b - l, sinceKey: now().timeIntervalSince(keyAt)), !suppressBrightness() else { return }
+        // The power source is looked at again here, not only when IOKit says so: the brightness can start moving before that
+        // notification has been handled, and its first step must not get a bar either.
+        let source = powerSource()
+        if let source, let lastSource, source != lastSource { systemChanged() }
+        if source != nil { lastSource = source }
+        let t = now()
+        if BrightnessHUDRule.reports(delta: b - l, sinceKey: t.timeIntervalSince(keyAt), sinceSystem: t.timeIntervalSince(systemAt), sinceInput: sinceInput()) {
+            onChange?("sun.max.fill", L("Brightness"), Double(b), id)
+        }
     }
 }
 
