@@ -264,9 +264,17 @@ enum ClipActions {
 // MARK: - The keys (handed in by the island's key monitor, Sources/IslandController.swift)
 
 enum ClipboardKeys {
+    /// An input method (Japanese, Chinese, Korean…) is composing text in the field that has the keyboard: every key (↑ ↓ pick a
+    /// candidate, Return commits, Esc cancels, digits choose) belongs to it, none to the list. Tests replace it.
+    static var composing: () -> Bool = {
+        let marked = { (w: NSWindow?) in (w?.firstResponder as? NSTextView)?.hasMarkedText() ?? false }
+        return marked(NSApp.keyWindow) || marked(ClipPopup.shared.window)
+    }
+
     /// True when the key was used. `editing`: a text field or editor has the keyboard.
     static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel?) -> Bool {
         if ClipShortcutRecorder.shared.recording != nil { return ClipShortcutRecorder.shared.handle(keyCode: code, flags: flags) }
+        if composing() { return false }
         if DialogCenter.shared.isShowing(on: .island) || DialogCenter.shared.isShowing(on: .popup) { return false }
         let h = ClipActions.h, ui = ClipActions.ui
         let mods = flags.intersection([.command, .option, .control, .shift])
@@ -292,7 +300,8 @@ enum ClipboardKeys {
             default: return false
             }
         }
-        let list = ui.suggested(h) + ui.list(h).filter { c in !ui.suggested(h).contains { $0.id == c.id } }
+        let suggested = ui.suggested(h), picked = Set(suggested.map(\.id))       // once per key, not once per item
+        let list = suggested + ui.list(h).filter { !picked.contains($0.id) }
         let ids = list.map(\.id)
         if let n = digit(code), n >= 1 {                                                                         // ⌘1…9, ⇧⌘1…9, ⌥0…9
             if cmd || shiftCmd { guard n <= list.count else { return true }; ClipActions.paste(list[n - 1], invert: shiftCmd); return true }
@@ -324,7 +333,6 @@ enum ClipboardKeys {
             return true
         case 36, 76:                                                                                            // Return, ⇧Return
             guard none || shift else { return false }
-            if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.hasMarkedText() { return false }
             return ClipActions.pasteCurrent(list, invert: shift)
         case 0 where cmd && !editing: ui.selection.selectAll(ids); A11y.announce(String(format: L("%d selected"), ids.count)); return true   // ⌘A
         case 33 where cmd: ClipActions.stepBoard(-1); return true                                              // ⌘[
@@ -401,7 +409,8 @@ private struct ClipboardPage: View {
 
     // The S size: the newest items (or the suggestions), nothing else.
     private var compact: some View {
-        let list = Array((ui.suggested(h) + h.items.filter { c in !ui.suggested(h).contains { $0.id == c.id } }).prefix(box.width >= 400 ? 2 : 1))
+        let suggested = ui.suggested(h), picked = Set(suggested.map(\.id))
+        let list = Array((suggested + h.items.filter { !picked.contains($0.id) }).prefix(box.width >= 400 ? 2 : 1))
         return VStack(alignment: .leading, spacing: Space.s) {
             if list.isEmpty { Text(L("What you copy will show up here")).font(UI.value).foregroundStyle(UI.hint).lineLimit(1) }
             HStack(spacing: Space.l) { ForEach(list) { c in ClipRow(h: h, ui: ui, c: c, list: list, suggested: false, compact: true) } }
@@ -410,7 +419,8 @@ private struct ClipboardPage: View {
 
     private var full: some View {
         let suggested = ui.suggested(h)
-        let rest = ui.list(h).filter { c in !suggested.contains { $0.id == c.id } }
+        let picked = Set(suggested.map(\.id))
+        let rest = ui.list(h).filter { !picked.contains($0.id) }
         let list = suggested + rest
         let twoColumns = box.width >= 400
         return VStack(alignment: .leading, spacing: Space.s) {

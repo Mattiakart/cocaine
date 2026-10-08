@@ -393,6 +393,7 @@ final class ClipPopup: ObservableObject {
     /// The panel's keys: a dialog in it first, then the clipboard's (Sources/IslandClipboard.swift), then Esc.
     private func key(_ e: NSEvent) -> Bool {
         if DialogCenter.shared.isShowing(on: .popup) { return DialogCenter.shared.handleKey(e) }
+        if ClipboardKeys.composing() { return false }                  // Esc, ↑↓, Return: the input method's while it composes
         let editing = panel?.firstResponder is NSTextView
         if ClipboardKeys.handle(e.keyCode, flags: e.modifierFlags, editing: editing, model: nil) { return true }
         guard e.keyCode == UInt16(kVK_Escape), e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }

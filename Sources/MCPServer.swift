@@ -94,7 +94,9 @@ final class MCPAppServer {
         q.sync {
             acceptSource?.cancel(); acceptSource = nil
             if listenFD >= 0 { close(listenFD); listenFD = -1 }
-            conns.values.forEach(drop)
+            let open = Array(conns.values)
+            open.forEach(drop)
+            open.forEach { $0.token?.cancel() }                   // turned off: questions still on screen are withdrawn
             var st = stat()
             if lstat(path, &st) == 0, st.st_ino == inode { unlink(path) }      // only our own socket
         }
@@ -347,7 +349,7 @@ final class MCPHandler {
                     done(["ok": true, "items": pages])
                 }
             }
-            call.token.onCancel { [queue] in queue.async { if !finished { finished = true; withdraw() } } }
+            call.token.onCancel { [queue] in queue.async { if !finished { finished = true; withdraw(); log("cancelled", 0, 0) } } }
         default:
             done(Self.err("Unknown request", "unknown"))
         }

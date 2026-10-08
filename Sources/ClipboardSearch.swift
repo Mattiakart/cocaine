@@ -11,7 +11,11 @@ enum ClipLooks {
     /// The whole text is one web or mail link.
     static func isLink(_ s: String) -> Bool { link(s) != nil }
 
+    /// A text far longer than any link or colour isn't trimmed (a copy of the whole text) at each row's every redraw.
+    static func short(_ s: String, _ limit: Int) -> Bool { s.utf8.count <= limit * 4 + 256 }
+
     static func link(_ s: String) -> URL? {
+        guard short(s, 4_000) else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t.count <= 4_000, !t.isEmpty, t.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { return nil }
         let lower = t.lowercased()
@@ -24,6 +28,7 @@ enum ClipLooks {
     /// The whole text is a colour: #RGB, #RRGGBB or #RRGGBBAA (the # is required, so codes and numbers aren't swatches),
     /// rgb(…) / rgba(…). Its components 0…1.
     static func color(_ s: String) -> (r: Double, g: Double, b: Double, a: Double)? {
+        guard short(s, 40) else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard t.count <= 40 else { return nil }
         if t.hasPrefix("#") {
@@ -53,9 +58,11 @@ enum ClipLooks {
 
     /// The text looks like code or JSON (shown in a monospaced font).
     static func isCode(_ s: String) -> Bool {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Its start and its end only (a long text isn't copied whole at every redraw).
+        let t = String(s.prefix(20_000)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return false }
-        if (t.hasPrefix("{") && t.hasSuffix("}")) || (t.hasPrefix("[") && t.hasSuffix("]")) { return true }
+        let end = (s.utf8.count > 20_000 ? String(s.suffix(2_000)) : t).trimmingCharacters(in: .whitespacesAndNewlines)
+        if (t.hasPrefix("{") && end.hasSuffix("}")) || (t.hasPrefix("[") && end.hasSuffix("]")) { return true }
         let sample = String(t.prefix(2_000))
         let marks = sample.filter { "{};=<>()[]$".contains($0) }.count
         let lines = sample.split(separator: "\n").count

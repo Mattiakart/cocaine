@@ -304,7 +304,7 @@ struct ShelfModuleView: View {
                 if let p = r.progress { ShelfProgressBar(value: p).frame(width: 80) }
                 else { BusyDots(color: Island.accent) }
                 Text(r.title).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
-                Button(L("Cancel")) { tasks.cancel() }.buttonStyle(.plain).font(UI.detail).foregroundStyle(CTL.accent)
+                Button(L("Cancel")) { tasks.cancel() }.buttonStyle(CocaineButtonStyle(kind: .plain, height: 18))
             }
             .accessibilityElement(children: .combine)
             .transition(.opacity)
@@ -314,7 +314,7 @@ struct ShelfModuleView: View {
             HStack(spacing: Space.xs) {
                 Image(systemName: s.icon).font(UI.detail).foregroundStyle(Island.accent)
                 Text(s.text).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1).truncationMode(.middle)
-                if s.undo { Button(L("Undo")) { center.undoRename() }.buttonStyle(.plain).font(UI.detail).foregroundStyle(CTL.accent) }
+                if s.undo { Button(L("Undo")) { center.undoRename() }.buttonStyle(CocaineButtonStyle(kind: .plain, height: 18)) }
             }
             .accessibilityElement(children: .combine)
             .transition(.opacity)

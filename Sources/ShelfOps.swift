@@ -77,14 +77,33 @@ enum ShelfProc {
         var timedOut = false, cancelled = false
         while done.wait(timeout: .now() + 0.1) == .timedOut {
             if cancel?.cancelled == true { cancelled = true } else if Date() > deadline { timedOut = true } else { continue }
+            // The whole tree: a script's own children (curl started by `sh up.sh`) would go on uploading after Cancel.
+            let tree = descendants(of: p.processIdentifier)
             p.terminate()
+            tree.forEach { kill($0, SIGTERM) }
             if done.wait(timeout: .now() + 2) == .timedOut { kill(p.processIdentifier, SIGKILL); _ = done.wait(timeout: .now() + 2) }
+            tree.forEach { kill($0, SIGKILL) }                // seen alive a moment ago: ended for good
             break
         }
         _ = eofOut.wait(timeout: .now() + 0.5); _ = eofErr.wait(timeout: .now() + 0.5)
         outPipe.fileHandleForReading.readabilityHandler = nil; errPipe.fileHandleForReading.readabilityHandler = nil
         lock.lock(); defer { lock.unlock() }
         return Result(status: (timedOut || cancelled) ? -1 : p.terminationStatus, stdout: out, stderr: err, timedOut: timedOut, cancelled: cancelled)
+    }
+}
+
+extension ShelfProc {
+    /// Every process started by `pid` and by its children, as they are now (at most 512).
+    static func descendants(of pid: pid_t) -> [pid_t] {
+        var out: [pid_t] = [], queue = [pid]
+        while !queue.isEmpty, out.count < 512 {
+            let p = queue.removeFirst()
+            var kids = [pid_t](repeating: 0, count: 256)
+            let n = Int(proc_listchildpids(p, &kids, Int32(kids.count * MemoryLayout<pid_t>.size)))
+            let found = kids.prefix(max(0, min(n, kids.count))).filter { $0 > 0 && $0 != pid && !out.contains($0) }
+            out += found; queue += found
+        }
+        return out
     }
 }
 

@@ -39,13 +39,16 @@ enum SnippetExpander {
     /// The text with its placeholders filled in, in one pass: what a placeholder puts in is never read again (a {date} that
     /// comes from the clipboard stays as it is). Unknown placeholders stay as typed; {{ and }} are literal braces.
     static func expand(_ template: String, _ c: Context) -> String {
-        var out = ""
-        for token in tokens(template) {
+        var out = "", count = 0                          // counted as it grows: `out.count` per token was quadratic (a big JSON
+        for token in tokens(template) {                  // snippet is one placeholder-looking token per object)
+            let piece: String
             switch token {
-            case .text(let t): out += t
-            case .placeholder(let p): out += value(p, c) ?? "{" + p + "}"
+            case .text(let t): piece = t
+            case .placeholder(let p): piece = value(p, c) ?? "{" + p + "}"
             }
-            if out.count > maxResult { return String(out.prefix(maxResult)) }
+            out += piece
+            count += piece.count
+            if count > maxResult { return String(out.prefix(maxResult)) }
         }
         return out
     }
