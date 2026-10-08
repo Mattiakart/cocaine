@@ -792,7 +792,7 @@ enum ClipSyncTests {
               && tk.shown[0].contains("added"))
         added = []
         let tooLong = session(labels.sendClipboard, clipboard: String(repeating: "z", count: 3000))
-        check("Clip send: too long → the Mac says to use Send to Mac; nothing added", added.isEmpty && tooLong.sim.shown.first?.contains("Send to Mac") == true)
+        check("Clip send: too long → one message only, the Mac says to use Send to Mac; nothing added", added.isEmpty && tooLong.ran.count == 1 && tooLong.sim.shown.first?.contains("Send to Mac") == true)
         let empty = session(labels.sendClipboard, clipboard: "")
         check("Clip send: nothing on the iPhone clipboard → said, nothing sent", empty.ran.isEmpty && empty.sim.shown == [labels.noText])
         let denied = session(labels.sendClipboard, clipboard: "nope", write: false)

@@ -180,7 +180,9 @@ enum SyncShortcuts {
                 let id = b.replace(b.add("number.random", ["WFRandomNumberMinimum": 100_000, "WFRandomNumberMaximum": 999_999], output: "Random Number"), "[^0-9]", "")
                 // One piece per round (Repeat Index 1…6), sealed and sent; a round past the end has no piece and sends nothing.
                 // A filler piece in front lets the round's own index skip the pieces before it.
-                let padded = b.text([.t(String(repeating: "#", count: pieceSize)), clean])
+                // Too long ("7"): only the first piece goes, for the Mac to answer "too long" without six messages' wait.
+                let limited = b.replace(b.text([count, .t("#"), clean]), #"(?s)^(?:7#(.{1,\#(pieceSize)}).*|[1-6]#(.*))$"#, "$1$2")
+                let padded = b.text([.t(String(repeating: "#", count: pieceSize)), limited])
                 repeatCount(b, ClipRemote.maxParts) {
                     let piece = b.replace(padded, [.t(#"(?s)^(?:(?:.{\#(pieceSize)}){"#), .v("Repeat Index"), .t(#"}(.{1,\#(pieceSize)}).*|.*)$"#)], "$1")
                     ifHasValue(b, piece, then: {
