@@ -95,7 +95,7 @@ final class MusicWatch: ObservableObject {
     var commandSink: ((String, PlayerCommand) -> Void)?
     /// The running apps' bundle ids (tests hand in their own).
     var running: () -> Set<String> = { Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)) }
-    /// Tests: false, so no script is ever sent to the real Music or Spotify.
+    /// Tests and renders: false, so no script is ever sent to the real Music or Spotify (and their states stay as set).
     var scriptsEnabled = true
     /// The island's watch, for the settings card (nil while the island is off).
     static weak var current: MusicWatch?
@@ -227,6 +227,7 @@ final class MusicWatch: ObservableObject {
 
     func setSample(title: String, artist: String, album: String) {
         let t = Track(id: "x", title: title, artist: artist, album: album, duration: 200, app: PlayerApp.music)
+        scriptsEnabled = false
         states = [PlayerApp.music: PlayerSnapshot(track: t, playing: true, position: 74, at: Date(), shuffle: false, liked: true, volume: 70)]
         recompute()
         lyricsOn = true
@@ -330,11 +331,11 @@ final class MusicWatch: ObservableObject {
 
     private func poll() {
         pollPear()
-        guard !busy else { return }
+        guard !busy, scriptsEnabled else { return }           // tests and renders: the players' states are their own
         let run = running()
         for a in Self.scripted where !PlayerApp.isRunning(a, running: run) && states[a] != nil { update(a, nil) }
         let candidates = Self.scripted.filter { PlayerApp.isRunning($0, running: run) }
-        guard !candidates.isEmpty, scriptsEnabled else { return }
+        guard !candidates.isEmpty else { return }
         busy = true
         ScriptThread.shared.async {
             var found: [(String, PlayerSnapshot?)] = []

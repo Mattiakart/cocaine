@@ -225,3 +225,27 @@ struct KeyboardBacklightRow: View {
         }
     }
 }
+
+extension IslandView {
+    /// The Keyboard backlight module (added to any screen in Settings → Island → Screens): a switch and a slider on one line.
+    func keyboardModule(_ b: ModuleBox) -> some View { KeyboardBacklightModule() }
+}
+
+struct KeyboardBacklightModule: View {
+    @ObservedObject var light = KeyboardBacklight.shared
+    var body: some View {
+        HStack(spacing: Space.m) {
+            Image(systemName: light.level > 0.01 ? "light.max" : "light.min").font(.system(size: 14)).foregroundStyle(UI.secondary).frame(width: 20)   // a glyph
+                .accessibilityHidden(true)
+            if light.available {
+                CocaineSwitch(on: light.level > 0.01) { light.toggle() }.accessibilityLabel(L("Keyboard backlight"))
+                CocaineSlider(value: light.level * 100, range: 0...100, step: 10, name: L("Keyboard backlight"),
+                              valueText: "\(Int((light.level * 100).rounded()))%") { light.set($0 / 100) }
+            } else {
+                Text(L("This Mac's keyboard has no backlight Cocaine can control")).font(UI.detail).foregroundStyle(UI.hint).lineLimit(2)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .onAppear { light.refresh() }
+    }
+}

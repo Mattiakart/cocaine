@@ -169,7 +169,10 @@ pagine:
 - **Musica**: Musica e Spotify, con copertina, barra di avanzamento, play/pausa/avanti/indietro/casuale e, se li attivi, i
   testi sincronizzati (cercati per titolo e artista su lrclib.net, non si invia altro; un problema di rete viene detto come tale).
   Cosa suona arriva dagli annunci delle app stesse; il loro scripting (permesso Automazione) serve per la copertina e, mentre questa
-  pagina è aperta, per la posizione.
+  pagina è aperta, per la posizione. Anche **YouTube Music tramite Pear Desktop** (il suo plugin API Server, solo su questo Mac,
+  dopo che lo colleghi), un selettore quando più lettori hanno un brano, salto indietro/avanti (5–30 s), preferito/Mi piace dove
+  il lettore lo consente e il volume del lettore. La **retroilluminazione della tastiera** (MacBook) ha un modulo, un HUD e uno
+  spegnimento facoltativo quando sei inattivo. Vedi [docs/music-and-backlight.it.md](docs/music-and-backlight.it.md).
 - **Calendario**: viste Giorno, Settimana e Mese con precedente/successivo, *Oggi* e i tasti freccia; clic su un evento per i
   dettagli (orario, calendario, luogo, link della videochiamata, partecipanti, note) e *Apri in Calendario*. Chiede l'accesso a
   Calendario la prima volta; se l'hai negato, un pulsante apre Impostazioni di Sistema. Vedi [docs/calendar.it.md](docs/calendar.it.md).

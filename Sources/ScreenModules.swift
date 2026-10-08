@@ -33,6 +33,7 @@ extension IslandView {
         case "aicontext": aiContextModule(b)         // Sources/AIContextViews.swift
         case "mirror": mirrorTab
         case "monitors": displayTab
+        case "keyboard": keyboardModule(b)              // Sources/KeyboardBacklight.swift
         default: EmptyView()
         }
     }

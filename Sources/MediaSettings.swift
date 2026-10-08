@@ -161,10 +161,22 @@ enum MediaFixtures {
             im.music.running = { ["com.github.th-ch.youtube-music"] }
             im.music.update(PlayerApp.music, nil)
             im.music.start()
+        case "keyboard":                                       // the Keyboard backlight module on the Status screen
+            var l = ScreenLayoutStore.shared.layout
+            if !l.addModule("keyboard", to: "status") { FileHandle.standardError.write(Data("no room for the keyboard module\n".utf8)) }
+            ScreenLayoutStore.shared.set(l)
         case "nolight":
             (KeyboardBacklight.shared.device as? FakeBacklight)?.available = false
             KeyboardBacklight.shared.refresh()
         default: break
         }
+    }
+
+    /// `--render-panel … --media-fixture pearon`: Settings → Island with the YouTube Music connection on, asking for a token.
+    static func applyPanel(_ args: [String]) {
+        guard AppDefaults.isolated, let i = args.firstIndex(of: "--media-fixture"), i + 1 < args.count, args[i + 1] == "pearon",
+              let m = MediaSettingsView.sample else { return }
+        AppDefaults.store.set(true, forKey: "musicPear")
+        m.pear.setStatus(.denied)
     }
 }

@@ -48,6 +48,11 @@ Where things are:
   (the remote hooks' plan and diff, through AIHooks), SSHJump.swift (the local ssh tab), SSHHostsView.swift (Settings → AI card),
   SSHTests*.swift (--ssh-test). The remote side: relay/cocaine-relay (perl, copied into the bundle). Strings: SSH.strings.
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
+- Music, keyboard backlight and shelf extras (docs/music-and-backlight.en.md): MusicPlayers.swift (players' pure rules, AppleScript,
+  Pear Desktop's API client), IslandMusic.swift (MusicWatch and the page), KeyboardBacklight.swift (CoreBrightness, auto-off, the
+  island row and module), MediaSettings.swift (Settings → Island → Music and keyboard, MediaWiring, --media-fixture),
+  ShelfMore.swift (select by kind, invert, sort, AirDrop, copy names, remove missing/all), MediaTests.swift (--media-test).
+  Strings: Localization/<lang>.lproj/Media.strings.
 - Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
   MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).
 - Assets.swift (the baggie glyph, --render-assets), RenderTools.swift (--render-panel, --render-island), SelfTests.swift and

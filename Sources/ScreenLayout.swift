@@ -69,6 +69,7 @@ enum ModuleCatalog {
         ModuleSpec(id: "aicontext", title: "AI context", icon: "sparkles", home: "clipboard", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "mirror", title: "Mirror", icon: "person.crop.square", home: "mirror", sizes: [.l], width: .full),
         ModuleSpec(id: "monitors", title: "Monitors", icon: "display", home: "display", sizes: [.l], width: .full),
+        ModuleSpec(id: "keyboard", title: "Keyboard backlight", icon: "light.max", home: "status", sizes: [.s], width: .narrow),   // Sources/KeyboardBacklight.swift
     ]
 
     static let screens: [ScreenSpec] = [

@@ -48,6 +48,14 @@ scaffale con Annulla; i risultati (l'archivio, le nuove immagini, il testo ricon
 - **Riconosci testo** legge le immagini e le prime 5 pagine dei PDF con Vision di macOS (su questo Mac, nulla viene
   caricato), prima nelle tue lingue; un PDF che contiene già testo dà quel testo. Il risultato va negli appunti e sullo scaffale.
 
+**Altro nel menu delle azioni** (round 6): **AirDrop** invia i file e i link selezionati direttamente ad AirDrop (macOS chiede
+il dispositivo) senza passare da Condividi…; **Copia nomi** copia i nomi, uno per riga (di un link, l'indirizzo). Sotto le
+operazioni: **Seleziona** (Seleziona tutto, Inverti selezione, o solo Immagini, File e cartelle, Link, Testi o Elementi
+mancanti della raccolta), **Ordina per** Nome (i numeri per valore, come nel Finder), Data di aggiunta (prima i più vecchi),
+Tipo o Dimensione (prima i più grandi), e **Svuota**: Rimuovi elementi mancanti, o **Rimuovi tutto…** (con una domanda se gli
+elementi sono più di uno; i file restano dove sono). L'ordinamento cambia l'ordine della raccolta per sempre (trascina per
+riordinare di nuovo).
+
 **Le tue azioni** (Impostazioni → Isola → Scaffale → Le tue azioni) aggiungono voci tue al menu delle azioni: uno **script
 shell**, un **comando rapido** (app Comandi Rapidi), un **flusso di lavoro Automator**, un file **AppleScript o JavaScript**,
 **Apri con un'app**, **Sposta in una cartella**. Si aggiungono solo lì, da te; mai da un link, un file trascinato o un'altra app.

@@ -36,6 +36,8 @@ GOOD TO KNOW
 - With the lid closed the built-in screen goes to its lowest brightness and gets its level back when you open it;
   external monitors are never dimmed by the lid.
 - "Stay available" (Automation) also keeps the screen from dimming, sleeping and locking by itself while it runs.
+- Music page: Apple Music, Spotify and YouTube Music in Pear Desktop (connect it in Settings > Island > Music and keyboard).
+  The keyboard backlight can be set there too, and turned off by itself when you're away.
 
 UNINSTALL
 1. In the panel, AI alerts: untick your AIs (this removes Cocaine's hooks from their settings); under AI context (MCP),

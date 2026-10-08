@@ -306,6 +306,7 @@ func cliRenderPanel() {
     applyScreensFixture(CommandLine.arguments)                  // --screens-fixture <name>, --screens-edit <screen id>
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
     CloudShareFixtures.apply(CommandLine.arguments)             // --cloud-fixture <name>: Settings → Island → Sharing samples
+    MediaFixtures.applyPanel(CommandLine.arguments)             // --media-fixture pearon: Settings → Island → Music and keyboard
     AIContextFixtures.apply(CommandLine.arguments)              // --aicontext-fixture l: a filled AI context card in Settings → AI
     SSHHostManager.shared.applyFixture(CommandLine.arguments)   // --ssh-sample / --ssh-review: sample SSH hosts in Settings → AI
     if CommandLine.arguments.contains("--island") { model.island = true }
