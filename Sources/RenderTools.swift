@@ -182,6 +182,7 @@ func cliRenderIsland() {
     applyScreensFixture(args)
     ClipboardFixtures.layout(args)                              // --clipboard-fixture size-s|size-m|narrow (Sources/ClipboardFixtures.swift)
     AIContextFixtures.layout(args)                              // --aicontext-fixture s|m|l… (Sources/AIContextFixtures.swift)
+    NotchFixtures.layout(args)                                  // --notch-fixture controls|reminders|sizes… (Sources/NotchTests.swift)
     let im = IslandModel()
     im.pm = pm
     // --notch-width 210: another Mac's notch (a 14" is 185 pt; scaled resolutions change it).
@@ -211,6 +212,7 @@ func cliRenderIsland() {
     ClipSyncFixtures.apply(args, im.clipboard)                  // --clipsync-fixture: an item from the iPhone, Send to iPhone (Sources/ClipSync.swift)
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
+    NotchFixtures.apply(args, im)                              // --notch-fixture charging|full|low|reminders… (Sources/NotchTests.swift)
     CloudShareFixtures.apply(args)                             // --cloud-fixture toast: the link under the shelf (Sources/CloudShareFixtures.swift)
     im.usage.claudeFive = 412_000; im.usage.claudeWeek = 8_600_000; im.usage.loaded = true
     ReviewFixtures.apply(args, pm: pm, usage: im.usage)          // --plan-fixture, --question-fixture, --diff-fixture, --quota-fixture
@@ -306,6 +308,7 @@ func cliRenderPanel() {
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
     CloudShareFixtures.apply(CommandLine.arguments)             // --cloud-fixture <name>: Settings → Island → Sharing samples
     AIContextFixtures.apply(CommandLine.arguments)              // --aicontext-fixture l: a filled AI context card in Settings → AI
+    NotchFixtures.layout(CommandLine.arguments)                 // --notch-fixture reminders: sample lists in Settings → Island → Notch
     SSHHostManager.shared.applyFixture(CommandLine.arguments)   // --ssh-sample / --ssh-review: sample SSH hosts in Settings → AI
     if CommandLine.arguments.contains("--island") { model.island = true }
     if CommandLine.arguments.contains("--no-island") { model.island = false }

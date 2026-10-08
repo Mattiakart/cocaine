@@ -100,7 +100,7 @@ func screenLayoutSelfTest(_ check: (String, Bool) -> Void) {
         var l = std
         check("screens: move down and up", l.moveScreen("home", by: 1) && l.screens.map(\.id).prefix(2) == ["music", "home"]
               && l.moveScreen("home", by: -1) && l == std)
-        check("screens: the first can't go up, the last can't go down", !l.moveScreen("home", by: -1) && !l.moveScreen("display", by: 1))
+        check("screens: the first can't go up, the last can't go down", !l.moveScreen("home", by: -1) && !l.moveScreen(l.screens.last!.id, by: 1))
         check("screens: drag to a place", l.moveScreen("mirror", to: 0) && l.screens.first?.id == "mirror" && l.screens.count == std.screens.count)
         l = std
         check("screens: a hidden screen leaves the tabs", l.setVisible("mirror", false) && !l.visibleScreens(external: false).map(\.id).contains("mirror"))

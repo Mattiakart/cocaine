@@ -188,8 +188,24 @@ struct IslandView: View {
         return parts.joined(separator: ", ")
     }
 
+    /// Which item the right wing shows now (its changes swap in place: the stateSwap motion).
+    private var wingState: String {
+        focus.running ? "focus" : waiting ? "waiting" : mic.active ? "mic" : working ? "working" : model.music.playing ? "music"
+            : m.on ? "on" : m.stayActive || m.presenceActive ? "stay" : "none"
+    }
+
+    /// Right of the notch: one item at a time; another one takes its place by shrinking out as the new one grows in (Reduce
+    /// Motion: a quick cross-fade), never a jump.
+    private var rightWing: some View {
+        ZStack {
+            rightWingItem.id(wingState)
+                .transition(Motion.reduce ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+        }
+        .animation(Motion.animation(.stateSwap), value: wingState)
+    }
+
     /// Right of the notch: what is going on, by importance. (Messages and volume/brightness bars are in the HUD below the notch.)
-    @ViewBuilder private var rightWing: some View {
+    @ViewBuilder private var rightWingItem: some View {
         if focus.running {
             TimelineView(.periodic(from: .now, by: 1)) { _ in       // the countdown redraws itself, not the whole island
                 Text(focus.text).font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.white)

@@ -306,7 +306,32 @@ struct PageReveal: ViewModifier, Animatable {
             let c = Island.smooth((pose.p - 0.35) / 0.55)
             let scale = min(1, max(0.5, layout.bodyWidth(pose) / IslandLayout.openBody))
             content.opacity(c).scaleEffect(scale, anchor: .top).offset(y: -8 * (1 - c))
+                .environment(\.islandReveal, pose.p)     // the modules arrive one after another on it (ModuleStagger)
                 .transition(.identity)                   // its fade is the progress itself, not a transition on top
         }
+    }
+}
+
+private struct IslandRevealKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+extension EnvironmentValues {
+    /// The open/close morph's progress, frame by frame, for what arrives on it inside the page (1 when not in an island).
+    var islandReveal: CGFloat {
+        get { self[IslandRevealKey.self] }
+        set { self[IslandRevealKey.self] = newValue }
+    }
+}
+
+/// A module of the open page arriving: the page fades in as one (PageReveal); on top of that each module rises the last few
+/// points a beat after the one before it (Motion.stagger per module, the first at once). A function of the morph's
+/// progress alone, so a reversal mid-way runs it back from where it is; closing, they all go together. Reduce Motion: nothing
+/// moves (the page's fade is all).
+struct ModuleStagger: ViewModifier {
+    let order: Int
+    @Environment(\.islandReveal) private var p
+    static func lag(_ order: Int) -> CGFloat { CGFloat(Motion.stagger(order)) * 2.2 }      // in progress units (0…1 ≈ 0.4 s)
+    static func arrival(_ p: CGFloat, order: Int) -> CGFloat { Island.smooth((Island.delayed(p, by: lag(order)) - 0.35) / 0.55) }
+    func body(content: Content) -> some View {
+        let a = Motion.reduce ? 1 : Self.arrival(p, order: order)
+        content.offset(y: 8 * (1 - a))      // offset only: a blur would touch the camera's and the lists' own views
     }
 }

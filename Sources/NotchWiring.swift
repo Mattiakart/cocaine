@@ -10,6 +10,7 @@ enum NotchWiring {
     private static var bag: [AnyCancellable] = []
 
     static func attach(model: IslandModel, controller: IslandController) {
+        NotchSettingsLink.reminders = model.reminders
         guard !AppDefaults.isolated else { return }           // tests and renders: no monitors, no IOKit callbacks
         NotchPowerWatch.shared.post = { [weak model] item in model?.flashItem(item) }
         NotchPowerWatch.shared.start()

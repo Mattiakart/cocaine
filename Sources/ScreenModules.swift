@@ -49,7 +49,7 @@ extension IslandView {
         if r.modules.isEmpty {
             emptyScreen
         } else if r.columns == 1 && r.modules.count == 1 && r.modules[0].size == .l {
-            module(r.modules[0].kind, .of(r.modules[0]))
+            module(r.modules[0].kind, .of(r.modules[0])).modifier(ModuleStagger(order: 0))
         } else if r.columns == 2 {
             HStack(alignment: .top, spacing: ScreenLayout.gutter) {
                 screenColumn(r, 0).frame(width: r.widths[0], alignment: .topLeading)
@@ -62,12 +62,14 @@ extension IslandView {
 
     @ViewBuilder private func screenColumn(_ r: ResolvedScreen, _ c: Int) -> some View {
         let mods = r.modules(in: c)
+        // The order they arrive in when the island opens: down the left column, then down the right one.
+        let first = c == 0 ? 0 : r.modules(in: 0).count
         if mods.count == 1 && mods[0].size == .l {
-            module(mods[0].kind, .of(mods[0]))
+            module(mods[0].kind, .of(mods[0])).modifier(ModuleStagger(order: first))
         } else {
             VStack(alignment: .leading, spacing: ScreenLayout.gap) {
-                ForEach(mods, id: \.kind) { m in
-                    module(m.kind, .of(m)).frame(height: m.frame.height, alignment: .top)
+                ForEach(Array(mods.enumerated()), id: \.element.kind) { i, m in
+                    module(m.kind, .of(m)).frame(height: m.frame.height, alignment: .top).modifier(ModuleStagger(order: first + i))
                 }
                 Spacer(minLength: 0)
             }
