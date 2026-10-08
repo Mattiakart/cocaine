@@ -12,12 +12,15 @@ Every animation in Cocaine comes from one system in `Sources/Motion.swift`: a fe
 | `Duration.standard` | 0.22 s | content cross-fades (a language change, a busy label) |
 | `Duration.slow` | 0.4 s | the full-screen alert fading away |
 | `snappy` spring | response 0.24, damping 0.86 | press, selection, values, the HUD's bar |
-| `smooth` spring | response 0.32, damping 0.88 | pages, expanding rows, dropdowns, the island closing, wings, the HUD going up, a drag settling |
+| `smooth` spring | response 0.32, damping 0.88 | pages, expanding rows, dropdowns, wings, the HUD going up, a drag settling, a battery's fill |
 | `gentle` spring | response 0.42, damping 0.92 | dialogs, notices, request cards, things arriving |
-| `bouncy` spring | response 0.36, damping 0.80 | the island opening, the HUD dropping, the switch's knob |
+| `bouncy` spring | response 0.36, damping 0.80 | the HUD dropping, the switch's knob, the charger's bolt |
+| `notchOpen` spring | response 0.42, damping 0.80 | the island opening (Boring Notch's open spring; docs/notch-animations.en.md) |
+| `notchClose` spring | response 0.45, damping 1.0 | the island closing, critically damped (no bounce) |
+| `follow` spring | response 0.38, damping 0.80 | the island following a two-finger swipe |
 | `stagger` | 0.035 s per item, at most 0.2 s | items arriving together |
 | Distances | press 0.97 (glyphs 0.92, list rows and day cells 0.985), enter 8 pt + 0.97 scale, page 16 pt, lift 1.02 + 8 pt shadow, pulse 1.12 | |
-| `islandSettle` | 0.5 s | when the island's window shrinks after a close (longer than the close spring takes to settle) |
+| `islandSettle` | 0.56 s | when the island's window shrinks after a close (longer than the close spring takes to settle) |
 | Pour | 1.4 s filling (ease-out), 0.7 s emptying (ease-in) | the menu-bar bag |
 
 ## Roles
@@ -31,10 +34,17 @@ Every animation in Cocaine comes from one system in `Sources/Motion.swift`: a fe
 | selection | snappy | 0.15 s fade |
 | toggle | bouncy | at once |
 | value, hudBar | snappy | at once |
-| expand, dragSettle, wing, islandClose | smooth | at once |
+| expand, dragSettle, wing | smooth | at once |
+| islandClose | notchClose | at once |
 | page, dropdown | smooth | 0.15 s fade |
 | appear, dialog, notice | gentle | 0.15 s fade |
-| islandOpen, hudDrop | bouncy | at once (island); 0.15 s fade (HUD) |
+| islandOpen | notchOpen | at once |
+| hudDrop | bouncy | 0.15 s fade |
+| chargeIn | bouncy | 0.15 s fade |
+| levelFill | smooth | at once |
+| stateSwap | snappy | 0.08 s fade |
+| gestureFollow | follow | at once |
+| contentIn | smooth | 0.15 s fade |
 | hudRetract | smooth | 0.15 s fade |
 | crossfade | 0.22 s | 0.15 s |
 | hudSwap | 0.15 s | 0.08 s |

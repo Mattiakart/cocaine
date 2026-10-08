@@ -48,6 +48,11 @@ Where things are:
   (the remote hooks' plan and diff, through AIHooks), SSHJump.swift (the local ssh tab), SSHHostsView.swift (Settings → AI card),
   SSHTests*.swift (--ssh-test). The remote side: relay/cocaine-relay (perl, copied into the bundle). Strings: SSH.strings.
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
+- The notch (docs/notch-animations.en.md): NotchPower.swift (the battery HUD: ChargeEvents, the IOKit watch, the glyph),
+  NotchGestures.swift (two-finger swipes), NotchSizing.swift (sizes; NotchPrefs keeps the notch's settings), NotchControls.swift
+  (the "controls" module), IslandReminders.swift (EventKit reminders, the "reminders" module), NotchSettings.swift (Settings →
+  Island → Notch), NotchWiring.swift (attached by IslandController), NotchTests.swift (--notch-test, --notch-fixture). Strings:
+  Localization/<lang>.lproj/Notch.strings.
 - Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
   MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).
 - Assets.swift (the baggie glyph, --render-assets), RenderTools.swift (--render-panel, --render-island), SelfTests.swift and

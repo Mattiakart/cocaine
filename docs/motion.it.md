@@ -14,10 +14,13 @@ di cambiamento (un *ruolo*) una curva, e piccoli helper di vista costruiti sopra
 | molla `snappy` | risposta 0,24, smorzamento 0,86 | pressione, selezione, valori, la barra dell'HUD |
 | molla `smooth` | risposta 0,32, smorzamento 0,88 | pagine, righe che si espandono, menu a tendina, chiusura dell'isola, ali, risalita dell'HUD, fine di un trascinamento |
 | molla `gentle` | risposta 0,42, smorzamento 0,92 | dialoghi, notifiche, schede di richiesta, ciò che arriva |
-| molla `bouncy` | risposta 0,36, smorzamento 0,80 | apertura dell'isola, discesa dell'HUD, il pomello dell'interruttore |
+| molla `bouncy` | risposta 0,36, smorzamento 0,80 | discesa dell'HUD, il pomello dell'interruttore, il fulmine del caricatore |
+| molla `notchOpen` | risposta 0,42, smorzamento 0,80 | apertura dell'isola (la molla di Boring Notch; docs/notch-animations.it.md) |
+| molla `notchClose` | risposta 0,45, smorzamento 1,0 | chiusura dell'isola, senza rimbalzo |
+| molla `follow` | risposta 0,38, smorzamento 0,80 | l'isola che segue un gesto a due dita |
 | `stagger` | 0,035 s per elemento, al massimo 0,2 s | elementi che arrivano insieme |
 | Distanze | pressione 0,97 (glifi 0,92, righe di elenco e celle dei giorni 0,985), entrata 8 pt + scala 0,97, pagina 16 pt, sollevamento 1,02 + ombra 8 pt, impulso 1,12 | |
-| `islandSettle` | 0,5 s | quando la finestra dell'isola si rimpicciolisce dopo la chiusura (dopo che la molla si è fermata) |
+| `islandSettle` | 0,56 s | quando la finestra dell'isola si rimpicciolisce dopo la chiusura (dopo che la molla si è fermata) |
 | Versamento | 1,4 s riempimento (ease-out), 0,7 s svuotamento (ease-in) | la bustina nella barra dei menu |
 
 ## Ruoli

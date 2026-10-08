@@ -62,6 +62,9 @@ built into the app; until then use `brew upgrade --cask cocaine` or the DMG. Hom
 
 **Motion**: the island, the HUD, the panel, its dialogs and dropdowns move with one set of springs and timings that stay smooth
 when an interaction is interrupted or repeated quickly, and follow Reduce Motion (fades only). Details: [Motion](docs/motion.en.md).
+**Notch**: Boring Notch's springs for opening and closing, a battery HUD when the charger goes in or out (fill, bolt, full,
+low), two-finger swipes (up closes, down opens, sideways changes screens), sizes, a Controls module and Reminders:
+[The notch](docs/notch-animations.en.md).
 
 ## Alerts when an AI finishes
 
