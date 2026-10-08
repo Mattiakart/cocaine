@@ -20,6 +20,7 @@ enum AGMReviewTests {
         extras(check)
         reminders(check)
         pearLateReply(check)
+        quotas(check)
         relayProtocol(check)
         print(failed == 0 ? "agm: all passed" : "agm: \(failed) failed")
         return failed
@@ -177,6 +178,23 @@ enum AGMReviewTests {
         DispatchQueue.global().async { next(PearClient.Reply(status: 200, data: Data(song.utf8))) }
         check("pear: on again, answers count as before", spin(1) { w.track?.title == "Get Lucky" } && client.status == .ready)
         w.setPear(false)
+    }
+
+    // MARK: plan limits past their reset
+
+    /// Before: Codex's windows past their reset time kept their old percent with "Resets in now" (Claude's were shown as
+    /// reset); a window whose reset passed while shown said "Resets in now"; VoiceOver read "40%, " with nothing after.
+    static func quotas(_ check: Check) {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let past = UsageWatch.Limit(id: "codex300", name: "5 h", percent: 95, resets: now.addingTimeInterval(-60), minutes: 300).window(now: now)
+        check("quotas: a Codex window past its reset shows as reset (0 %), like Claude's", past.wasReset && past.percent == 0)
+        let live = UsageWatch.Limit(id: "codex10080", name: "Week", percent: 40, resets: now.addingTimeInterval(3600), minutes: 10080).window(now: now)
+        check("quotas: one still running keeps its number", !live.wasReset && live.percent == 40)
+        let bar = QuotaBar(provider: "Codex", window: live)
+        check("quotas: its reset passing while shown says so (not \"resets in now\")",
+              bar.resetText(now.addingTimeInterval(3601)) == L("Reset: no new reading yet") && bar.resetText(now) != L("Reset: no new reading yet"))
+        check("quotas: VoiceOver reads the percent alone when no reset time is known",
+              QuotaBar.spoken(QuotaWindow(id: "x", minutes: 300, percent: 40, resets: nil), now: now) == "40%")
     }
 
     // MARK: a relay speaking another protocol
