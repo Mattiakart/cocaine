@@ -70,12 +70,15 @@ enum ShelfActionIO {
         let room = ShelfConfig.maxActions - existing.count
         guard room > 0 else { throw Problem.full }
         let list = Array(f.actions.prefix(room))
+        // Each action gets its own new id, even two that came with the same one (a hand-edited file); a chain ("then")
+        // follows the first action that had the id.
         var ids: [UUID: UUID] = [:]
-        for a in list { ids[a.id] = UUID() }
+        let fresh = list.map { _ in UUID() }
+        for (i, a) in list.enumerated() where ids[a.id] == nil { ids[a.id] = fresh[i] }
         var usedKeys = Set(existing.compactMap(\.key))
-        return list.map { a in
+        return list.enumerated().map { i, a in
             var c = a
-            c.id = ids[a.id]!
+            c.id = fresh[i]
             c.approved = nil
             c.then = a.then.flatMap { ids[$0] }
             c.name = String(a.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ShelfLimits.nameChars))
@@ -103,7 +106,7 @@ struct ShelfActionsIOButtons: View {
 
     private func exportFile() {
         let p = NSSavePanel()
-        p.nameFieldStringValue = "Cocaine actions.json"
+        p.nameFieldStringValue = L("Cocaine actions") + ".json"
         p.allowedContentTypes = [.json]
         p.message = L("The actions are saved without secrets; whoever imports them is asked before each one first runs.")
         NSApp.activate()

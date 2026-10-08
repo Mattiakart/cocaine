@@ -236,8 +236,10 @@ struct ShelfModuleView: View {
         let f = g.frame(in: .named(ShelfDrop.space)), b = g.frame(in: .named(ShelfBand.space))
         let t = ShelfDropTargets.shared
         if let k = t.tiles.firstIndex(where: { $0.id == id }) { t.tiles[k].frame = f } else { t.tiles.append((id, f)) }
-        let order = store.items.map(\.id)
-        t.tiles = t.tiles.filter { order.contains($0.id) }.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
+        // Positions looked up once (this runs for every tile at every scroll frame: no search per comparison).
+        var pos: [UUID: Int] = [:]
+        for (n, item) in store.items.enumerated() { pos[item.id] = n }
+        t.tiles = t.tiles.filter { pos[$0.id] != nil }.sorted { pos[$0.id]! < pos[$1.id]! }
         band.frames[id] = b
     }
 

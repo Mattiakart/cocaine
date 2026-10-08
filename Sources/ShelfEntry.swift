@@ -48,9 +48,9 @@ final class ShelfServices: NSObject {
     static let shared = ShelfServices()
 
     @objc func addToShelf(_ pboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
-        guard let c = ShelfEntry.center else { error.pointee = "Cocaine's island is off" as NSString; return }
+        guard let c = ShelfEntry.center else { error.pointee = L("Turn the island on to use the shelf") as NSString; return }
         let n = ShelfPaste.add(pboard, to: c.store)
-        if n == 0 { error.pointee = "Nothing to add" as NSString; return }
+        if n == 0 { error.pointee = L("Nothing to add") as NSString; return }
         c.report(added: n, refused: 0)
     }
 }

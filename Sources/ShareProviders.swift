@@ -299,11 +299,16 @@ final class KeychainSecretStore: ShareSecretStore {
     }
 
     func save(_ account: String, _ values: [String: String]) throws {
-        try delete(account)
         let clean = values.filter { !$0.value.isEmpty }
-        guard !clean.isEmpty else { return }
+        guard !clean.isEmpty else { try delete(account); return }
+        let data = try JSONEncoder().encode(clean)
+        // Changed in place: the old secrets are never deleted before the new ones are surely kept (a refused or locked
+        // Keychain leaves them as they were).
+        let up = SecItemUpdate(query(account, search: true) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if up == errSecSuccess { return }
+        guard up == errSecItemNotFound else { throw KeychainKeyStore.Failure(status: up) }
         var q = query(account, search: false)
-        q[kSecValueData as String] = try JSONEncoder().encode(clean)
+        q[kSecValueData as String] = data
         q[kSecAttrLabel as String] = "Cocaine sharing"
         q[kSecAttrDescription as String] = "Credentials for a sharing service set up in Cocaine"
         q[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly

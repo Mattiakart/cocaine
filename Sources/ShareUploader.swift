@@ -156,7 +156,14 @@ enum ShareUploader {
         var candidate: String?
         switch mode {
         case .url:
-            if let r = out.range(of: "https?://[^\\s\"'<>]+", options: .regularExpression) { candidate = String(out[r]) }
+            // The first link that may be shared: an http:// one printed before it (a CDN, a progress line) doesn't hide it.
+            var from = out.startIndex
+            while from < out.endIndex, let r = out.range(of: "https?://[^\\s\"'<>]+", options: .regularExpression, range: from..<out.endIndex) {
+                from = r.upperBound
+                if let u = URL(string: String(out[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;)"))), ShareRules.allowed(u) {
+                    candidate = String(out[r]); break
+                }
+            }
         case .regex:
             guard let re = try? NSRegularExpression(pattern: pattern), let m = re.firstMatch(in: out, range: NSRange(out.startIndex..., in: out)) else { return nil }
             let g = m.numberOfRanges > 1 && m.range(at: 1).location != NSNotFound ? m.range(at: 1) : m.range

@@ -19,6 +19,8 @@ struct ShelfConfig: Codable, Equatable {
     /// The last folder picked for Copy to / Move to (its bookmark), to start there next time.
     var lastFolder: Data? = nil
 
+    enum CodingKeys: String, CodingKey { case v, watched, actions, removeAfterDragOut, shakeToOpen, instantActions, lastFolder }
+
     func sanitized() -> ShelfConfig {
         var c = self
         c.watched = Array(watched.prefix(Self.maxWatched)).map { var w = $0; w.delay = WatchedFolder.delays.contains(w.delay) ? w.delay : 2; w.rules = Array(w.rules.prefix(8)); return w }
@@ -26,9 +28,34 @@ struct ShelfConfig: Codable, Equatable {
         return c
     }
 
-    static func decode(_ d: Data?) -> ShelfConfig {
-        guard let d, let c = try? JSONDecoder().decode(ShelfConfig.self, from: d), c.v == 1 else { return ShelfConfig() }
+    /// Read leniently: one action or folder this version can't read (a kind from a newer Cocaine, a damaged entry) is left out,
+    /// never all of them. A file that can't be read at all is kept aside under `key.unreadable` before the defaults are used.
+    static func decode(_ d: Data?, defaults: UserDefaults? = nil) -> ShelfConfig {
+        guard let d else { return ShelfConfig() }
+        guard let c = try? JSONDecoder().decode(ShelfConfig.self, from: d), c.v == 1 else {
+            defaults?.set(d, forKey: key + ".unreadable")
+            return ShelfConfig()
+        }
         return c.sanitized()
+    }
+}
+
+extension ShelfConfig {
+    private struct Lossy<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ShelfConfig()
+        v = (try? c.decodeIfPresent(Int.self, forKey: .v)).flatMap { $0 } ?? d.v
+        watched = ((try? c.decodeIfPresent([Lossy<WatchedFolder>].self, forKey: .watched)).flatMap { $0 } ?? []).compactMap(\.value)
+        actions = ((try? c.decodeIfPresent([Lossy<ShelfAction>].self, forKey: .actions)).flatMap { $0 } ?? []).compactMap(\.value)
+        removeAfterDragOut = (try? c.decodeIfPresent(Bool.self, forKey: .removeAfterDragOut)).flatMap { $0 } ?? d.removeAfterDragOut
+        shakeToOpen = (try? c.decodeIfPresent(Bool.self, forKey: .shakeToOpen)).flatMap { $0 } ?? d.shakeToOpen
+        instantActions = (try? c.decodeIfPresent(Bool.self, forKey: .instantActions)).flatMap { $0 } ?? d.instantActions
+        lastFolder = (try? c.decodeIfPresent(Data.self, forKey: .lastFolder)).flatMap { $0 }
     }
 }
 
@@ -39,7 +66,7 @@ final class ShelfConfigStore: ObservableObject {
 
     init(defaults: @escaping () -> UserDefaults = { AppDefaults.store }) {
         self.defaults = defaults
-        config = ShelfConfig.decode(defaults().data(forKey: ShelfConfig.key))
+        config = ShelfConfig.decode(defaults().data(forKey: ShelfConfig.key), defaults: defaults())
     }
 
     func update(_ body: (inout ShelfConfig) -> Void) {
