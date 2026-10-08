@@ -37,6 +37,8 @@ final class DisplayOptions: ObservableObject {
     @Published private(set) var reduceMotion = false
     /// Tests and the render tool: pretend Increase Contrast is on (nil = the system's value).
     var forceContrast: Bool? { didSet { read() } }
+    /// The render tool: pretend Differentiate Without Colour is on.
+    var forceDifferentiate: Bool? { didSet { read() } }
 
     private init() {
         read()
@@ -49,9 +51,8 @@ final class DisplayOptions: ObservableObject {
         let c = forceContrast ?? w.accessibilityDisplayShouldIncreaseContrast
         if c != increaseContrast { increaseContrast = c }
         if w.accessibilityDisplayShouldReduceTransparency != reduceTransparency { reduceTransparency = w.accessibilityDisplayShouldReduceTransparency }
-        if w.accessibilityDisplayShouldDifferentiateWithoutColor != differentiateWithoutColor {
-            differentiateWithoutColor = w.accessibilityDisplayShouldDifferentiateWithoutColor
-        }
+        let d = forceDifferentiate ?? w.accessibilityDisplayShouldDifferentiateWithoutColor
+        if d != differentiateWithoutColor { differentiateWithoutColor = d }
         if w.accessibilityDisplayShouldReduceMotion != reduceMotion { reduceMotion = w.accessibilityDisplayShouldReduceMotion }
     }
 

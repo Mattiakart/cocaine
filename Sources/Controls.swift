@@ -52,6 +52,71 @@ extension View {
 
 final class HoverState: ObservableObject { @Published var on = false }
 
+// MARK: - Keyboard focus, only for the keyboard
+
+/// Whether the user is moving through the controls with the keyboard (Tab / ⇧Tab) rather than the pointer. macOS (with
+/// "Keyboard navigation" on, the Mac's default for many people) gives the first button of a window that becomes key the
+/// keyboard focus and draws its system ring: the panel opened with a blue ring around its Back button (round 7). The panel
+/// turns the system ring off (.focusEffectDisabled) and every control draws its own ring only while this is on: a Tab turns it
+/// on, a click or the panel opening turns it off.
+final class KeyboardNav: ObservableObject {
+    static let shared = KeyboardNav()
+    @Published private(set) var active = false
+    private var monitor: Any?
+
+    init() {
+        guard NSApp != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] e in
+            self?.note(e.type == .keyDown ? (e.keyCode == 48 ? .tab : .key) : .pointer)
+            return e
+        }
+    }
+
+    enum Input { case tab, key, pointer }
+    /// Pure enough for tests: Tab turns keyboard mode on, the pointer turns it off, other keys leave it as it is.
+    func note(_ i: Input) {
+        switch i {
+        case .tab: if !active { active = true }
+        case .pointer: if active { active = false }
+        case .key: break
+        }
+    }
+    /// A surface opened (the panel): no ring until the user presses Tab.
+    func reset() { if active { active = false } }
+}
+
+/// The app's own focus ring: an accent edge around the control, shown only while it has the keyboard focus *and* the user is
+/// navigating with the keyboard. Every shared button style and the switch use it (one look, never a system bezel or ring).
+struct KeyboardFocusRing: ViewModifier {
+    var radius: CGFloat? = nil                  // nil: a capsule
+    @Environment(\.isFocused) private var focused
+    @ObservedObject private var nav = KeyboardNav.shared
+
+    func body(content: Content) -> some View {
+        let on = focused && nav.active
+        return content.overlay {
+            Group {
+                if let radius { RoundedRectangle(cornerRadius: radius).strokeBorder(CTL.accent, lineWidth: 2) }
+                else { Capsule().strokeBorder(CTL.accent, lineWidth: 2) }
+            }
+            .padding(-3)
+            .opacity(on ? 1 : 0)
+            .animation(Motion.animation(.hover), value: on)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    /// The keyboard-only focus ring (KeyboardFocusRing); `radius` nil draws a capsule.
+    func keyboardFocusRing(radius: CGFloat? = nil) -> some View { modifier(KeyboardFocusRing(radius: radius)) }
+
+    /// The panel's surfaces: no system focus ring or bezel anywhere under them (the controls draw their own, keyboard only), and
+    /// any Button that didn't pick a style gets the app's capsule rather than macOS's bordered push button.
+    func cocaineControlSurface() -> some View { self.focusEffectDisabled().buttonStyle(CocaineButtonStyle()) }
+}
+
 /// A cell's highlight in the island's and the panel's top strips: white .16 when selected, a faint .08 while the pointer is
 /// over it, fading between them.
 struct StripHighlight: View {
@@ -140,6 +205,7 @@ private struct CocaineButtonBody<Label: View>: View {
         .motion(.crossfade, value: busy)
         .pressable(pressed)
         .opacity(enabled || dimmedByContainer ? 1 : CTL.disabled)
+        .keyboardFocusRing()
         .onHover { hover.on = $0 }
     }
 }
@@ -185,6 +251,51 @@ struct EqualWidthHStack: SwiftUI.Layout {
         let w = (bounds.width - spacing * (n - 1)) / n
         for (i, s) in subviews.enumerated() {
             s.place(at: CGPoint(x: bounds.minX + CGFloat(i) * (w + spacing), y: bounds.minY), proposal: ProposedViewSize(width: w, height: bounds.height))
+        }
+    }
+}
+
+/// A settings row of a title block and a control: side by side when both fit on one line at their ideal widths, else the
+/// control on its own full-width line under the title. Its size is always the arrangement it draws: SwiftUI's ViewThatFits
+/// reported the one-line height (22 pt) for the two-line arrangement inside the panel's fixed-height stack, so the next row
+/// was drawn over it (Smart Triggers: Power on battery, its detail line, over External display — round 7).
+struct FitRow: SwiftUI.Layout {
+    var gap: CGFloat = Space.l              // the least air between title and control side by side
+    var stackSpacing: CGFloat = Space.s     // title ↔ control when stacked
+    var minHeight: CGFloat = 22
+
+    /// Pure: whether the two fit side by side in `width` (also --ui-test).
+    static func sideBySide(title: CGFloat, control: CGFloat, gap: CGFloat, width: CGFloat) -> Bool { title + gap + control <= width + 0.5 }
+
+    private func arrange(_ width: CGFloat?, _ subviews: Subviews) -> (side: Bool, size: CGSize, title: CGSize, control: CGSize) {
+        guard subviews.count == 2 else { return (true, .zero, .zero, .zero) }
+        let ti = subviews[0].sizeThatFits(.unspecified), ci = subviews[1].sizeThatFits(.unspecified)
+        let w = width ?? (ti.width + gap + ci.width)
+        if Self.sideBySide(title: ti.width, control: ci.width, gap: gap, width: w) {
+            let t = subviews[0].sizeThatFits(ProposedViewSize(width: max(0, w - gap - ci.width), height: nil))
+            return (true, CGSize(width: w, height: max(minHeight, t.height, ci.height)), t, ci)
+        }
+        let t = subviews[0].sizeThatFits(ProposedViewSize(width: w, height: nil))
+        let c = subviews[1].sizeThatFits(ProposedViewSize(width: w, height: nil))
+        return (false, CGSize(width: w, height: max(minHeight, t.height + stackSpacing + c.height)), t, c)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width.flatMap { $0.isFinite ? $0 : nil }, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let a = arrange(bounds.width, subviews)
+        if a.side {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                              proposal: ProposedViewSize(width: a.title.width, height: a.title.height))
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing,
+                              proposal: ProposedViewSize(width: a.control.width, height: a.control.height))
+        } else {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: ProposedViewSize(width: bounds.width, height: a.title.height))
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + a.title.height + stackSpacing),
+                              proposal: ProposedViewSize(width: bounds.width, height: a.control.height))
         }
     }
 }
@@ -259,7 +370,8 @@ private struct SegmentCell: View {
 
     var body: some View {
         Button(action: action) {
-            label.font(CTL.label.monospacedDigit()).lineLimit(1)
+            // Differentiate Without Colour: the picked segment is also bolder, not only in the accent.
+            label.font((on && DisplayOptions.shared.differentiateWithoutColor ? CTL.labelStrong : CTL.label).monospacedDigit()).lineLimit(1)
                 .foregroundStyle(on ? CTL.onAccentInk : Color.white.opacity(DisplayOptions.contrast ? 0.95 : 0.78))
                 .padding(.horizontal, 3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

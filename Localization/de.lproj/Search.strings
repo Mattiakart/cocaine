@@ -1,0 +1,11 @@
+/* Suche in den Einstellungen und gemeinsame Bedienelemente des Fensters (Runde 7). */
+"Search settings" = "Einstellungen durchsuchen";
+"Clear the search" = "Suche löschen";
+"Finds any setting: type what you're looking for, in your words" = "Findet jede Einstellung: tippe, was du suchst, in deinen Worten";
+"No settings match “%@”" = "Keine Einstellung passt zu „%@“";
+"Try another word, or fewer words" = "Versuche ein anderes Wort oder weniger Wörter";
+"Search results" = "Suchergebnisse";
+"Opens this setting" = "Öffnet diese Einstellung";
+"Turn on “%@” first" = "Zuerst „%@“ einschalten";
+"No settings found" = "Keine Einstellung gefunden";
+"%d settings found" = "%d Einstellungen gefunden";

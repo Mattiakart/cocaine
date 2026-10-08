@@ -1,0 +1,11 @@
+/* 设置搜索与面板的共用控件（第 7 轮）。 */
+"Search settings" = "搜索设置";
+"Clear the search" = "清除搜索";
+"Finds any setting: type what you're looking for, in your words" = "查找任何设置：用你自己的话输入要找的内容";
+"No settings match “%@”" = "没有与“%@”匹配的设置";
+"Try another word, or fewer words" = "换个词，或少用几个词试试";
+"Search results" = "搜索结果";
+"Opens this setting" = "打开此设置";
+"Turn on “%@” first" = "请先打开“%@”";
+"No settings found" = "未找到设置";
+"%d settings found" = "找到 %d 项设置";

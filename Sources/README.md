@@ -21,8 +21,11 @@ Where things are:
   review's regressions in keep-awake, dimming, disks, uninstall and the backlight; fakes and temporary folders only). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
   docs/maintainers/app-intents.md).
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
-- The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
-  Controls.swift, Tokens.swift, InAppDialog.swift and Dialogs.swift (the app's dialogs).
+- The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window, its entrance and exit), Styles.swift
+  (shared view pieces), Controls.swift (FitRow, the keyboard-only focus ring, buttons, segments, dropdowns), Tokens.swift,
+  InAppDialog.swift and Dialogs.swift (the app's dialogs). The settings search: SettingsSearch.swift (matching, the field, the
+  results, the rows' anchors), SettingsIndex.swift (every setting); docs/settings-search.en.md. UITests.swift: --ui-test.
+  Strings: Localization/<lang>.lproj/Search.strings; search words: SearchIndex.strings (not UI text, not in extraTables).
 - The island: IslandModel.swift, IslandController.swift (one window per screen, IslandRouting, the keyboard mode), IslandView.swift,
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),

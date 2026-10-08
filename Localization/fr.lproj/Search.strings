@@ -1,0 +1,11 @@
+/* Recherche dans les réglages et contrôles partagés du panneau (round 7). */
+"Search settings" = "Rechercher dans les réglages";
+"Clear the search" = "Effacer la recherche";
+"Finds any setting: type what you're looking for, in your words" = "Trouve n'importe quel réglage : tapez ce que vous cherchez, avec vos mots";
+"No settings match “%@”" = "Aucun réglage ne correspond à « %@ »";
+"Try another word, or fewer words" = "Essayez un autre mot, ou moins de mots";
+"Search results" = "Résultats de la recherche";
+"Opens this setting" = "Ouvre ce réglage";
+"Turn on “%@” first" = "Activez d'abord « %@ »";
+"No settings found" = "Aucun réglage trouvé";
+"%d settings found" = "%d réglages trouvés";

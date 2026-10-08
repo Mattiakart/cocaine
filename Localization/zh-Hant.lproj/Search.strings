@@ -1,0 +1,11 @@
+/* 設定搜尋與面板的共用控制項（第 7 輪）。 */
+"Search settings" = "搜尋設定";
+"Clear the search" = "清除搜尋";
+"Finds any setting: type what you're looking for, in your words" = "尋找任何設定：用你自己的話輸入要找的內容";
+"No settings match “%@”" = "沒有符合「%@」的設定";
+"Try another word, or fewer words" = "換個詞，或少用幾個詞試試";
+"Search results" = "搜尋結果";
+"Opens this setting" = "打開此設定";
+"Turn on “%@” first" = "請先打開「%@」";
+"No settings found" = "找不到設定";
+"%d settings found" = "找到 %d 項設定";

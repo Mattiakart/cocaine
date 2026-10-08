@@ -1,0 +1,11 @@
+/* Ricerca nelle impostazioni e controlli condivisi del pannello (round 7). */
+"Search settings" = "Cerca nelle impostazioni";
+"Clear the search" = "Cancella la ricerca";
+"Finds any setting: type what you're looking for, in your words" = "Trova qualsiasi impostazione: scrivi cosa cerchi, con parole tue";
+"No settings match “%@”" = "Nessuna impostazione per “%@”";
+"Try another word, or fewer words" = "Prova un'altra parola, o meno parole";
+"Search results" = "Risultati della ricerca";
+"Opens this setting" = "Apre questa impostazione";
+"Turn on “%@” first" = "Prima attiva “%@”";
+"No settings found" = "Nessuna impostazione trovata";
+"%d settings found" = "%d impostazioni trovate";

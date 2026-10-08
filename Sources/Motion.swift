@@ -326,6 +326,7 @@ struct MotionGlyphStyle: ButtonStyle {
     var scale: CGFloat = Motion.Distance.pressScaleSmall
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.pressable(configuration.isPressed, scale: scale)
+            .keyboardFocusRing(radius: CTL.radius)        // keyboard navigation only (Sources/Controls.swift)
     }
 }
 

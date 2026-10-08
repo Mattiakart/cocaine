@@ -37,6 +37,7 @@ struct PanelView: View {
     @ObservedObject var envs = AIEnvironmentCenter.shared
     @ObservedObject var awakeModel = AwakeModel.shared        // the keep-awake rows (Sources/AwakePanel.swift)
     @ObservedObject var agentPrefs = AgentPrefs.shared     // the review, limits, sounds and jump rules (Sources/Alerts.swift)
+    @ObservedObject var search = SettingsSearch.shared     // the settings search (Sources/SettingsSearch.swift)
 
     /// Clock times in the app's language (rebuilt when it changes).
     private static var timeCache: DateFormatter?
@@ -52,7 +53,7 @@ struct PanelView: View {
     // MARK: Building blocks
 
     /// A group of settings: an icon and a name (with an optional control on the right) over its rows, in a card.
-    private func card<Trailing: View, Content: View>(_ icon: String, _ title: String, warning: Bool = false,
+    private func card<Trailing: View, Content: View>(_ icon: String, _ title: String, warning: Bool = false, anchor: String? = nil,
                                                      @ViewBuilder trailing: () -> Trailing,
                                                      @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -60,6 +61,7 @@ struct PanelView: View {
                 Image(systemName: icon).font(UI.icon).foregroundStyle(Island.accent)
                     .frame(width: UI.iconColumn, height: UI.iconColumn)    // wide symbols (battery, badges) stay centred on the column
                 Text(title).font(UI.groupTitle).lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)                 // VoiceOver's rotor jumps card to card (as the other cards do)
                 if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
                 Spacer(minLength: Space.m)
                 trailing().fixedSize()
@@ -71,11 +73,12 @@ struct PanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))     // whatever it holds is cut at the card's edge, never drawn outside
         .panelCard()
+        .settingsCardAnchor(anchor ?? title)                             // the settings search jumps here (and to its rows)
     }
 
-    private func card<Content: View>(_ icon: String, _ title: String, warning: Bool = false,
+    private func card<Content: View>(_ icon: String, _ title: String, warning: Bool = false, anchor: String? = nil,
                                      @ViewBuilder _ content: () -> Content) -> some View {
-        card(icon, title, warning: warning, trailing: { EmptyView() }, content)
+        card(icon, title, warning: warning, anchor: anchor, trailing: { EmptyView() }, content)
     }
 
     /// A row's title (with a green dot while what it watches is true now) and its detail line.
@@ -93,7 +96,7 @@ struct PanelView: View {
             }
             if let detail {
                 Text(detail).font(UI.detail).foregroundStyle(warning ? warningColor : UI.secondary)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(4).fixedSize(horizontal: false, vertical: true)   // 2 cut Italian and German sentences mid-word (round 7)
             }
         }
         .padding(.vertical, detail == nil ? 0 : Space.rowAir)      // a two-line row keeps the same air as one-line rows
@@ -104,31 +107,24 @@ struct PanelView: View {
                                     @ViewBuilder _ control: () -> Control) -> some View {
         HStack(alignment: .center, spacing: Space.m) {
             titleBlock(title, detail, warning: warning, live: live).frame(maxWidth: .infinity, alignment: .leading)
-            control().fixedSize()
+            control().fixedSize().settingsControl(title)
         }
         .frame(minHeight: 22)
         .fixedSize(horizontal: false, vertical: true)
         .help(tip ?? detail ?? title)
+        .settingsAnchor(title)
     }
 
     /// A row whose value is a short list: a segmented control beside the title when it fits (in this language), else on its
     /// own full-width line under it. No popup at all.
     private func segRow<T: Hashable>(_ title: String, detail: String? = nil, tip: String? = nil, live: Bool = false, _ selection: Binding<T>, _ values: [T],
                                      spoken: @escaping (T) -> String? = { _ in nil }, _ label: @escaping (T) -> String) -> some View {
-        let seg = Segments(selection: selection, values: values, name: title, label: label, spoken: spoken)
-        return ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: Space.m) {
-                titleBlock(title, detail, live: live, wraps: false)
-                Spacer(minLength: Space.l)
-                seg.fixedSize()
-            }
-            VStack(alignment: .leading, spacing: Space.s) {
-                titleBlock(title, detail, live: live)
-                seg.frame(maxWidth: .infinity)
-            }
+        FitRow {                                                  // never ViewThatFits: see FitRow (round 7, rows drawn over each other)
+            titleBlock(title, detail, live: live)
+            Segments(selection: selection, values: values, name: title, label: label, spoken: spoken).settingsControl(title)
         }
-        .frame(minHeight: 22)
         .help(tip ?? detail ?? title)
+        .settingsAnchor(title)
     }
 
     private func toggle(_ title: String, _ on: Binding<Bool>) -> some View {
@@ -286,13 +282,13 @@ struct PanelView: View {
     /// Who is doing what: the AI sessions at work, or, when none is, the latest alerts.
     @ViewBuilder private var activityCard: some View {
         if !m.board.isEmpty || !m.approvals.isEmpty || m.agentNotice != nil {
-            card("sparkles", L("Agents"), trailing: { SSHHostsBadge() }) {   // all of them, those that need you first; a click goes to the session
+            card("sparkles", L("Agents"), anchor: L("Agents"), trailing: { SSHHostsBadge() }) {   // all of them, those that need you first; a click goes to the session
                 AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: false, accent: Island.accent,
                               warning: warningColor, maxHeight: 260, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
                     .padding(.horizontal, -AgentListView.inset)   // the rows' icons on the content edge, request cards into the padding
             }
         } else if m.ai.available {
-            card("bell", L("Recent alerts"), trailing: {
+            card("bell", L("Recent alerts"), anchor: L("Agents"), trailing: {
                 if !m.history.isEmpty {
                     Button(L("Clear")) { m.clearHistory() }.buttonStyle(CocaineButtonStyle(kind: .plain))
                         .padding(.trailing, -8)                  // its text on the content edge; the hover pill reaches past it
@@ -415,6 +411,7 @@ struct PanelView: View {
             idleCard
             batteryCard
             AwakeOptionsCard(statusItemShown: !m.island)      // unplugged, locked, at launch, left click, icon, notices
+                .settingsCardAnchor(L("Keep awake"))
             appCard
             shortcutsCard
         }
@@ -661,7 +658,7 @@ struct PanelView: View {
         }
         .frame(minHeight: 22)
         .fixedSize(horizontal: false, vertical: true)
-        .help(tip)
+        .help(tip)                                           // (the tools' rows aren't settings to search: their card is)
     }
 
     private var aiTab: some View {
@@ -669,6 +666,7 @@ struct PanelView: View {
             activityCard
             environmentsCard
             AIContextSettingsCard()                                   // Sources/AIContextViews.swift: AI context (MCP)
+                .settingsCardAnchor(L("AI context (MCP)"))
             card("bell.badge", L("When")) {
                 row(L("Finishes"), tip: L("When an AI completes its work")) { toggle(L("Finishes"), $m.alertDone) }
                 row(L("Needs you"), tip: L("When it asks for a permission or an answer")) { toggle(L("Needs you"), $m.alertInput) }
@@ -742,6 +740,7 @@ struct PanelView: View {
                 segRow(L("Repeat"), tip: L("While you're away, for up to 30 minutes"), $m.alertRepeatMinutes, Settings.repeatChoices, repeatName)
             }
             SSHHostsCard()                                   // AI agents on remote machines (Sources/SSHHostsView.swift)
+                .settingsCardAnchor(L("SSH hosts"))
         }
     }
 
@@ -839,8 +838,11 @@ struct PanelView: View {
                 }
             }
             AwakeProfilesCard()                                       // keep-awake profiles (Sources/AwakeProfilesPanel.swift)
+                .settingsCardAnchor(L("Profiles"))
             AwakeWhileCard()                                          // a program runs, downloads are in progress
+                .settingsCardAnchor(L("Keep awake while…"))
             DriveAliveCard()                                          // keep disks awake
+                .settingsCardAnchor(L("Keep disks awake"))
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
                 row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)
@@ -902,6 +904,7 @@ struct PanelView: View {
                 LinkButton(title: L("Remote work guide")) { NSWorkspace.shared.open(Feedback.remoteGuide) }
             }
             AwakeScriptingCard()                                      // Mac Shortcuts pack, AppleScript
+                .settingsCardAnchor(L("Shortcuts and scripts"))
         }
     }
 
@@ -1003,6 +1006,7 @@ struct PanelView: View {
         let asking = dialogs.isShowing(on: .panel)
         let picking = pickers.isOpen(on: .panel)
         let page = tabs.contains(m.page) ? m.page : ""
+        let searching = !search.query.trimmingCharacters(in: .whitespaces).isEmpty
         let reserve = max(asking ? PanelDialogOverlay.reserved(dialogs.cardHeight, notch: g) : 0,
                           picking ? PickerLayer.reserved(pickers.anchor, card: pickers.cardHeight, bottom: Space.frame) : 0)
         return VStack(alignment: .leading, spacing: Space.l) {
@@ -1011,25 +1015,33 @@ struct PanelView: View {
             }
             VStack(alignment: .leading, spacing: Space.l) {
                 header
+                SettingsSearchField()                            // ⌘F, or just start typing (Sources/SettingsSearch.swift)
                 if s == nil {
                     Segments(selection: $m.page, values: tabs, name: L("Settings"), label: tabTitle)
                         .frame(maxWidth: .infinity)
                 }
 
-                // A tab change slides the new page in from the side of its tab (Reduce Motion: a cross-fade).
+                // A tab change slides the new page in from the side of its tab (Reduce Motion: a cross-fade). While there is a
+                // query the page gives way to the matching settings.
                 ZStack(alignment: .topLeading) {
-                    Group {
-                        switch page {
-                        case "ai": aiTab
-                        case "auto": automationTab
-                        case "island": islandTab
-                        default: generalTab
+                    if searching {
+                        SettingsSearchResults(islandOn: m.island)
+                            .transition(Motion.appear(.top))
+                    } else {
+                        Group {
+                            switch page {
+                            case "ai": aiTab
+                            case "auto": automationTab
+                            case "island": islandTab
+                            default: generalTab
+                            }
                         }
+                        .id(page)
+                        .transition(Motion.page(m.pager))
                     }
-                    .id(page)
-                    .transition(Motion.page(m.pager))
                 }
                 .animation(Motion.animation(.page), value: page)
+                .animation(Motion.animation(.crossfade), value: searching)
 
                 if s == nil {
                     HStack(spacing: Space.m) {
@@ -1057,8 +1069,20 @@ struct PanelView: View {
         .frame(minHeight: reserve, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
+        .onPreferenceChange(SettingsFrames.self) { f in search.frames = f }      // where rows and cards are, for the search's jump
+        .onAppear { wireSearch() }
+        .onChange(of: m.page) { _, _ in if !search.query.isEmpty { search.query = "" } }   // a tab picked while searching: that tab
+        .onChange(of: tabs) { _, _ in wireSearch() }
+        .cocaineControlSurface()                             // no system focus ring or bezel; keyboard rings only (Controls.swift)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
+    }
+
+    /// The search's view of the panel: which tabs there are, and how to open one.
+    private func wireSearch() {
+        search.tabs = tabs
+        let model = m
+        search.openTab = { t in if model.page != t { model.page = t } }
     }
 }
 
@@ -1151,6 +1175,7 @@ struct PanelDialogOverlay: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onPreferenceChange(DialogCardHeight.self) { h in if abs(dialogs.cardHeight - h) > 0.5 { dialogs.cardHeight = h } }
         .animation(Motion.animation(.dialog), value: dialogs.current?.id)
+        .cocaineControlSurface()                            // its buttons: no system ring or bezel (Controls.swift)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
     }
