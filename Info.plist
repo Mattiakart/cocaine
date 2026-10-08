@@ -71,6 +71,10 @@
 	<string>Cocaine shows your next events in the island.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Cocaine shows your next events in the island.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Cocaine shows your reminders due today in the island, ticks them off and adds new ones.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Cocaine shows your reminders due today in the island, ticks them off and adds new ones.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Cocaine shows a mirror in the island while you have its Mirror page open.</string>
 	<key>NSHighResolutionCapable</key>
