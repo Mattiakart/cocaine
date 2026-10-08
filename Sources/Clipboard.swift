@@ -172,6 +172,12 @@ struct ClipSettings: Codable, Equatable {
     var hideFromCapture = false      // the island isn't recorded or shared while it shows the clipboard
     var cliAccess = 0                // `cocaine clip`: 0 off, 1 add only, 2 add, read and paste
     var pasteNext: Shortcut? = ClipSettings.defaultPasteNext   // the Paste Stack's "paste the next one"
+    // 2.8: the keyboard-only clipboard (Sources/ClipKeyboard.swift).
+    var openShortcut: Shortcut? = ClipSettings.defaultOpen     // opens the clipboard with the keyboard in it, from any app
+    var openPlace = "island"         // ClipPopupPlace: island, pointer, center, last
+    var searchMode = "words"         // ClipSearchMode: words, fuzzy, regex, mixed
+    var sortOrder = "recent"         // ClipSortOrder: recent, pasted, name
+    var numberHints = true           // ⌘1…⌘9 shown on the first rows while the keyboard is in the clipboard
 
     static let itemChoices = [25, 50, 100, 200, 500]
     static let ageChoices = [1, 24, 24 * 7, 24 * 30, 0]
@@ -179,6 +185,7 @@ struct ClipSettings: Codable, Equatable {
     static let itemSizeChoices = [1, 5, 10, 25]
     static let separatorChoices = ["newline", "blank", "space", "comma", "tab", "none"]
     static let defaultPasteNext = Shortcut(keyCode: 9, mods: Shortcut.hyper)       // ⌃⌥⌘V (the key of ANSI V)
+    static let defaultOpen = Shortcut(keyCode: 9, mods: Shortcut.ctrl | Shortcut.cmd)  // ⌃⌘V
     static let key = "clipboardSettings"
 
     init() {}
@@ -195,6 +202,31 @@ struct ClipSettings: Codable, Equatable {
         let sep = v(.separator, d.separator); separator = Self.separatorChoices.contains(sep) ? sep : d.separator
         cliAccess = min(2, max(0, v(.cliAccess, d.cliAccess)))
         if c.contains(.pasteNext) { pasteNext = (try? c.decodeNil(forKey: .pasteNext)) == true ? nil : (try? c.decode(Shortcut.self, forKey: .pasteNext)) ?? d.pasteNext }
+        if c.contains(.openShortcut) { openShortcut = (try? c.decodeNil(forKey: .openShortcut)) == true ? nil : (try? c.decode(Shortcut.self, forKey: .openShortcut)) ?? d.openShortcut }
+        let place = v(.openPlace, d.openPlace); openPlace = ClipPopupPlace(rawValue: place) != nil ? place : d.openPlace
+        let mode = v(.searchMode, d.searchMode); searchMode = ClipSearchMode(rawValue: mode) != nil ? mode : d.searchMode
+        let order = v(.sortOrder, d.sortOrder); sortOrder = ClipSortOrder(rawValue: order) != nil ? order : d.sortOrder
+        numberHints = v(.numberHints, d.numberHints)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case persist, maxItems, maxAgeHours, maxTotalMB, maxItemMB, skipSecrets, excludedApps, patterns, directPaste, pastePlain, includeRemote,
+             ocr, separator, suggestions, hideFromCapture, cliAccess, pasteNext, openShortcut, openPlace, searchMode, sortOrder, numberHints
+    }
+
+    /// Every key, and a shortcut taken away as an explicit null (left out, it would come back as its default at the next launch).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(persist, forKey: .persist); try c.encode(maxItems, forKey: .maxItems); try c.encode(maxAgeHours, forKey: .maxAgeHours)
+        try c.encode(maxTotalMB, forKey: .maxTotalMB); try c.encode(maxItemMB, forKey: .maxItemMB); try c.encode(skipSecrets, forKey: .skipSecrets)
+        try c.encode(excludedApps, forKey: .excludedApps); try c.encode(patterns, forKey: .patterns); try c.encode(directPaste, forKey: .directPaste)
+        try c.encode(pastePlain, forKey: .pastePlain); try c.encode(includeRemote, forKey: .includeRemote); try c.encode(ocr, forKey: .ocr)
+        try c.encode(separator, forKey: .separator); try c.encode(suggestions, forKey: .suggestions); try c.encode(hideFromCapture, forKey: .hideFromCapture)
+        try c.encode(cliAccess, forKey: .cliAccess)
+        if let s = pasteNext { try c.encode(s, forKey: .pasteNext) } else { try c.encodeNil(forKey: .pasteNext) }
+        if let s = openShortcut { try c.encode(s, forKey: .openShortcut) } else { try c.encodeNil(forKey: .openShortcut) }
+        try c.encode(openPlace, forKey: .openPlace); try c.encode(searchMode, forKey: .searchMode); try c.encode(sortOrder, forKey: .sortOrder)
+        try c.encode(numberHints, forKey: .numberHints)
     }
 
     var maxItemBytes: Int { max(1, maxItemMB) * 1_000_000 }
@@ -1350,7 +1382,7 @@ final class ClipboardHistory: ObservableObject {
         forget(core.prune(now: now(), settings: s))
         scheduleSave()
         publish()
-        if s.pasteNext != old.pasteNext { onBoardsChange() }
+        if s.pasteNext != old.pasteNext || s.openShortcut != old.openShortcut { onBoardsChange() }
     }
 
     /// On: opens (or makes) the encrypted store and merges what is in memory with what was saved. Off: stops saving the

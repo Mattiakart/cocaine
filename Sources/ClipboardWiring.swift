@@ -16,8 +16,12 @@ enum ClipboardWiring {
     /// The island's model and what its controller can do. Called once at launch.
     static func attach(model: IslandModel, openKeyboard: @escaping () -> Void, close: @escaping () -> Void) {
         let h = model.clipboard, engine = PasteEngine.shared, ui = ClipPageState.shared
-        keyable = { [weak model] on in model?.setKeyable(on) }
+        keyable = { [weak model] on in
+            if ClipPopup.shared.isOpen { ClipPopup.shared.keyable(on); return }     // the floating clipboard has the keyboard already
+            model?.setKeyable(on)
+        }
         engine.closeIsland = { [weak model] in
+            ClipPopup.shared.close(restore: false)                       // pasting from the floating clipboard closes it too
             guard let model else { return }
             model.setKeyable(false)
             if model.open { close() }
@@ -32,6 +36,9 @@ enum ClipboardWiring {
         ClipHotKeys.shared.perform = { [weak h, weak model] t in
             guard let h else { return }
             switch t {
+            case .open:                                                  // Sources/ClipKeyboard.swift: the island or the floating panel
+                guard h.running else { return }
+                ClipKeyboard.open(model: model, openKeyboard: openKeyboard)
             case .pasteNext: engine.pasteNext()
             case .snippet(let id): if let c = h.items.first(where: { $0.id == id }) { SnippetPaste.paste(c, engine: engine) }
             case .board(let id):                                         // the island, keyboard in it, on that pinboard
@@ -42,6 +49,7 @@ enum ClipboardWiring {
         ClipShortcutRecorder.shared.save = { [weak h] t, s in
             guard let h else { return }
             switch t {
+            case .open: var n = h.settings; n.openShortcut = s; h.update(n)
             case .pasteNext: var n = h.settings; n.pasteNext = s; h.update(n)
             case .board(let id): h.editBoards { b in guard let i = b.firstIndex(where: { $0.id == id }) else { return false }; b[i].hotkey = s; return true }
             case .snippet(let id): h.modify(id) { $0.snippet = SnippetInfo(hotkey: s) }
@@ -60,7 +68,11 @@ enum ClipboardWiring {
         })
         // Opening the island: the app in front then is the one suggestions are for (Cocaine's own panel is not).
         subs.append(model.$open.removeDuplicates().sink { open in
-            guard open else { if ui.editing { ui.editing = false }; return }
+            guard open else {
+                if ui.editing && !ClipPopup.shared.isOpen { ui.editing = false }
+                if !ClipPopup.shared.isOpen { ui.keyboardHints = false }      // the ⌘1…9 marks are for a keyboard opening only
+                return
+            }
             let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             ui.target = front == Bundle.main.bundleIdentifier ? nil : front
         })

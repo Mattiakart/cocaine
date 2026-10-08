@@ -564,6 +564,22 @@ struct PanelView: View {
         row(L("Hide from screen sharing"), detail: L("While the island shows the clipboard (some capture tools may still record it)")) { toggle(L("Hide from screen sharing"), clipSetting(\.hideFromCapture)) }
         segRow(L("Command line"), detail: L("cocaine clip in Terminal and Shortcuts"), clipSetting(\.cliAccess), [0, 1, 2],
                spoken: { [L("Off"), L("Add only"), L("Add, read and paste")][$0] }) { [L("Off"), L("Add only"), L("Full")][$0] }
+        clipKeyboardRows
+    }
+
+    /// The keyboard-only clipboard (Sources/ClipKeyboard.swift): its shortcut, where it opens, how it searches and sorts.
+    @ViewBuilder private var clipKeyboardRows: some View {
+        let s = clip.settings
+        row(L("Open the clipboard"), detail: ClipShortcutRecorder.shared.recording == .open ? (ClipShortcutRecorder.shared.note ?? L("Type the new shortcut. Esc cancels, Delete removes it."))
+                                                                                           : L("From any app, with the keyboard in it: type to search, Return pastes")) {
+            ClipShortcutButton(target: .open, shortcut: s.openShortcut, label: L("Open the clipboard"))
+        }
+        segRow(L("Opens"), tip: L("The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)"), clipSetting(\.openPlace),
+               ClipPopupPlace.allCases.map(\.rawValue), spoken: { ClipPopupPlace(rawValue: $0)?.spoken }) { ClipPopupPlace(rawValue: $0)?.title ?? $0 }
+        segRow(L("Search"), tip: L("Mixed: whole words first; if nothing matches, a regular expression; then letters in order"), clipSetting(\.searchMode),
+               ClipSearchMode.allCases.map(\.rawValue), spoken: { ClipSearchMode(rawValue: $0)?.spoken }) { ClipSearchMode(rawValue: $0)?.title ?? $0 }
+        segRow(L("Order"), clipSetting(\.sortOrder), ClipSortOrder.allCases.map(\.rawValue)) { ClipSortOrder(rawValue: $0)?.title ?? $0 }
+        row(L("Show ⌘1…9 on the rows"), tip: L("While the clipboard was opened with the keyboard")) { toggle(L("Show ⌘1…9 on the rows"), clipSetting(\.numberHints)) }
     }
 
     static func separatorGlyph(_ id: String) -> String {

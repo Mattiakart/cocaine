@@ -312,8 +312,8 @@ enum PasteTests {
             check("Paste Stack: no item twice; reverse", st.queue == [pick[1].id, pick[0].id])
             e.startStack([UUID(), pick[0].id])
             check("Paste Stack: an item deleted meanwhile is skipped", e.pasteNext() && fb.written.last?.text == "one")
-            check("Paste Stack: 'Paste next' is registered only while a stack waits", ClipHotKeys.wanted(settings: h.settings, stackActive: true, boards: [], items: []).count == 1
-                  && ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: []).isEmpty)
+            check("Paste Stack: 'Paste next' is registered only while a stack waits", ClipHotKeys.wanted(settings: h.settings, stackActive: true, boards: [], items: []).filter { $0.0 != .open }.count == 1
+                  && ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: []).filter { $0.0 != .open }.isEmpty)
         }
 
         // MARK: selection and merge (reducers)
@@ -397,8 +397,8 @@ enum PasteTests {
             check("snippet: an ordinary item's braces are pasted as they are", fb.written.last?.text == "literal {date}")
             let hk = Shortcut(keyCode: UInt32(kVK_ANSI_S), mods: Shortcut.ctrl | Shortcut.opt | Shortcut.cmd)
             var withKey = h.items.first { $0.snippet != nil }!; withKey.snippet?.hotkey = hk
-            check("snippet: its global shortcut is wanted only while it is pinned", ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: [withKey]).first?.0 == .snippet(withKey.id)
-                  && ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: [{ var x = withKey; x.boards = []; return x }()]).isEmpty)
+            check("snippet: its global shortcut is wanted only while it is pinned", ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: [withKey]).filter { $0.0 != .open }.first?.0 == .snippet(withKey.id)
+                  && ClipHotKeys.wanted(settings: h.settings, stackActive: false, boards: [], items: [{ var x = withKey; x.boards = []; return x }()]).filter { $0.0 != .open }.isEmpty)
             check("snippet: a shortcut the app or another clipboard shortcut uses is refused, a plain key too",
                   ClipHotKeys.problem(Shortcut(keyCode: UInt32(kVK_ANSI_C), mods: Shortcut.hyper), for: .snippet(UUID()), settings: h.settings, boards: [], items: [],
                                       appShortcuts: [Shortcut(keyCode: UInt32(kVK_ANSI_C), mods: Shortcut.hyper)], system: []) != nil
