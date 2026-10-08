@@ -10,7 +10,10 @@ premi Avvia.
   *Avvia*. Vale la prossima occorrenza: oggi, o domani se è già passata. La riga dice quanto manca.
 - **Link**: `cocaine://on?until=18:30`, `on?until=08:00%20tomorrow`, `on?until=2026-10-07T18:30` (ora locale) o un orario ISO 8601
   completo di fuso (`2026-10-07T16:30:00Z`). Con x-callback-url la risposta contiene `until` e `remaining_minutes`.
-- **Riga di comando**: `cocaine on until 18:30`, `cocaine on until 08:00 tomorrow`, `cocaine on until 2026-10-07T18:30`.
+- **Riga di comando**: `cocaine on until 18:30`, `cocaine on until 08:00 tomorrow`, `cocaine on until 2026-10-07T18:30`. Un semplice
+  `cocaine on` mantiene una scadenza già impostata; `cocaine off` chiude ovunque una scadenza data da riga di comando (anche quella che
+  legge Cocaine.app). Quando Cocaine.app si apre da zero (senza riprendere una sessione dopo un aggiornamento o un crash), un timer
+  rimasto da prima dell'ultima chiusura viene scartato; resta solo una scadenza che il motore sta ancora facendo rispettare (`cocaine on 90m`, l'iPhone).
 - **AppleScript**: `keep awake until "18:30"` o una data.
 - Regole, uguali ovunque: nel futuro e **al massimo fra 24 ore** (altrimenti rifiutato, non cambia nulla); `until` mai insieme a
   `minutes`. Le ore sono lette sull'orologio tramite il calendario, quindi un cambio dell'ora legale in mezzo è contato giusto (nel
@@ -22,12 +25,13 @@ premi Avvia.
 ## Altri motivi di attivazione automatica (Automazioni → Attivazione automatica)
 
 Ognuno, come gli altri, accende Cocaine finché vale e lo spegne dopo un margine, solo se l'ha acceso un trigger; se lo spegni tu, vince
-la tua scelta finché il motivo non sparisce; *Ne vale almeno uno/Valgono tutti* li combina con gli altri.
+la tua scelta finché il motivo non sparisce; *Ne vale almeno uno/Valgono tutti* li combina con gli altri. Dopo che il Mac si risveglia
+il margine si conta dal risveglio (un Wi-Fi o una VPN ci mettono un momento a tornare), e un orologio spostato indietro non lo allunga mai.
 
 | Trigger | Cosa legge | Permesso | Spento dopo |
 |---|---|---|---|
 | Una VPN è connessa | un'interfaccia tunnel (`utun`, `ipsec`, `ppp`, `tun`, `tap`, `wg` + numero) attiva con un indirizzo IPv4 o IPv6 instradabile (`getifaddrs`). Le utun di macOS (Relay privato di iCloud, Continuity) hanno solo indirizzi link-local e non contano | nessuno | 30 s |
-| Processore occupato / a riposo | il carico della CPU (`host_statistics`, ogni 5 s) sopra (o sotto) 10/25/50/75 % senza interruzioni per 1/2/5/10 min | nessuno | 60 s |
+| Processore occupato / a riposo | il carico della CPU (`host_statistics`, ogni 5 s; una lettura a meno di 2 s dalla precedente non conta come campione) sopra (o sotto) 10/25/50/75 % senza interruzioni per 1/2/5/10 min | nessuno | 60 s |
 | L'audio esce da | il nome dell'uscita audio predefinita (CoreAudio) contiene uno di quelli scelti (cuffie, AirPlay, un monitor) | nessuno | 30 s |
 | Un disco è collegato | uno dei volumi scelti è montato | nessuno | 30 s |
 | Un dispositivo USB è collegato | uno dei dispositivi USB scelti è collegato (nomi di prodotto da IOKit) | nessuno | 30 s |

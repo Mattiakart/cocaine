@@ -75,3 +75,4 @@
 "user@host or a config Host" = "user@host 或 config 中的 Host";
 "What was done on each host, when (never any content)" = "在每台主機上何時做了什麼（從不記錄內容）";
 "Working…" = "處理中…";
+"The relay there is another version: Retry puts this app's in its place." = "那裡的中繼是另一個版本：「重試」會換成本 App 的中繼。";

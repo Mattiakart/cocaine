@@ -13,7 +13,6 @@ enum NotchWiring {
         NotchSettingsLink.reminders = model.reminders
         guard !AppDefaults.isolated else { return }           // tests and renders: no monitors, no IOKit callbacks
         NotchPowerWatch.shared.post = { [weak model] item in model?.flashItem(item) }
-        NotchPowerWatch.shared.onSourceChange = { [weak model] in model?.hud.systemChanged() }   // no brightness bar over it
         NotchPowerWatch.shared.start()
 
         let g = NotchGestureMonitor()

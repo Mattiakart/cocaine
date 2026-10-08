@@ -25,7 +25,9 @@ A ogni risposta Claude Code passa al suo programma di statusline un JSON che con
 
 Codex scrive `rate_limits` nei suoi file di sessione (`~/.codex/sessions/**`). Ogni finestra prende il nome dalla sua durata
 (`window_minutes`: 300 = 5 h, 10080 = Settimana, 1440 = Giorno, un mese = Mese): `primary` **non** è sempre la finestra di 5 ore
-(con alcuni piani è quella settimanale e `secondary` è vuota). Accanto è mostrato il tipo di piano (`plan_type`).
+(con alcuni piani è quella settimanale e `secondary` è vuota). Accanto è mostrato il tipo di piano (`plan_type`). Come per
+Claude Code, una finestra oltre l'orario di azzeramento senza file di sessione più recenti è mostrata come azzerata, non con il
+numero vecchio.
 
 ## Cosa non viene fatto
 

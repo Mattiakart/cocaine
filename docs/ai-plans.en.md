@@ -41,7 +41,9 @@ longer than 120 characters is gone: the review scrolls instead.
   current mode. Whether Claude Code also sends ExitPlanMode through `PermissionRequest` was not verified live.
 - While the island holds a plan or a question, Claude Code's own dialog is not shown yet (the hook is waiting) — use
   **In the terminal** to answer there; the same plan or question is then not held a second time.
-- The plan and question hooks need Claude Code 2.1.78 or newer (older ones get only the permission hooks).
+- The plan and question hooks need Claude Code 2.1.78 or newer (older ones get only the permission hooks). Its version is read
+  with a login shell, else from its usual install folders (the native installer, nvm, Homebrew, npm); when it can't be read this
+  time (a slow shell, a setup Cocaine can't see), the request hooks already there are kept as they are, and none are added.
 - **Codex plans** (`update_plan`) are shown read-only on the session's card (steps done / total, the step in progress), through a
   `PostToolUse` hook that runs Cocaine's binary; Codex asks you to trust that new hook once (`/hooks`). Codex's plan-mode
   "Implement this plan?" can't be answered from outside. **Gemini CLI** plans: no documented hook to show or answer them.

@@ -159,7 +159,7 @@ extension IslandView {
                         Text(usage.loaded ? L("Nothing found") : "…").font(UI.value).foregroundStyle(UI.hint).shimmer(!usage.loaded)
                     }
                     ForEach(usage.codex) { l in
-                        QuotaBar(provider: "Codex", window: QuotaWindow(id: l.id, minutes: l.minutes, percent: l.percent, resets: l.resets))
+                        QuotaBar(provider: "Codex", window: l.window())
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

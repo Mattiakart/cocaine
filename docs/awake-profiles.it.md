@@ -44,7 +44,7 @@ collegato, gli schermi possono spegnersi), *Download grandi*, *Batteria scarica*
 Ogni condizione tranne Processore, Inattività e Livello batteria si può invertire con **È / Non è**. Una lettura che non si può fare (il
 nome Wi-Fi senza Servizi di localizzazione, il Bluetooth prima della prima lettura, la cartella Download illeggibile, nessuna batteria)
 **non è mai vera, nemmeno con "Non è"**: un dato sconosciuto non tiene mai sveglio il Mac per sbaglio. Una condizione a elenco senza
-nulla scelto non è mai vera (la riga dice *Scegline almeno uno*). *Scrivi un nome…* in ogni elenco aggiunge un nome che ora non c'è (una
+nulla scelto non è mai vera, nemmeno con "Non è" (la riga dice *Scegline almeno uno*). *Scrivi un nome…* in ogni elenco aggiunge un nome che ora non c'è (una
 rete a cui non sei collegato, un dispositivo spento).
 
 Si legge solo ciò che usano i profili attivi, ogni 5 secondi insieme agli Smart Trigger: niente lettura Bluetooth, nome Wi-Fi o
@@ -60,7 +60,9 @@ cartella Download se nessun profilo li chiede.
   impostato in macOS. *Non mostrarmi assente*, se attivo, tiene comunque accesi gli schermi.
 - **Parti dopo** (subito / 10 s / 30 s / 1 min / 5 min) e **Fermati dopo** (subito / 30 s / 1 / 5 / 15 min): le condizioni devono
   essere vere, o smettere di esserlo, per quel tempo **senza interruzioni**. È l'isteresi: un Wi-Fi che cade per qualche secondo o una
-  lettura CPU ballerina non fanno mai scattare il profilo (provato: un'alternanza ogni 5 s per due minuti non cambia nulla).
+  lettura CPU ballerina non fanno mai scattare il profilo (provato: un'alternanza ogni 5 s per due minuti non cambia nulla). Una lettura
+  del processore fatta meno di 2 s dopo la precedente (i trigger vengono riletti anche quando cambia un'impostazione o si monta un
+  disco) non conta come campione. Se l'orologio viene spostato indietro, ogni attesa riparte dalla nuova ora invece di aspettare la vecchia.
 - **Al massimo** (nessun limite / 30 min … 8 h): il tempo massimo che il profilo tiene sveglio il Mac di fila; poi si ferma e aspetta
   che le condizioni cessino prima di poter ripartire.
 - **Avvisi**: un breve avviso (isola, o VoiceOver) quando parte e quando finisce.
@@ -95,7 +97,8 @@ toccato l'ultima volta, o perché no.
   del volume, `.cocaine-drive-alive` (nascosto, escluso da Time Machine), con `F_NOCACHE` e `F_FULLFSYNC` perché la scrittura arrivi
   davvero al disco invece di restare in memoria. Sempre lo stesso file e la stessa dimensione: non si accumula nulla. Viene aperto con
   `O_NOFOLLOW` e solo se è un piccolo file normale con un solo collegamento: un link o un file di qualcun altro con quel nome non viene
-  toccato (la riga lo dice). Togliere un disco dalla lista elimina il file (se il disco è montato). Un volume di sola lettura non può
+  toccato (la riga lo dice). Togliere un disco dalla lista elimina il file (se il disco è montato), e così passare a *Sola lettura* e disinstallare
+  Cocaine (sui dischi scelti montati in quel momento). Un volume di sola lettura non può
   usare questo metodo.
 - **Sola lettura**: non viene mai scritto nulla. Cocaine legge 4 KB con `F_NOCACHE` (lettura anticipata disattivata) da un punto
   diverso del file visibile più grande vicino alla cima del volume (la cartella principale e un livello sotto). **Al meglio delle
@@ -103,7 +106,8 @@ toccato l'ultima volta, o perché no.
   tenerlo in rotazione. Alcuni file system registrano l'ora di accesso.
 
 Ogni tocco apre e chiude subito il file (l'espulsione non è mai bloccata), non avviene mai mentre macOS smonta quel volume (un minuto di
-pausa) e gira fuori dal thread principale, uno alla volta per volume. Limiti: alcuni box USB hanno un proprio timer di stop nel firmware
+pausa) e gira fuori dal thread principale, uno alla volta per volume; anche l'elenco dei volumi montati si legge fuori dal thread
+principale (un volume di rete che non risponde più non blocca mai l'app). Limiti: alcuni box USB hanno un proprio timer di stop nel firmware
 che può ignorare questa attività; un disco fermo perché il Mac dormiva si risveglia col Mac; macOS può chiedere una volta se Cocaine può
 usare i file su un volume rimovibile o di rete (Privacy e sicurezza → File e cartelle). `cocaine disks` elenca i dischi scelti e se
 ognuno è montato.

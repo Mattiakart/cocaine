@@ -183,6 +183,9 @@ enum ConditionEval {
     }
 
     static func met(_ c: AwakeCondition, _ s: AwakeSnapshot) -> Bool {
+        // A list with nothing chosen yet is never met, "is not" included (the row says "Choose at least one"): without this,
+        // "USB device is not [nothing]" held at once and the profile started before anything was picked.
+        if c.usesNames && c.names.isEmpty { return false }
         guard let r = reading(c, s) else { return false }
         return c.negate ? !r : r
     }
@@ -364,6 +367,11 @@ struct ProfileLatch: Equatable {
     enum Change: Equatable { case none, started, stopped, spent }
 
     mutating func step(holds: Bool, profile p: AwakeProfile, now: Date) -> Change {
+        // The clock went back (set by hand, a time server's correction after a flat battery): every stretch starts again from now,
+        // instead of waiting, while engaged, until the clock has caught up with the old time (an ON that didn't end for hours).
+        if let t = trueSince, now < t { trueSince = now }
+        if let f = falseSince, now < f { falseSince = now }
+        if let e = engagedAt, now < e { engagedAt = now }
         if holds {
             falseSince = nil
             if trueSince == nil { trueSince = now }

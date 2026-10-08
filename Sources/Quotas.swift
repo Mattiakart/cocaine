@@ -259,7 +259,7 @@ extension IslandView {
     func quotasModule(_ b: ModuleBox) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Text(L("AI limits")).font(UI.section).foregroundStyle(UI.secondary)
-            let rows = usage.claudeLimits.map { ("Claude", $0) } + usage.codex.map { ("Codex", QuotaWindow(id: $0.id, minutes: $0.minutes, percent: $0.percent, resets: $0.resets)) }
+            let rows = usage.claudeLimits.map { ("Claude", $0) } + usage.codex.map { ("Codex", $0.window()) }
             if rows.isEmpty {
                 Text(usage.loaded ? L("No limits reported yet") : "…").font(UI.value).foregroundStyle(UI.hint).shimmer(!usage.loaded)
             }
@@ -299,12 +299,19 @@ struct QuotaBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(provider), \(window.name)")
-        .accessibilityValue("\(Int(window.percent.rounded()))%, " + resetText(Date()))
+        .accessibilityValue(Self.spoken(window, now: Date()))
     }
 
-    private func resetText(_ now: Date) -> String {
+    /// What VoiceOver reads: "23%, Resets in 2 h", or the percent alone when no reset time is known (no dangling comma).
+    static func spoken(_ w: QuotaWindow, now: Date) -> String {
+        let reset = QuotaBar(provider: "", window: w).resetText(now)
+        return "\(Int(w.percent.rounded()))%" + (reset.isEmpty ? "" : ", " + reset)
+    }
+
+    func resetText(_ now: Date) -> String {
         if window.wasReset { return L("Reset: no new reading yet") }
         guard let r = window.resets else { return "" }
+        if r <= now { return L("Reset: no new reading yet") }          // passed while shown: never "resets in now" for good
         return String(format: L("Resets in %@"), Quotas.resetsIn(Int(r.timeIntervalSince(now))))
     }
 }

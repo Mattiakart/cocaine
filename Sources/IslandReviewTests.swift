@@ -1,5 +1,5 @@
 // --island-review-test: the round-7 review of the island (user reports and what the review found), with fakes only:
-// the brightness bar that covered the charging HUD (BrightnessHUDRule, HUDWatch.observe, NotchPowerWatch's source change),
+// the brightness bar that covered the charging HUD (BrightnessHUDRule, HUDWatch.observe with the app's PowerSourceWatch),
 // the swipe down to open (IslandRouting.swipeZone, NotchGestureMonitor driven with synthetic sequences, the phases and both
 // scrolling directions), the content growing with the island (IslandScale, ScreenLayout.resolve, the camera's box) and the
 // controller's small rules found on the way. Never touches the real brightness, power, camera or trackpad.
@@ -44,18 +44,22 @@ enum IslandReviewTests {
         check("brightness: automatic brightness's drift never does", !R.reports(delta: 0.01, sinceKey: 60, sinceSystem: 600, sinceInput: 0.1))
         check("brightness: the quiet ends: a slider 6 s after plugging in shows again", R.reports(delta: 0.2, sinceKey: 60, sinceSystem: R.systemQuiet + 0.1, sinceInput: 0.2))
 
-        // HUDWatch itself, on a fake clock, input and power source.
+        // HUDWatch itself, on a fake clock and input, with its own PowerSourceWatch on a fake reader (the app has one, shared).
         let w = HUDWatch()
         var now = Date(timeIntervalSince1970: 1_000_000)
         var input: TimeInterval = 50
-        var source = "Battery Power"
+        var onAC = false
+        let psw = PowerSourceWatch()
+        psw.read = { onAC }
+        psw.check(now: now)                                      // the baseline: no change
         var bars: [Double] = []
-        w.now = { now }; w.sinceInput = { input }; w.powerSource = { source }
+        w.now = { now }; w.sinceInput = { input }
+        w.powerChangedAt = { psw.check(now: now); return psw.changedAt }
         w.onChange = { _, _, level, _ in bars.append(level) }
         w.observe(1, 0.5)                                        // the baseline
-        source = "AC Power"; now += 0.3                          // plugged in: the ramp starts before IOKit's callback is handled
+        onAC = true; now += 0.3                                  // plugged in: the ramp starts before IOKit's callback is handled
         w.observe(1, 0.56); now += 0.25; w.observe(1, 0.62); now += 0.25; w.observe(1, 0.7)
-        check("brightness: the ramp after plugging in is quiet, from its first step (the source is read on the spot)", bars.isEmpty)
+        check("brightness: the ramp after plugging in is quiet, from its first step (the power-source watch looks again on the spot)", bars.isEmpty)
         now += 0.5; w.brightnessKey(); now += 0.1; w.observe(1, 0.76)
         check("brightness: …a key pressed during the quiet still gets its bar", bars.count == 1 && abs(bars[0] - 0.76) < 0.001)
         now += 30; input = 0.3; w.observe(1, 0.95)
@@ -67,18 +71,6 @@ enum IslandReviewTests {
         w.suppressBrightness = { true }; now += 30; w.brightnessKey(); w.observe(1, 0.3)
         check("brightness: Cocaine's own dimming never gets a bar", bars.count == 2)
 
-        // NotchPowerWatch tells the brightness watch when the charger goes in or out (and only then).
-        let pw = NotchPowerWatch()
-        var changes = 0
-        pw.onSourceChange = { changes += 1 }
-        pw.feed(PowerReading(percent: 50, onAC: false))
-        pw.feed(PowerReading(percent: 49, onAC: false))
-        check("brightness: no source change at the first reading or a level change", changes == 0)
-        pw.feed(PowerReading(percent: 49, onAC: true, charging: true))
-        pw.feed(PowerReading(percent: 50, onAC: true, charging: true))
-        pw.feed(PowerReading(percent: 50, onAC: false))
-        check("brightness: …one at each plug and unplug", changes == 2)
-
         // The whole chain as the island wires it: the charging HUD stays when macOS raises the brightness.
         let im = IslandModel()
         let said = A11y.post
@@ -88,13 +80,18 @@ enum IslandReviewTests {
         im.now = { t }
         let hud = HUDWatch()
         var clock = Date(timeIntervalSince1970: 2_000_000)
-        hud.now = { clock }; hud.sinceInput = { 60 }; hud.powerSource = { nil }
+        var ac = false
+        let source = PowerSourceWatch()
+        source.read = { ac }
+        source.check(now: clock)
+        hud.now = { clock }; hud.sinceInput = { 60 }
+        hud.powerChangedAt = { source.check(now: clock); return source.changedAt }
         hud.onChange = { icon, text, level, display in im.flashNotice(icon, text, level: level, display: display) }
         let power = NotchPowerWatch()
         power.post = { im.flashItem($0) }
-        power.onSourceChange = { hud.systemChanged() }
         hud.observe(1, 0.4)
         power.feed(PowerReading(percent: 62, onAC: false))
+        ac = true; clock += 0.05
         power.feed(PowerReading(percent: 62, onAC: true, charging: true, minutesToFull: 48))
         let first = im.hudItem?.kind
         for i in 1...6 { clock += 0.25; t += 0.25; hud.observe(1, 0.4 + Float(i) * 0.03) }

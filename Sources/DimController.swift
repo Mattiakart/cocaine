@@ -31,6 +31,8 @@ struct DimInputs: Equatable {
     var delay: Double = 60          // dim after this much idle time
     var level: Float = 0.2          // the idle dim's brightness
     var allowed = true              // false right after an alert: the screens stay bright for a while
+    /// The last time the Mac went on or off the charger (PowerSourceWatch): macOS changes the brightness by itself then.
+    var powerChangedAt = Date.distantPast
 }
 
 /// Who lowers which display and how far:
@@ -46,6 +48,17 @@ final class DimController {
     static let gammaFloor: Float = 0.12          // software dimming: dimmed, never black
     static let creepTolerance: Float = 0.02      // automatic brightness pushing a lowered screen up a little: put back
     static let userChange: Float = 0.15          // a jump bigger than this in one tick is someone's choice: kept
+    static let powerWindow: TimeInterval = 10    // …except right after the charger was plugged in or out: that jump is macOS's
+
+    /// A rise on a lowered display is someone's own choice (kept: not lowered again until the rule ends), or the system's (put
+    /// back). Behind a closed lid nobody chooses a brightness, and in the seconds after the charger is plugged in or out macOS
+    /// raises it by itself ("slightly dim the display on battery"): both are put back. Before, either one ended the dimming,
+    /// and a built-in panel behind a closed lid stayed lit at the level macOS gave it on the charger.
+    static func userRaised(by delta: Float, reason: String, sincePowerChange: TimeInterval) -> Bool {
+        guard delta > userChange else { return false }
+        if reason == "lid" { return false }
+        return !(sincePowerChange >= 0 && sincePowerChange < powerWindow)
+    }
 
     enum Kind { case backlight, gamma }
     struct Held {
@@ -216,7 +229,7 @@ final class DimController {
                     lowering = lowering || target < h.value
                     held[d] = h
                 } else if h.value == h.goal, h.kind == .backlight, let cur = io.brightness(d), cur > h.value + Self.creepTolerance {
-                    if cur - h.value > Self.userChange {
+                    if Self.userRaised(by: cur - h.value, reason: h.reason, sincePowerChange: now.timeIntervalSince(inputs.powerChangedAt)) {
                         // Someone set it (a slider, a script): their level is kept, and not lowered again until this rule ends.
                         held[d] = nil
                         kept.insert(d)

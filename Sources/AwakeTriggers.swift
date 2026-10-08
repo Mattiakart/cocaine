@@ -143,15 +143,23 @@ struct CPURule {
     static func clampMinutes(_ m: Int) -> Int { min(60, max(1, m)) }
 
     private(set) var last: CPUTicks?
+    private(set) var lastAt: Date?          // when `last` was taken
     private(set) var since: Date?           // the start of the stretch that holds
     private(set) var load: Double?          // the last measured load, 0…1
+    /// Samples closer together than this are not a load reading: the triggers are also evaluated at once when a setting
+    /// changes, a disk mounts or the Mac wakes, and a few milliseconds of ticks (one busy or idle instant) used to reset a stretch
+    /// that had held for minutes.
+    static let minSpacing: TimeInterval = 2
 
     /// One sample (every few seconds). nil = not enabled.
     mutating func step(rule: String, percent: Int, minutes: Int, ticks: CPUTicks?, now: Date) -> Bool? {
-        guard rule == "above" || rule == "below" else { last = nil; since = nil; return nil }
+        guard rule == "above" || rule == "below" else { last = nil; lastAt = nil; since = nil; return nil }
         guard let t = ticks else { since = nil; return false }
-        defer { last = t }
-        guard let l = last, t.total > l.total, t.busy >= l.busy else { return since.map { now.timeIntervalSince($0) >= Double(minutes) * 60 } ?? false }
+        func held() -> Bool { since.map { now.timeIntervalSince($0) >= Double(Self.clampMinutes(minutes)) * 60 } ?? false }
+        if since.map({ now < $0 }) == true { since = now }      // the clock went back: the stretch starts again, never negative
+        if let at = lastAt, last != nil, now >= at, now.timeIntervalSince(at) < Self.minSpacing { return held() }
+        defer { last = t; lastAt = now }
+        guard let l = last, t.total > l.total, t.busy >= l.busy else { return held() }
         let v = Double(t.busy - l.busy) / Double(t.total - l.total)
         load = v
         let holds = rule == "above" ? v * 100 >= Double(percent) : v * 100 < Double(percent)
@@ -485,14 +493,8 @@ struct SystemAwakeProbe: AwakeProbe {
         return n as String
     }
 
-    func mountedVolumes() -> [String] {
-        let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeNameKey, .volumeIsRootFileSystemKey],
-                                                         options: [.skipHiddenVolumes]) ?? []
-        return urls.compactMap { u in
-            let v = try? u.resourceValues(forKeys: [.volumeNameKey, .volumeIsRootFileSystemKey])
-            return v?.volumeIsRootFileSystem == true ? nil : v?.volumeName
-        }
-    }
+    /// The mounted volumes other than the startup disk, from MountedVolumes' background reading (never read here on the main thread).
+    func mountedVolumes() -> [String] { MountedVolumes.shared.current().map(\.name) }
 
     func usbDevices() -> [String] {
         var it: io_iterator_t = 0

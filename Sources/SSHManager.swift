@@ -82,10 +82,7 @@ final class SSHHostManager: ObservableObject {
         store = SSHHostStore.load(support)
         status = Dictionary(uniqueKeysWithValues: store.hosts.map { ($0.id, SSHHostStatus()) })
         AgentBoard.remoteLiveness = { [weak self] e in self?.liveness(e) ?? (e.unreachable == true ? true : nil) }
-        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
-        t.tolerance = 0.3
-        RunLoop.main.add(t, forMode: .common)
-        ticker = t
+        updateTicker()
         if watchSystem {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.everyHost(.wake)
@@ -111,6 +108,20 @@ final class SSHHostManager: ObservableObject {
         conns = [:]
         started = false
     }
+
+    /// The once-a-second housekeeping runs only while there is a host to keep (most Macs have none: no wake-up a second).
+    private func updateTicker() {
+        let want = started && !store.hosts.isEmpty
+        if want, ticker == nil {
+            let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+            t.tolerance = 0.3
+            RunLoop.main.add(t, forMode: .common)
+            ticker = t
+        } else if !want, let t = ticker {
+            t.invalidate(); ticker = nil
+        }
+    }
+    var tickerRunning: Bool { ticker != nil }
 
     private func wanted(_ h: SSHHost) -> Bool { store.enabled && h.enabled && h.deployed }
     private func isOff(_ id: String) -> Bool { (machines[id]?.phase ?? .off) == .off }
@@ -188,6 +199,7 @@ final class SSHHostManager: ObservableObject {
             self.conns[id] = nil
             self.audit(id, "disconnected (\(Self.word(why)))")
             self.drive(id, .down(why))
+            if why == .relayOutdated { self.updateRelay(id) }
         }
         conns[id] = c
         audit(id, "connecting")
@@ -196,15 +208,28 @@ final class SSHHostManager: ObservableObject {
 
     private func hello(_ id: String, _ c: SSHConnection, _ h: SSHHello) {
         update(id) { $0.hello = h }
-        guard h.sha == relaySHA else {                       // an older (or newer) relay there: put this one instead
+        guard h.sha == relaySHA else {                       // an older (or newer) relay there: put this one instead (onEnd)
             audit(id, "relay differs from this app's")
             c.stop(.relayOutdated)
-            if host(id)?.deployed == true { deploy(id) }
             return
         }
         audit(id, "connected")
         update(id) { $0.failure = nil }
         drive(id, .up)
+    }
+
+    /// A relay of another version there (its hello named another protocol, or another file): this app's goes in its place, only
+    /// where the user installed one before, and at most once in 10 minutes per host (a relay that still differs after its
+    /// update then stays stopped with the reason shown, never a loop of installs).
+    private var relayUpdatedAt: [String: Date] = [:]
+    static let relayUpdateEvery: TimeInterval = 600
+
+    private func updateRelay(_ id: String) {
+        guard host(id)?.deployed == true else { return }
+        let now = Date()
+        if let last = relayUpdatedAt[id], now.timeIntervalSince(last) < Self.relayUpdateEvery { return }
+        relayUpdatedAt[id] = now
+        deploy(id)
     }
 
     private func afterConnect(_ id: String) {
@@ -294,6 +319,7 @@ final class SSHHostManager: ObservableObject {
         store.hosts.append(h)
         store.save(support)
         status[h.id] = SSHHostStatus()
+        updateTicker()
         audit(h.id, "added")
         return .success(h)
     }
@@ -317,6 +343,7 @@ final class SSHHostManager: ObservableObject {
     func retry(_ id: String) {
         guard let h = host(id), wanted(h) else { return }
         update(id) { $0.failure = nil }
+        relayUpdatedAt[id] = nil                                // the user's own try: an outdated relay may be updated again
         drive(id, isOff(id) ? .enable : .retry)
     }
 
@@ -469,7 +496,8 @@ final class SSHHostManager: ObservableObject {
             audit(id, "removed")
             store.hosts.removeAll { $0.id == id }
             store.save(support)
-            status[id] = nil; machines[id] = nil; alive[id] = nil; downSince[id] = nil
+            status[id] = nil; machines[id] = nil; alive[id] = nil; downSince[id] = nil; relayUpdatedAt[id] = nil
+            updateTicker()
             try? FileManager.default.removeItem(atPath: SSHHostStore.folder(support).appendingPathComponent("\(id).command").path)
             onRemoved(id)
             done(true)
@@ -517,10 +545,12 @@ final class SSHHostManager: ObservableObject {
             SSHHost(id: "bbbbbb", alias: "gpu-training-cluster-node-07.internal.example.com", deployed: true),
             SSHHost(id: "cccccc", alias: "build", deployed: true),
             SSHHost(id: "dddddd", alias: "me@203.0.113.9:2222"),
+            SSHHost(id: "eeeeee", alias: "staging", deployed: true),
         ])
         status = ["aaaaaa": SSHHostStatus(phase: .connected, hooksOn: ["claude", "codex"]),
                   "bbbbbb": SSHHostStatus(phase: .retrying(Date().addingTimeInterval(240))),
                   "cccccc": SSHHostStatus(phase: .stopped(.hostKeyChanged)),
+                  "eeeeee": SSHHostStatus(phase: .stopped(.relayOutdated)),
                   "dddddd": SSHHostStatus()]
         if args.contains("--ssh-review") {
             let before = "{\n  \"model\": \"opus\"\n}\n"

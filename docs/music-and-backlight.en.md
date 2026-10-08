@@ -52,7 +52,7 @@ On Macs whose keyboard has a backlight (MacBooks), Cocaine can show and set it:
 - **In the island**: the **Keyboard backlight** module (add it to any screen in Settings → Island → *Screens*) and a row at the
   top of the Monitors page, each with a switch and a slider. When Cocaine changes the level the HUD under the notch shows it.
 - **In Settings** → Island → *Music and keyboard*: the level, **Turn off when idle** (never, 30 s, 1, 2 or 5 min without a key,
-  click or touch; it comes back at the next input) and **Only while Cocaine keeps the Mac awake** (the idle rule applies only
+  click or touch; it comes back at the next input; Stay available's own invisible nudges don't count as input) and **Only while Cocaine keeps the Mac awake** (the idle rule applies only
   then). If you change the level yourself while it is off for idleness, Cocaine leaves your level alone. When Cocaine quits it
   turns back on what it turned off.
 

@@ -17,7 +17,8 @@ Where things are:
   AwakeProfileProbe.swift (the Mac's readings), AwakeProfilesPanel.swift (Profiles, Keep disks awake, statistics rows),
   AwakeProfilesCLI.swift (link, AppleScript, `cocaine profiles|disks`), DriveAlive.swift (keep disks awake), AwakeSessions.swift
   (statistics, reminder), TriggersTests.swift (--triggers-test, render fixtures; strings: Triggers.strings), Scripting.swift (the AppleScript dictionary, Cocaine.sdef), AwakeShortcuts.swift (the Mac
-  Shortcuts pack), AwakeTests.swift (--awake-test). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
+  Shortcuts pack), AwakeTests.swift (--awake-test), PowerReviewTests.swift (--power-review-test: the round-7
+  review's regressions in keep-awake, dimming, disks, uninstall and the backlight; fakes and temporary folders only). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
   docs/maintainers/app-intents.md).
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
 - The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
@@ -40,7 +41,8 @@ Where things are:
   PlanReviewModel.swift (detail, diff, questions, review state, ⌘ keys), PlanReviewView.swift, PlanReviewTests.swift,
   PlanReviewFixtures.swift (render fixtures); Markdown.swift (block Markdown for plans); Quotas.swift (the statusline wrapper
   `--statusline` / `--quota-hook`, plan limits, the "quotas" module); JumpRules.swift (the user's jump rules).
-  Strings: Localization/<lang>.lproj/Plans.strings.
+  Strings: Localization/<lang>.lproj/Plans.strings. AGMReviewTests.swift: --agm-review-test (regression tests of the AI agents'
+  and the information modules' review: hooks with an unreadable Claude Code version, relay updates, Pear, reminders, limits).
 - AI context (MCP, docs/mcp.en.md): AIContext.swift (the basket, by reference, and reading an item at request time),
   AIContextConsent.swift (settings, per-tool consent, rate limits, the content-free log), MCPProtocol.swift (JSON-RPC/MCP, both
   protocol generations, pure), MCPBridge.swift (`--mcp`: stdio ↔ the private socket), MCPServer.swift (the app's socket and what a

@@ -75,3 +75,4 @@
 "user@host or a config Host" = "user@host or a config Host";
 "What was done on each host, when (never any content)" = "What was done on each host, when (never any content)";
 "Working…" = "Working…";
+"The relay there is another version: Retry puts this app's in its place." = "The relay there is another version: Retry puts this app's in its place.";

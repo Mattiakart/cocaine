@@ -106,6 +106,43 @@ enum PowerState {
     }
 }
 
+/// When the Mac last went on or off the charger: IOKit's power-source notification, backed up by the app's tick. The dimming
+/// uses it to tell macOS's own brightness change at that moment from a person's (Sources/DimController.swift).
+final class PowerSourceWatch {
+    static let shared = PowerSourceWatch()
+    private(set) var change = PowerSourceChange()
+    private var source: CFRunLoopSource?
+    var read: () -> Bool = { PowerState.onAC }
+
+    var changedAt: Date { change.at }
+
+    func start() {
+        guard source == nil else { return }
+        check()
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        if let s = IOPSNotificationCreateRunLoopSource({ ctx in
+            guard let ctx else { return }
+            Unmanaged<PowerSourceWatch>.fromOpaque(ctx).takeUnretainedValue().check()
+        }, ctx)?.takeRetainedValue() {
+            source = s
+            CFRunLoopAddSource(CFRunLoopGetMain(), s, .commonModes)
+        }
+    }
+
+    func check(now: Date = Date()) { change.feed(onAC: read(), now: now) }
+}
+
+/// The pure part: the first reading is no change; each flip after it is.
+struct PowerSourceChange: Equatable {
+    private(set) var onAC: Bool?
+    private(set) var at = Date.distantPast
+
+    mutating func feed(onAC ac: Bool, now: Date) {
+        if let o = onAC, o != ac { at = now }
+        onAC = ac
+    }
+}
+
 /// The power trigger: on the charger, or on battery while above a level.
 enum PowerRule {
     static func met(rule: String, onAC: Bool, battery: Int?, minimum: Int) -> Bool? {
@@ -148,6 +185,13 @@ struct RealIdle {
         }
         return max(0, now.timeIntervalSince(lastInput ?? input))
     }
+}
+
+/// The user's own idle time for everything that acts on it (the dimming, the keyboard backlight's auto-off): AppDelegate points
+/// it at its RealIdle (Stay active's nudges left out); the system's idle time until then (and in tests that don't set it).
+enum UserIdle {
+    static var provider: () -> Double = { System.idleSeconds }
+    static var seconds: Double { provider() }
 }
 
 /// Screen-off mode: once per idle stretch, after the delay, turn the displays off.

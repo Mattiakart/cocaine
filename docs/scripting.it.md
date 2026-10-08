@@ -64,6 +64,18 @@ Le risposte vanno solo all'indirizzo di risposta di Comandi Rapidi. Vedi [Alimen
 Il motore dentro l'app (`/Applications/Cocaine.app/Contents/Resources/cocaine`): `cocaine on`, `on 90m`, `on until 18:30`,
 `on until 08:00 tomorrow`, `off`, `status --json`, `mode screen-off|normal`. Non chiede permessi (sei tu, in un terminale).
 
+**"Accendi" senza durata, ovunque** (verificato sul codice nella revisione del giro 7):
+
+| Modo | Senza durata significa |
+|---|---|
+| AppleScript `keep awake` | finché non lo spegni (nessun timer) |
+| Link `cocaine://on` | il timer del pannello (Generali → *Tieni sveglio per*); `on?timer=off` per nessuno |
+| `toggle` (link, AppleScript, comando rapido) | acceso con il timer del pannello, oppure spento |
+| Riga di comando `cocaine on` | una scadenza già impostata resta; altrimenti nessuna |
+| iPhone / `cocaine remote on` | finché non lo spegni (una scadenza già impostata viene tolta) |
+
+`off` da uno qualsiasi di questi chiude ogni scadenza.
+
 ## Prove (per chi sviluppa)
 
 - `Cocaine --awake-test`: le regole, il dizionario come Cocoa lo carica dal bundle, i comandi eseguiti su un'app finta (decide il

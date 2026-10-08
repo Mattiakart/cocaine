@@ -10,7 +10,10 @@ Start.
   *Start*. The next such time is used: today, or tomorrow once it has passed. The row says how long that is.
 - **Link**: `cocaine://on?until=18:30`, `on?until=08:00%20tomorrow`, `on?until=2026-10-07T18:30` (local) or a full ISO 8601 time
   with its zone (`2026-10-07T16:30:00Z`). With x-callback-url the answer carries `until` and `remaining_minutes`.
-- **Command line**: `cocaine on until 18:30`, `cocaine on until 08:00 tomorrow`, `cocaine on until 2026-10-07T18:30`.
+- **Command line**: `cocaine on until 18:30`, `cocaine on until 08:00 tomorrow`, `cocaine on until 2026-10-07T18:30`. A plain
+  `cocaine on` keeps a deadline already set; `cocaine off` ends a command-line deadline everywhere (also the one Cocaine.app reads).
+  When Cocaine.app opens fresh (not taking over a session after an update or a crash), a timer left from before it last quit is
+  dropped; only a deadline the engine itself is still enforcing (`cocaine on 90m`, the iPhone) is kept.
 - **AppleScript**: `keep awake until "18:30"` or a date.
 - Rules, the same everywhere: in the future and **at most 24 hours** away (else refused, nothing changes); `until` never together with
   `minutes`. Clock times are read on the wall clock through the calendar, so a daylight-saving change in between is counted right (on
@@ -22,12 +25,13 @@ Start.
 ## More Smart Triggers (Automation → Smart Triggers)
 
 Each one, like the others, turns Cocaine on while it holds and off after a grace period, only if a trigger turned it on; turning it
-off yourself wins until the reason goes away; *Any/All* combines them with the rest.
+off yourself wins until the reason goes away; *Any/All* combines them with the rest. After the Mac wakes from sleep the grace period
+counts from the wake (a Wi-Fi or VPN takes a moment to come back), and a clock set back never stretches it.
 
 | Trigger | What it reads | Permission | Off after |
 |---|---|---|---|
 | A VPN is connected | a tunnel interface (`utun`, `ipsec`, `ppp`, `tun`, `tap`, `wg` + number) that is up with an IPv4 or routable IPv6 address (`getifaddrs`). macOS's own utun interfaces (iCloud Private Relay, Continuity) have only link-local addresses and don't count | none | 30 s |
-| Processor busy / quiet | the CPU load (`host_statistics`, every 5 s) above (or below) 10/25/50/75 % without a break for 1/2/5/10 min | none | 60 s |
+| Processor busy / quiet | the CPU load (`host_statistics`, every 5 s; a reading less than 2 s after the previous one isn't a sample) above (or below) 10/25/50/75 % without a break for 1/2/5/10 min | none | 60 s |
 | Sound plays through | the default audio output's name (CoreAudio) contains one you chose (headphones, AirPlay, a display) | none | 30 s |
 | A disk is connected | one of the chosen volumes is mounted | none | 30 s |
 | A USB device is connected | one of the chosen USB devices is plugged in (IOKit's product names) | none | 30 s |

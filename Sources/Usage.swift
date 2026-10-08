@@ -240,7 +240,16 @@ enum CodexUsage {
 
 /// What the Status page shows, refreshed when the page opens (at most every 30 s), read off the main thread.
 final class UsageWatch: ObservableObject {
-    struct Limit: Identifiable { var id: String; var name: String; var percent: Double; var resets: Date?; var minutes: Int? = nil }
+    struct Limit: Identifiable {
+        var id: String; var name: String; var percent: Double; var resets: Date?; var minutes: Int? = nil
+        /// As a bar shows it: past its reset time with no newer reading, it is shown as reset (0 %), as Claude's are, never as
+        /// the old number with "resets in now".
+        func window(now: Date = Date()) -> QuotaWindow {
+            var w = QuotaWindow(id: id, minutes: minutes, percent: percent, resets: resets)
+            if let r = resets, r <= now { w.wasReset = true; w.percent = 0 }
+            return w
+        }
+    }
     @Published var codex: [Limit] = []
     @Published var codexPlan: String?
     /// Claude Code's plan limits (Quotas.swift), from the statusline wrapper's records; empty until it reports them.

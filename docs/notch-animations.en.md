@@ -58,8 +58,9 @@ now only for the user's own changes (`BrightnessHUDRule` in Sources/HUD.swift):
 - Otherwise a key gets its bar for any step, and a bigger jump without a key (a slider in Control Center, System Settings or
   the island) gets one only if the pointer clicked or dragged, or a key was typed, in the last 2 s. Automatic brightness's
   drift and its jumps while nobody touches anything get none.
-- The power source is read again the moment a brightness change is seen, so the first step of the ramp, which can come
-  before IOKit's notification is handled, is quiet too. Cocaine's own dimming never gets a bar.
+- The charger's last change comes from the app's one power-source watch (`PowerSourceWatch`, Sources/Power.swift, which the
+  idle dimming uses too); it looks again the moment a brightness change is seen, so the first step of the ramp, which can
+  come before IOKit's notification is handled, is quiet too. Cocaine's own dimming never gets a bar.
 
 Readings come from IOKit's power-source notification the moment something changes, and from the app's 2 s poll as a backup.
 The pure `ChargeEvents` turns readings into at most one event each. Nothing is announced at launch, and a wiggling cable is
