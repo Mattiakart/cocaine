@@ -374,6 +374,7 @@ final class MusicWatch: ObservableObject {
         pear.call("GET", PearAPI.path("song")) { [weak self] r in
             guard let self else { return }
             self.pearBusy = false
+            guard self.pearEnabled else { return }                       // turned off while it was on its way: nothing comes back
             guard r.status == 200, let d = r.data, let song = PearAPI.parseSong(d) else {
                 if self.states[PlayerApp.pear] != nil { self.update(PlayerApp.pear, nil) }
                 return
@@ -390,11 +391,11 @@ final class MusicWatch: ObservableObject {
 
     private func pearDetails() {
         pear.call("GET", PearAPI.path("like-state")) { [weak self] r in
-            guard let self, r.status == 200, let v = r.data.flatMap(PearAPI.parseLike), var s = self.states[PlayerApp.pear], s.liked != v else { return }
+            guard let self, self.pearEnabled, r.status == 200, let v = r.data.flatMap(PearAPI.parseLike), var s = self.states[PlayerApp.pear], s.liked != v else { return }
             s.liked = v; self.update(PlayerApp.pear, s)
         }
         pear.call("GET", PearAPI.path("volume")) { [weak self] r in
-            guard let self, r.status == 200, let v = r.data.flatMap(PearAPI.parseVolume), var s = self.states[PlayerApp.pear], s.volume != v,
+            guard let self, self.pearEnabled, r.status == 200, let v = r.data.flatMap(PearAPI.parseVolume), var s = self.states[PlayerApp.pear], s.volume != v,
                   self.volumeWork == nil else { return }
             s.volume = v; self.update(PlayerApp.pear, s)
         }

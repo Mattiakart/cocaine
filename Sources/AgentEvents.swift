@@ -101,6 +101,9 @@ final class AgentExtras: ObservableObject {
     func take(session: String, event e: [String: Any], now: Date = Date()) {
         var x = bySession[session] ?? AgentExtra()
         x.at = now
+        let kind = e["kind"] as? String
+        // A finish says it all: its own last message and what still runs (none when it lists nothing), never the turn before's.
+        if kind == "done" { x.message = nil; x.background = 0 }
         if let m = e["message"] as? String { x.message = String(m.prefix(AgentEventHook.maxMessage)) }
         if let b = e["background"] as? Int { x.background = max(0, min(b, 999)) }
         if e["kind"] as? String == "error" { x.error = AgentExtra.errorText(e["error"] as? String ?? "unknown") }

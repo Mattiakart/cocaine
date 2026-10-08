@@ -188,6 +188,7 @@ final class SSHHostManager: ObservableObject {
             self.conns[id] = nil
             self.audit(id, "disconnected (\(Self.word(why)))")
             self.drive(id, .down(why))
+            if why == .relayOutdated { self.updateRelay(id) }
         }
         conns[id] = c
         audit(id, "connecting")
@@ -196,15 +197,28 @@ final class SSHHostManager: ObservableObject {
 
     private func hello(_ id: String, _ c: SSHConnection, _ h: SSHHello) {
         update(id) { $0.hello = h }
-        guard h.sha == relaySHA else {                       // an older (or newer) relay there: put this one instead
+        guard h.sha == relaySHA else {                       // an older (or newer) relay there: put this one instead (onEnd)
             audit(id, "relay differs from this app's")
             c.stop(.relayOutdated)
-            if host(id)?.deployed == true { deploy(id) }
             return
         }
         audit(id, "connected")
         update(id) { $0.failure = nil }
         drive(id, .up)
+    }
+
+    /// A relay of another version there (its hello named another protocol, or another file): this app's goes in its place, only
+    /// where the user installed one before, and at most once in 10 minutes per host (a relay that still differs after its
+    /// update then stays stopped with the reason shown, never a loop of installs).
+    private var relayUpdatedAt: [String: Date] = [:]
+    static let relayUpdateEvery: TimeInterval = 600
+
+    private func updateRelay(_ id: String) {
+        guard host(id)?.deployed == true else { return }
+        let now = Date()
+        if let last = relayUpdatedAt[id], now.timeIntervalSince(last) < Self.relayUpdateEvery { return }
+        relayUpdatedAt[id] = now
+        deploy(id)
     }
 
     private func afterConnect(_ id: String) {
@@ -317,6 +331,7 @@ final class SSHHostManager: ObservableObject {
     func retry(_ id: String) {
         guard let h = host(id), wanted(h) else { return }
         update(id) { $0.failure = nil }
+        relayUpdatedAt[id] = nil                                // the user's own try: an outdated relay may be updated again
         drive(id, isOff(id) ? .enable : .retry)
     }
 
@@ -469,7 +484,7 @@ final class SSHHostManager: ObservableObject {
             audit(id, "removed")
             store.hosts.removeAll { $0.id == id }
             store.save(support)
-            status[id] = nil; machines[id] = nil; alive[id] = nil; downSince[id] = nil
+            status[id] = nil; machines[id] = nil; alive[id] = nil; downSince[id] = nil; relayUpdatedAt[id] = nil
             try? FileManager.default.removeItem(atPath: SSHHostStore.folder(support).appendingPathComponent("\(id).command").path)
             onRemoved(id)
             done(true)

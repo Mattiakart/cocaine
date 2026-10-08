@@ -75,3 +75,4 @@
 "user@host or a config Host" = "user@host または config の Host";
 "What was done on each host, when (never any content)" = "各ホストでいつ何をしたか（内容は記録しません）";
 "Working…" = "処理中…";
+"The relay there is another version: Retry puts this app's in its place." = "そこのリレーは別のバージョンです。「再試行」でこのアプリのものに置き換えます。";

@@ -146,9 +146,18 @@ enum AIHooks {
             if relay != nil {                             // on an SSH host: its relay reads everything, its own Claude Code's version
                 return events.filter { e in e.minVersion.map { need in remoteVersion.map { !$0.lexicographicallyPrecedes(need) } ?? false } ?? true }
             }
-            return events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true)
-                && ($0.kind != "approve" || id == "codex" || AIHooks.binary != nil)
-                && ($0.kind != "plan" || AIHooks.binary != nil) }     // only the app's own binary reads a plan
+            return events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true) && runnable($0) }
+        }
+        /// Events this app can run at all (a request or a plan needs the installed app's binary, Codex's alert aside).
+        private func runnable(_ e: Event) -> Bool {
+            (e.kind != "approve" || id == "codex" || AIHooks.binary != nil) && (e.kind != "plan" || AIHooks.binary != nil)   // only the app's own binary reads a plan
+        }
+        /// Events left out only because Claude Code's version couldn't be read this time (`claude --version` timed out, or
+        /// it isn't where a login shell or the usual install folders find it): Cocaine's hooks already there for them stay as
+        /// they are (never removed for a version nobody could read), and none are added.
+        var uncertainEvents: Set<String> {
+            guard relay == nil else { return [] }
+            return Set(events.filter { e in e.minVersion.map { AIHooks.claudeVersionCheck($0) == nil } == true && runnable(e) }.map(\.name))
         }
         var installed: ((Tool) -> Bool)? = nil            // when the folder alone doesn't tell
         /// On an SSH host (Sources/SSHInstall.swift): every hook runs the relay there instead of this app or a cocaine:// link.
@@ -244,21 +253,65 @@ enum AIHooks {
          Tool(id: "opencode", name: "OpenCode", folder: home + "/.config/opencode", file: home + "/.config/opencode/plugins/cocaine.js",
               layout: .ownFile, contents: openCodeFile)]
     }
-    /// Claude Code's version, asked once (a login shell finds it like Terminal does); nil if it can't be read.
+    /// Claude Code's version, asked once (a login shell finds it like Terminal does, else its usual install folders); nil in the
+    /// cache when it couldn't be found (asked again at the next launch).
     private static var claudeVersionCache: [Int]??
     static func assumeClaudeVersion(_ v: [Int]?) { claudeVersionCache = .some(v) }   // tests: not the Mac's own Claude Code
-    static func claudeVersion(atLeast need: [Int]) -> Bool {
+    /// Tests: as if `claude --version` had timed out (nothing cached).
+    static var claudeVersionLookup: () -> [Int]?? = AIHooks.findClaudeVersion
+    static func forgetClaudeVersion() { claudeVersionCache = nil }
+
+    /// Is Claude Code at least `need`? false when it is older, nil when its version can't be read (timed out, not found).
+    static func claudeVersionCheck(_ need: [Int]) -> Bool? {
         if claudeVersionCache == nil {
-            // A login shell finds it as Terminal does; one that waits for input (a prompt in .zprofile) is given up after 30 s.
-            let r = Proc.run("/bin/zsh", ["-lc", "claude --version"], timeout: 30, capture: true, limit: 4096)
-            if r.timedOut { return false }                    // not known this time (asked again next time), never cached as "old"
-            let out = r.text
-            var parsed: [Int]?
-            if let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) { parsed = out[r].split(separator: ".").compactMap { Int($0) } }
-            claudeVersionCache = .some(parsed)
+            guard let found = claudeVersionLookup() else { return nil }   // timed out: not known this time, never cached as "old"
+            claudeVersionCache = .some(found)
         }
-        guard let have = claudeVersionCache ?? nil else { return false }
+        guard let have = claudeVersionCache ?? nil else { return nil }
         return have.lexicographicallyPrecedes(need) == false
+    }
+    static func claudeVersion(atLeast need: [Int]) -> Bool { claudeVersionCheck(need) == true }
+
+    static func parseVersion(_ out: String) -> [Int]? {
+        guard let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) else { return nil }
+        return out[r].split(separator: ".").compactMap { Int($0) }
+    }
+
+    /// Where Claude Code's installers put it, for a login shell that doesn't find it (nvm and others set up in .zshrc only):
+    /// the native installer, the old local install, Homebrew, npm's global folders and nvm's node versions.
+    static func claudeCandidates(home: String = NSHomeDirectory()) -> [String] {
+        var out = [home + "/.local/bin/claude", home + "/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+                   home + "/.npm-global/bin/claude", home + "/.bun/bin/claude", home + "/.volta/bin/claude"]
+        let nvm = home + "/.nvm/versions/node"
+        let nodes = ((try? FileManager.default.contentsOfDirectory(atPath: nvm)) ?? []).sorted { $0.compare($1, options: .numeric) == .orderedDescending }
+        out += nodes.map { nvm + "/" + $0 + "/bin/claude" }
+        return out
+    }
+
+    /// The newest version the native installer keeps (~/.local/share/claude/versions/<x.y.z>), without running anything.
+    static func installedVersions(home: String = NSHomeDirectory()) -> [Int]? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: home + "/.local/share/claude/versions")) ?? []
+        return names.compactMap { n -> [Int]? in
+            guard n.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil else { return nil }
+            return parseVersion(n)
+        }.max { $0.lexicographicallyPrecedes($1) }
+    }
+
+    /// nil: timed out (ask again later); .some(nil): not found anywhere.
+    static func findClaudeVersion() -> [Int]?? {
+        // A login shell finds it as Terminal does; one that waits for input (a prompt in .zprofile) is given up after 30 s.
+        let r = Proc.run("/bin/zsh", ["-lc", "claude --version"], timeout: 30, capture: true, limit: 4096)
+        if let v = parseVersion(r.text) { return .some(v) }
+        for path in claudeCandidates() where FileManager.default.isExecutableFile(atPath: path) {
+            // A node script finds its node next to it (nvm, npm) or in the usual folders.
+            let dir = (URL(fileURLWithPath: path).resolvingSymlinksInPath().path as NSString).deletingLastPathComponent
+            let env = ["PATH": [(path as NSString).deletingLastPathComponent, dir, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].joined(separator: ":"),
+                       "HOME": NSHomeDirectory()]
+            let p = Proc.run(path, ["--version"], timeout: 15, capture: true, env: env, limit: 4096)
+            if let v = parseVersion(p.text) { return .some(v) }
+        }
+        if let v = installedVersions() { return .some(v) }
+        return r.timedOut ? nil : .some(nil)
     }
     static var present: [Tool] { tools.filter(isInstalled) }
     static func tool(_ id: String) -> Tool? { tools.first { $0.id == id } }
@@ -403,9 +456,12 @@ enum AIHooks {
         let before = root["hooks"]
         guard let events = (before ?? .object([])).members else { return nil }
         var wanted = on ? Dictionary(uniqueKeysWithValues: tool.activeEvents.map { ($0.name, entry(tool, $0)) }) : [:]
+        // Turning on (or bringing up to date) while Claude Code's version can't be read: ours for those events stay as they are.
+        let keep = on ? tool.uncertainEvents.subtracting(wanted.keys) : []
         var result: [JSONValue.Member] = []
         for var event in events {
             guard let entries = event.value.items else { wanted[event.key] = nil; result.append(event); continue }
+            if keep.contains(event.key) { result.append(event); continue }
             var out: [JSONValue] = []
             for e in entries {
                 if tool.layout == .flat {

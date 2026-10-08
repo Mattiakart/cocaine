@@ -32,7 +32,8 @@ extension SSHHostManager {
         case .hostKeyChanged: return L("The host's key has CHANGED since it was trusted: Cocaine won't connect. If you expected it, update ~/.ssh/known_hosts in Terminal.")
         case .hostKeyUnknown: return L("This host's key isn't in ~/.ssh/known_hosts yet: connect once in Terminal to check and accept it.")
         case .relayMissing: return L("The relay isn't on that host.")
-        case .relayOutdated: return L("Updating the relay…")
+        // Shown only when no update is running (an update shows its own note): it was tried in the last 10 minutes.
+        case .relayOutdated: return L("The relay there is another version: Retry puts this app's in its place.")
         case .noPerl: return L("That host has no perl with JSON::PP and Digest::SHA, which the relay needs.")
         case .keyMismatch: return L("The relay there has another key: install it again.")
         case .badAlias: return L("Not a host name ssh can be given.")

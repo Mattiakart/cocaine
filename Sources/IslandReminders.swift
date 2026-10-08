@@ -146,11 +146,16 @@ final class RemindersWatch: ObservableObject {
         let wanted = settings.lists.filter { id in lists.contains { $0.id == id } }
         s.fetch(lists: wanted.isEmpty ? nil : wanted) { [weak self] got in
             guard let self else { return }
-            Motion.with(.expand) { self.items = got.filter { !self.recentlyDone.contains($0.id) } }
+            // Once a fetch no longer has a reminder completed here (EventKit caught up), or a minute later, it is forgotten: a
+            // reminder opened again in Reminders comes back (it stayed hidden until the app quit).
+            let ids = Set(got.map(\.id)), t = self.now()
+            self.recentlyDone = self.recentlyDone.filter { ids.contains($0.key) && t.timeIntervalSince($0.value) < Self.catchUp }
+            Motion.with(.expand) { self.items = got.filter { self.recentlyDone[$0.id] == nil } }
         }
     }
-    /// Completed here and saved, before EventKit's change notice catches up.
-    private var recentlyDone: Set<String> = []
+    /// Completed here and saved, before EventKit's change notice catches up (and when).
+    private(set) var recentlyDone: [String: Date] = [:]
+    static let catchUp: TimeInterval = 60
 
     var sections: [(RemindersLogic.Section, [ReminderItem])] {
         RemindersLogic.sections(items, filter: settings.filter, now: now(), cal: cal)
@@ -178,7 +183,7 @@ final class RemindersWatch: ObservableObject {
         pending[id] = nil
         do {
             try s.setCompleted(id, true)
-            recentlyDone.insert(id)
+            recentlyDone[id] = now()
             Motion.with(.expand) {
                 completing.remove(id)
                 items.removeAll { $0.id == id }

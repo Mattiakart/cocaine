@@ -302,6 +302,7 @@ final class PearClient: ObservableObject {
         transport(r) { [weak self] reply in
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.status != .off else { done(Reply(status: 0, data: nil)); return }   // turned off meanwhile: a late answer counts for nothing
                 switch reply.status {
                 case 0: self.setStatus(.unreachable)
                 case 401, 403: if self.status != .asking { self.setStatus(self.status == .denied ? .denied : .needsAuth) }

@@ -75,3 +75,4 @@
 "user@host or a config Host" = "utilisateur@hôte ou un Host du config";
 "What was done on each host, when (never any content)" = "Ce qui a été fait sur chaque hôte, et quand (jamais aucun contenu)";
 "Working…" = "En cours…";
+"The relay there is another version: Retry puts this app's in its place." = "Le relais là-bas est d'une autre version : Réessayer le remplace par celui de cette app.";
