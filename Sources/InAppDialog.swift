@@ -140,9 +140,21 @@ final class DialogCenter: ObservableObject {
 
     init() {}
 
-    func present(_ spec: DialogSpec, _ completion: @escaping (DialogResult) -> Void) {
-        queue.append(Request(spec: spec, completion: completion))
+    @discardableResult
+    func present(_ spec: DialogSpec, _ completion: @escaping (DialogResult) -> Void) -> UUID {
+        let r = Request(spec: spec, completion: completion)
+        queue.append(r)
         if current == nil && !finishing { advance() }
+        return r.id
+    }
+
+    /// Takes back a question nobody needs answered any more (an AI tool's request that was cancelled or timed out): on screen it
+    /// is cancelled, waiting it is removed; either way its completion gets `.cancelled` once.
+    func withdraw(_ id: UUID) {
+        if current?.id == id { finish(.cancelled); return }
+        guard let i = queue.firstIndex(where: { $0.id == id }) else { return }
+        let r = queue.remove(at: i)
+        r.completion(.cancelled)
     }
 
     var surface: DialogSurface? { current?.spec.surface }

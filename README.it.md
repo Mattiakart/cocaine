@@ -186,6 +186,10 @@ pagine:
   **snippet** con segnaposto sono sempre salvati, cifrati; il resto solo in memoria, a meno che attivi *Salva su questo Mac*
   (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*); mai dai gestori di password.
   [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md).
+- **Contesto AI (MCP)** (disattivo di serie): metti nel *contesto AI* elementi degli appunti, file dello scaffale e note, e lascia
+  che Claude Code, Claude Desktop, Codex, Cursor o Gemini CLI leggano **solo quelli**, dopo che hai consentito ogni strumento nella
+  notch; un clic collega uno strumento (mostrato prima, reversibile), un registro annota ogni lettura senza il contenuto. Un server
+  MCP stdio locale, nessuna porta di rete. [Dettagli, strumenti, consenso e limiti](docs/mcp.it.md).
 - **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth (aggiornate al massimo una volta al minuto), e
   l'utilizzo di Codex (i limiti, dalle sessioni più recenti che li riportano) e Claude Code (i token delle ultime 5 ore e 7 giorni),
   letti dai loro file locali. I file di Claude Code vengono letti una volta, poi solo la parte aggiunta; un primo conteggio su una
@@ -383,7 +387,7 @@ disinstallazione del cask rispetta le regole di ripristino ([note](docs/maintain
 versione installata, quindi il primo aggiornamento *alla* 2.3.0 usa ancora il precedente e il passaggio di consegne durante gli
 aggiornamenti funziona dall'aggiornamento successivo.
 
-Senza Homebrew: togli le spunte in Avvisi AI, esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
+Senza Homebrew: togli le spunte in Avvisi AI, *Scollega* gli strumenti in Contesto AI (MCP), esci da Cocaine (così si spegne), spostala nel Cestino, poi nel Terminale:
 
 ```
 sudo rm /etc/sudoers.d/cocaine

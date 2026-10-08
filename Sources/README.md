@@ -36,6 +36,12 @@ Where things are:
   PlanReviewFixtures.swift (render fixtures); Markdown.swift (block Markdown for plans); Quotas.swift (the statusline wrapper
   `--statusline` / `--quota-hook`, plan limits, the "quotas" module); JumpRules.swift (the user's jump rules).
   Strings: Localization/<lang>.lproj/Plans.strings.
+- AI context (MCP, docs/mcp.en.md): AIContext.swift (the basket, by reference, and reading an item at request time),
+  AIContextConsent.swift (settings, per-tool consent, rate limits, the content-free log), MCPProtocol.swift (JSON-RPC/MCP, both
+  protocol generations, pure), MCPBridge.swift (`--mcp`: stdio ↔ the private socket), MCPServer.swift (the app's socket and what a
+  call may do), AIContextWiring.swift (hooks, the notch questions), AIContextViews.swift (the "aicontext" module, Settings → AI
+  card), MCPRegister.swift (connecting Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI; `--mcp-register`),
+  AIContextFixtures.swift (renders), MCPTests.swift (`--mcp-test`). Strings: Localization/<lang>.lproj/MCP.strings.
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
 - Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
   MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).

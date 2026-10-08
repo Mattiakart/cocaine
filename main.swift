@@ -19,6 +19,9 @@ import AppKit
 
 // Test and render flags get memory-only settings before anything reads one: they never write the app's real domain.
 AppDefaults.isolateIfTestFlag(CommandLine.arguments)
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--mcp" { cliMCP() }                     // Sources/MCPBridge.swift (run by AI tools)
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--mcp-register" { cliMCPRegister() }    // Sources/MCPRegister.swift
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--mcp-test" { exit(MCPTests.run() == 0 ? 0 : 1) }   // Sources/MCPTests.swift
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--agent-request" { cliAgentRequest() }
 if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--agent-event" { cliAgentEvent() }       // Sources/AgentEvents.swift
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--statusline" { cliStatusLine() }        // Sources/Quotas.swift

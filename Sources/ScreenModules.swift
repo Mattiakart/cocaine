@@ -30,6 +30,7 @@ extension IslandView {
         case "batteries": batteriesModule(b)
         case "usage": usageModule(b)
         case "quotas": quotasModule(b)
+        case "aicontext": aiContextModule(b)         // Sources/AIContextViews.swift
         case "mirror": mirrorTab
         case "monitors": displayTab
         default: EmptyView()
