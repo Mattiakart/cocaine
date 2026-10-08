@@ -545,10 +545,12 @@ final class SSHHostManager: ObservableObject {
             SSHHost(id: "bbbbbb", alias: "gpu-training-cluster-node-07.internal.example.com", deployed: true),
             SSHHost(id: "cccccc", alias: "build", deployed: true),
             SSHHost(id: "dddddd", alias: "me@203.0.113.9:2222"),
+            SSHHost(id: "eeeeee", alias: "staging", deployed: true),
         ])
         status = ["aaaaaa": SSHHostStatus(phase: .connected, hooksOn: ["claude", "codex"]),
                   "bbbbbb": SSHHostStatus(phase: .retrying(Date().addingTimeInterval(240))),
                   "cccccc": SSHHostStatus(phase: .stopped(.hostKeyChanged)),
+                  "eeeeee": SSHHostStatus(phase: .stopped(.relayOutdated)),
                   "dddddd": SSHHostStatus()]
         if args.contains("--ssh-review") {
             let before = "{\n  \"model\": \"opus\"\n}\n"
