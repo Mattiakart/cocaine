@@ -40,3 +40,9 @@ edited Shortcut), `stale`/`future` (with its age: check the clocks; also a comma
 `unknown-pairing`, `decrypt-failed`, `legacy-refused` — plus `relay-up`/`relay-down` for the Mac's connection. It never contains a
 key, a topic, a command or an answer. Shortcuts made by the first v2 builds, before this fix, never worked (their Generate Hash actions
 received no input, so commands arrived without a tag): delete them and send a new one.
+
+**Clipboard commands.** A paired iPhone can also send `clip …` commands (the *Cocaine Clip* Shortcut): they travel exactly like
+the others (sealed, authenticated, once only), but the app answers them itself, never the shell gate (which refuses `clip`). Each
+needs its own switch for that iPhone (read, write: both off by default), never works for old plain-text Shortcuts, at most 12 a
+minute; reading gives only the newest item or the pinboard you made readable, never anything that looks like a secret.
+[Details](clipboard-sync.en.md).

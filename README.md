@@ -187,6 +187,9 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   Claude Desktop, Codex, Cursor or Gemini CLI read **only those**, after you allow each tool in the notch; one click connects a
   tool (shown first, reversible), an activity log records every read without its content. A local stdio MCP server, no network
   port. [Details, tools, consent and limits](docs/mcp.en.md).
+  [pinboards](docs/pinboards.en.md). **iPhone clipboard sync** (off by default): items to and from the iPhone through a folder in
+  iCloud Drive and two Shortcuts Cocaine makes (*Send to Mac*, *Get from Mac*; text and images), and short text over the paired
+  iPhone, end-to-end encrypted; no iPhone app, no account. [How and its limits](docs/clipboard-sync.en.md).
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices (refreshed at most once a minute), and the usage of
   Codex (its limits, from the newest sessions that report them) and Claude Code (tokens in the last 5 hours and 7 days), read from
   their own local files. Claude Code's files are read once, then only what was added; a first count over a large history says

@@ -135,9 +135,11 @@ final class IslandController {
             for s in spots.values { s.panel.orderOut(nil) }
             watchTimer?.invalidate(); watchTimer = nil
             model.files.stop(); model.clipboard.stop(); model.music.stop(); model.hud.stop()
+            ClipSyncCenter.shared.stop()                                   // Sources/ClipSync.swift
             model.shelfUI.watching = false
             return
         }
+        ClipSyncCenter.shared.start()      // the iPhone sync (off unless turned on); first, so the history knows what stays off disk
         model.files.start(); model.clipboard.start(); model.music.start()
         model.shelfUI.watching = true
         syncHUD(panelModel?.replaceHUD ?? false)

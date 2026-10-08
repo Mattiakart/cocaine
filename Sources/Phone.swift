@@ -103,6 +103,7 @@ enum PhoneLink {
         var h = RemoteListener.Hooks(store: store, execute: { execute($0, tier: $1) },
                                      publish: { await publish($0, to: $1, relay: $2, session: $3) })
         h.legacyUntil = { legacyUntil }
+        h.intercept = { ClipRemote.shared.handle($0, pairing: $1, authenticated: $2) }      // `clip …`: Sources/ClipRemote.swift
         h.expiredText = L("This pairing has expired. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
         h.noticeText = L("Cocaine was updated and no longer accepts this Shortcut. On the Mac: Cocaine → Remote work → iPhone → Send, then use the new Shortcut.")
         h.willRun = { DispatchQueue.main.async { WakeHold.extend(60) } }      // stay awake while it runs and the answer goes out

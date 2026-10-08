@@ -208,6 +208,7 @@ func cliRenderIsland() {
                           ClipItem.files(["/tmp/cocaine-no-such-file.pdf"])])
     ClipboardFixtures.apply(args, im)                           // --clipboard-fixture <name>: pinboards, selection, details…
     AIContextFixtures.apply(args)                               // --aicontext-fixture <name>: the basket, the notch questions
+    ClipSyncFixtures.apply(args, im.clipboard)                  // --clipsync-fixture: an item from the iPhone, Send to iPhone (Sources/ClipSync.swift)
     im.music.setSample(title: "Blinding Lights", artist: "The Weeknd", album: "After Hours")
     ShelfFixtures.apply(im, args)                              // --shelf, --shelf-fixture <name> (Sources/ShelfTests.swift)
     CloudShareFixtures.apply(args)                             // --cloud-fixture toast: the link under the shelf (Sources/CloudShareFixtures.swift)

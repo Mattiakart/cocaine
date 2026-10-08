@@ -922,7 +922,10 @@ final class ClipboardHistory: ObservableObject {
     var running: Bool { wanted }
 
     /// Is this item on disk (saved history, or on a pinboard whose file is open)?
-    func durable(_ i: ClipItem) -> Bool { saving || (boardsOpen && i.pinned) }
+    func durable(_ i: ClipItem) -> Bool { (saving && !keepOffDisk(i)) || (boardsOpen && i.pinned) }
+    /// Items the saved history never holds (Universal Clipboard copies, when the user says so: Sources/ClipSync.swift);
+    /// they stay in memory, and on disk only once pinned.
+    var keepOffDisk: (ClipItem) -> Bool = { _ in false }
 
     // MARK: watching
 
@@ -1570,6 +1573,7 @@ final class ClipboardHistory: ObservableObject {
     static func appName(_ bundle: String?) -> String? {
         guard let b = bundle, !b.isEmpty else { return nil }
         if b == ClipRules.remoteSource { return L("Another device") }
+        if b == "device:iphone" { return "iPhone" }                                   // Cocaine's iPhone sync (ClipSync.swift)
         if let n = appNames[b] { return n }
         let n = NSWorkspace.shared.urlForApplication(withBundleIdentifier: b).map { FileManager.default.displayName(atPath: $0.path) } ?? b
         let name = n.hasSuffix(".app") ? String(n.dropLast(4)) : n
@@ -1613,7 +1617,9 @@ final class ClipboardHistory: ObservableObject {
         guard saving || boardsOpen else { return }
         let saveHistory = saving, saveBoards = boardsOpen
         // Without the pinboards' file (it can't be read nor set aside), pinned items stay in the history's index.
-        let history = saveBoards ? core.items.filter { !$0.pinned } : core.items, pinned = core.items.filter(\.pinned), b = boards
+        let offDisk = keepOffDisk
+        let history = (saveBoards ? core.items.filter { !$0.pinned } : core.items).filter { $0.pinned || !offDisk($0) }
+        let pinned = core.items.filter(\.pinned), b = boards
         io.async { [weak self, store] in
             do {
                 if saveHistory { try store.saveIndex(history) }

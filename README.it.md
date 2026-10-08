@@ -195,6 +195,10 @@ pagine:
   che Claude Code, Claude Desktop, Codex, Cursor o Gemini CLI leggano **solo quelli**, dopo che hai consentito ogni strumento nella
   notch; un clic collega uno strumento (mostrato prima, reversibile), un registro annota ogni lettura senza il contenuto. Un server
   MCP stdio locale, nessuna porta di rete. [Dettagli, strumenti, consenso e limiti](docs/mcp.it.md).
+  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md). **Sincronizzazione appunti con iPhone** (spenta di
+  default): elementi da e verso l'iPhone tramite una cartella in iCloud Drive e due Comandi Rapidi creati da Cocaine (*Invia al
+  Mac*, *Ricevi dal Mac*; testo e immagini), e testo breve tramite l'iPhone abbinato, cifrato end-to-end; nessuna app per iPhone,
+  nessun account. [Come funziona e i suoi limiti](docs/clipboard-sync.it.md).
 - **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth (aggiornate al massimo una volta al minuto), e
   l'utilizzo di Codex (i limiti, dalle sessioni più recenti che li riportano) e Claude Code (i token delle ultime 5 ore e 7 giorni),
   letti dai loro file locali. I file di Claude Code vengono letti una volta, poi solo la parte aggiunta; un primo conteggio su una

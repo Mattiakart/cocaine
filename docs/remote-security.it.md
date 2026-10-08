@@ -41,3 +41,9 @@ un Comando Rapido vecchio o modificato), `stale`/`future` (con l'età: controlla
 `revoked`, `unknown-pairing`, `decrypt-failed`, `legacy-refused` — più `relay-up`/`relay-down` per la connessione del Mac. Non contiene
 mai una chiave, un canale, un comando o una risposta. I Comandi Rapidi creati dalle prime versioni v2, prima di questa correzione, non
 hanno mai funzionato (le azioni Genera hash non ricevevano l'input, quindi i comandi arrivavano senza tag): eliminali e inviane uno nuovo.
+
+**Comandi degli appunti.** Un iPhone abbinato può anche inviare comandi `clip …` (il Comando Rapido *Cocaine Clip*): viaggiano
+esattamente come gli altri (sigillati, autenticati, una volta sola), ma risponde l'app stessa, mai il gate della shell (che rifiuta
+`clip`). Ognuno richiede il proprio interruttore per quell'iPhone (lettura, scrittura: entrambi spenti di default), non funziona
+mai per i vecchi Comandi Rapidi in chiaro, al massimo 12 al minuto; la lettura dà solo l'elemento più recente o la bacheca resa
+leggibile, mai ciò che sembra un segreto. [Dettagli](clipboard-sync.it.md).

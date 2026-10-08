@@ -462,6 +462,7 @@ struct PanelView: View {
             card("tray.and.arrow.down.fill", L("Shelf")) { ShelfSettingsView() }   // Sources/ShelfSettings.swift
             card("link", L("Sharing")) { CloudShareSettingsView() }            // Sources/CloudShareSettings.swift
             clipboardCard
+            card("iphone", L("iPhone clipboard sync")) { ClipSyncSettingsView() }   // Sources/ClipSyncSettings.swift
             pinboardsCard
         }
     }

@@ -183,6 +183,14 @@ enum ClipActions {
         engine.notify("sparkles", String(format: L("%d added to the AI context"), items.count))
     }
 
+    /// "Send to iPhone" (Sources/ClipSync.swift), while the iCloud Drive sync is on: what happened, in the island's message.
+    static func sendToIPhone(_ ids: [UUID]) {
+        guard let send = ClipSyncHook.send else { return }
+        let r = send(ids)
+        if r.sent > 0 { Haptic.tap(.generic) }
+        engine.notify(r.sent > 0 ? "iphone.and.arrow.forward" : "exclamationmark.triangle.fill", r.message)
+    }
+
     /// The pause, for a while.
     static func pauseMenu() {
         if h.paused { h.paused = false; return }
@@ -611,6 +619,9 @@ struct ClipRow: View {
         .accessibilityAction(named: L("Details")) { ClipActions.open(c) }
         .accessibilityAction(named: ui.selection.contains(c.id) ? L("Deselect") : L("Select")) { ui.selection.toggle(c.id) }
         .accessibilityAction(named: L("Pin to…")) { ClipActions.pinMenu(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) }
+        .accessibilityActions {
+            if ClipSyncHook.send != nil { Button(L("Send to iPhone")) { ClipActions.sendToIPhone(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) } }
+        }
         .accessibilityAction(named: L("Delete")) { ClipActions.delete([c.id]) }
     }
 
@@ -622,6 +633,7 @@ struct ClipRow: View {
             }
             if c.snippet != nil { Image(systemName: "text.badge.plus").font(.system(size: 9)).foregroundStyle(UI.hint).help(L("Snippet")) }
             if c.remote { Image(systemName: "iphone").font(.system(size: 9)).foregroundStyle(UI.hint).help(L("From another device")) }
+            if c.fromIPhone { Image(systemName: "iphone.and.arrow.forward").font(.system(size: 9)).foregroundStyle(UI.hint).help(L("From your iPhone")) }
             ForEach(c.boards.filter { $0 != ClipBoard.favoritesID }.prefix(3), id: \.self) { b in
                 Circle().fill(BoardColor.color(h.board(b)?.color ?? 0)).frame(width: 6, height: 6).help(h.board(b)?.displayName ?? "")
             }
@@ -635,7 +647,8 @@ struct ClipRow: View {
         let names = c.boards.compactMap { h.board($0)?.displayName }
         if !names.isEmpty { parts.append(names.joined(separator: ", ")) }
         if c.snippet != nil { parts.append(L("Snippet")) }
-        if let app = ClipboardHistory.appName(c.source) { parts.append(app) }
+        if c.remote { parts.append(L("From another device")) } else if c.fromIPhone { parts.append(L("From your iPhone")) }
+        else if let app = ClipboardHistory.appName(c.source) { parts.append(app) }
         return parts.joined(separator: ", ")
     }
 
@@ -666,6 +679,7 @@ struct ClipRow: View {
         Button(L("Rename…")) { ClipActions.rename(c) }
         if c.kind == .files, !gone { Button(L("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting(c.paths.map { URL(fileURLWithPath: $0) }) } }
         if ClipActions.canShareWithAI { Button(L("Use as AI context")) { ClipActions.shareWithAI(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) } }
+        if ClipSyncHook.send != nil { Button(L("Send to iPhone")) { ClipActions.sendToIPhone(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) } }
         Divider()
         Button(L("Delete")) { ClipActions.delete(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) }
     }
@@ -756,6 +770,7 @@ private struct ClipSelectionBar: View {
             if ids.count == 1, let c = h.items.first(where: { $0.id == ids[0] }) { action(L("Details"), "info.circle") { ClipActions.open(c) } }
             action(L("Pin"), "pin") { ClipActions.pinMenu(ids) }
             if ClipActions.canShareWithAI { action(L("AI"), "sparkles") { ClipActions.shareWithAI(ids) } }
+            if ClipSyncHook.send != nil { action(L("Send to iPhone"), "iphone.and.arrow.forward") { ClipActions.sendToIPhone(ids) } }
             action(L("Delete"), "trash") { ClipActions.delete(ids) }
             Button { ui.selection.clear() } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(UI.hint).frame(width: 20, height: 18).contentShape(Rectangle())

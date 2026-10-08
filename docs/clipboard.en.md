@@ -39,7 +39,9 @@ what you copied in it, and the pinboard you tied to it (Settings → Island → 
 uses what it already knows; it reads nothing from other apps and needs no Screen Recording.
 
 **Other devices.** A copy that arrives from your iPhone, iPad or another Mac through Universal Clipboard is labelled
-*Another device* (never the app that happened to be in front); *Copies from other devices* can turn them off.
+*Another device* (never the app that happened to be in front); *Copies from other devices* can turn them off. Items to and
+from the iPhone through iCloud Drive or the paired iPhone, and keeping Universal Clipboard copies off the saved history:
+[iPhone clipboard sync](clipboard-sync.en.md).
 
 **Text in images.** Off by default: with *Find text in images* on, each new image is read on this Mac (Vision, in the
 background, not in Low Power Mode) and its text is kept with it for search, with anything that looks like a key, a token or a
