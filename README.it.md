@@ -184,7 +184,10 @@ pagine:
   primo piano, copie da altri dispositivi riconosciute, e `cocaine clip` (spento di default). **Bacheche** (raccolte con nome) e
   **snippet** con segnaposto sono sempre salvati, cifrati; il resto solo in memoria, a meno che attivi *Salva su questo Mac*
   (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*); mai dai gestori di password.
-  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md).
+  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md). **Sincronizzazione appunti con iPhone** (spenta di
+  default): elementi da e verso l'iPhone tramite una cartella in iCloud Drive e due Comandi Rapidi creati da Cocaine (*Invia al
+  Mac*, *Ricevi dal Mac*; testo e immagini), e testo breve tramite l'iPhone abbinato, cifrato end-to-end; nessuna app per iPhone,
+  nessun account. [Come funziona e i suoi limiti](docs/clipboard-sync.it.md).
 - **Stato**: le batterie del Mac, degli AirPods e di altri dispositivi Bluetooth (aggiornate al massimo una volta al minuto), e
   l'utilizzo di Codex (i limiti, dalle sessioni più recenti che li riportano) e Claude Code (i token delle ultime 5 ore e 7 giorni),
   letti dai loro file locali. I file di Claude Code vengono letti una volta, poi solo la parte aggiunta; un primo conteggio su una

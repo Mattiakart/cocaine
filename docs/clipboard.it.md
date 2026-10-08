@@ -43,7 +43,9 @@ primo piano, ciò che vi hai copiato e la bacheca che le hai associato (Impostaz
 in*). Cocaine usa solo ciò che già sa; non legge nulla dalle altre app e non serve Registrazione schermo.
 
 **Altri dispositivi.** Una copia che arriva da iPhone, iPad o un altro Mac tramite Appunti universali è indicata come *Un altro
-dispositivo* (mai l'app che per caso era in primo piano); *Copie da altri dispositivi* le può escludere.
+dispositivo* (mai l'app che per caso era in primo piano); *Copie da altri dispositivi* le può escludere. Elementi da e verso
+l'iPhone tramite iCloud Drive o l'iPhone abbinato, e copie degli Appunti universali tenute fuori dalla cronologia salvata:
+[sincronizzazione appunti con iPhone](clipboard-sync.it.md).
 
 **Testo nelle immagini.** Spento di default: con *Trova testo nelle immagini* ogni nuova immagine viene letta su questo Mac
 (Vision, in background, non in Modalità risparmio energetico) e il suo testo resta con lei per la ricerca, con ciò che sembra

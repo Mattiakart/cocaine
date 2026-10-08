@@ -176,7 +176,9 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   devices labelled, and `cocaine clip` (off by default). **Pinboards** (named collections) and **snippets** with placeholders are
   always saved, encrypted; the rest is kept in memory only unless you turn on *Save on this Mac* (encrypted, with retention
   limits, exclusions and *Delete everything*); never from password managers. [Details and limits](docs/clipboard.en.md),
-  [pinboards](docs/pinboards.en.md).
+  [pinboards](docs/pinboards.en.md). **iPhone clipboard sync** (off by default): items to and from the iPhone through a folder in
+  iCloud Drive and two Shortcuts Cocaine makes (*Send to Mac*, *Get from Mac*; text and images), and short text over the paired
+  iPhone, end-to-end encrypted; no iPhone app, no account. [How and its limits](docs/clipboard-sync.en.md).
 - **Status**: the batteries of the Mac, AirPods and other Bluetooth devices (refreshed at most once a minute), and the usage of
   Codex (its limits, from the newest sessions that report them) and Claude Code (tokens in the last 5 hours and 7 days), read from
   their own local files. Claude Code's files are read once, then only what was added; a first count over a large history says
