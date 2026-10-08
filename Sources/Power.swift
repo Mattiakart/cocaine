@@ -199,6 +199,8 @@ struct HeatGuard {
 
 enum ControlAction: Equatable {
     case on(minutes: Int?), off, toggle, timer(minutes: Int?), pause(minutes: Int?), resume, panel, status
+    /// A keep-awake profile turned on or off (Sources/AwakeProfiles.swift): `cocaine://profile?name=Office&enabled=0`.
+    case profile(name: String, enabled: Bool)
 
     /// Changes what the Mac does (or silences alerts): needs the user's OK.
     var guarded: Bool {
@@ -256,6 +258,9 @@ enum ControlURL {
         case "resume": action = .resume
         case "panel": action = .panel
         case "status": action = .status
+        case "profile":
+            guard let p = ProfileLink.parse(name: value("name"), enabled: value("enabled")) else { return .failure(.unknown("profile")) }
+            action = p
         default: return .failure(.unknown(String(name.prefix(20))))
         }
         return .success(ControlRequest(action: action, success: success, failure: failure, until: until))

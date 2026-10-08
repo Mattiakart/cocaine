@@ -1,5 +1,6 @@
 COCAINE
 Tiene sveglio il Mac, anche col coperchio chiuso. Si accende e si spegne dalla bustina nella barra dei menu o nell'isola del notch.
+I profili (Automazione) possono farlo da soli: su una rete Wi-Fi, con un disco, un dispositivo USB o Bluetooth, un'app in primo piano e altro.
 Documentazione completa, permessi e limiti: https://github.com/Mattiakart/cocaine/blob/main/README.it.md
 Richiede macOS 14 (Sonoma) o successivo. Funziona su Mac Apple Silicon e Intel.
 Lingue: italiano, inglese, cinese, spagnolo, francese, tedesco, giapponese. Segue la lingua del Mac (altrimenti l'inglese), oppure la scegli dalla bandiera nel pannello.

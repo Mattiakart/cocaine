@@ -33,6 +33,16 @@
 			<cocoa class="CocaineToggleAwakeCommand"/>
 			<result type="boolean" description="Cocaine is on."/>
 		</command>
+		<command name="enable profile" code="CcAwPrOn" description="Turns a keep-awake profile on (Automation → Profiles). Returns whether the profile is now on.">
+			<cocoa class="CocaineEnableProfileCommand"/>
+			<direct-parameter type="text" description="The profile's name."/>
+			<result type="boolean" description="The profile is on."/>
+		</command>
+		<command name="disable profile" code="CcAwPrOf" description="Turns a keep-awake profile off. Returns whether the profile is now on (false).">
+			<cocoa class="CocaineDisableProfileCommand"/>
+			<direct-parameter type="text" description="The profile's name."/>
+			<result type="boolean" description="The profile is on."/>
+		</command>
 		<class-extension extends="application" description="Cocaine's state (read only).">
 			<property name="awake" code="CAwk" type="boolean" access="r" description="Cocaine is keeping the Mac awake.">
 				<cocoa key="scriptAwake"/>
@@ -48,6 +58,13 @@
 			</property>
 			<property name="trigger active" code="CTrg" type="boolean" access="r" description="A Smart Trigger wants the Mac awake now.">
 				<cocoa key="scriptTrigger"/>
+			</property>
+			<property name="active profile" code="CPrA" type="text" access="r" description="The keep-awake profile that decides now (empty text when none).">
+				<cocoa key="scriptActiveProfile"/>
+			</property>
+			<property name="profile names" code="CPrN" access="r" description="The keep-awake profiles, in priority order.">
+				<type type="text" list="yes"/>
+				<cocoa key="scriptProfileNames"/>
 			</property>
 		</class-extension>
 	</suite>

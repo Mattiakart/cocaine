@@ -13,7 +13,10 @@ Where things are:
   (volume/brightness HUD and media keys), Recovery*.swift (watchdog and recovery). DisplayTests.swift: --display-test.
 - Keep awake extras: AwakeTime.swift (until a time), AwakeTriggers.swift (more triggers, keep awake while…, unplug, lock pause,
   launch, clicks, icon styles: pure, behind AwakeProbe), AwakeCenter.swift (the model and the wiring AppDelegate owns),
-  AwakePanel.swift (their panel rows), Scripting.swift (the AppleScript dictionary, Cocaine.sdef), AwakeShortcuts.swift (the Mac
+  AwakePanel.swift (their panel rows); profiles: AwakeProfiles.swift (conditions, start/stop latch, priority: pure),
+  AwakeProfileProbe.swift (the Mac's readings), AwakeProfilesPanel.swift (Profiles, Keep disks awake, statistics rows),
+  AwakeProfilesCLI.swift (link, AppleScript, `cocaine profiles|disks`), DriveAlive.swift (keep disks awake), AwakeSessions.swift
+  (statistics, reminder), TriggersTests.swift (--triggers-test, render fixtures; strings: Triggers.strings), Scripting.swift (the AppleScript dictionary, Cocaine.sdef), AwakeShortcuts.swift (the Mac
   Shortcuts pack), AwakeTests.swift (--awake-test). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
   docs/maintainers/app-intents.md).
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).

@@ -1,5 +1,6 @@
 COCAINE
 Keeps your Mac awake, even with the lid closed. Turn it on and off from the baggie in the menu bar or the notch island.
+Profiles (Automation) can do it for you: on a Wi-Fi network, with a disk, a USB or Bluetooth device, an app in front, and more.
 Full documentation, permissions and limits: https://github.com/Mattiakart/cocaine#readme
 Requires macOS 14 (Sonoma) or later. Runs on Apple Silicon and Intel Macs.
 Languages: English, Italian, Chinese, Spanish, French, German, Japanese. It follows your Mac's language (English otherwise), or pick one from the flag in the panel.

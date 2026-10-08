@@ -838,7 +838,9 @@ struct PanelView: View {
                     }
                 }
             }
+            AwakeProfilesCard()                                       // keep-awake profiles (Sources/AwakeProfilesPanel.swift)
             AwakeWhileCard()                                          // a program runs, downloads are in progress
+            DriveAliveCard()                                          // keep disks awake
             card("person.crop.circle.badge.checkmark", L("Stay active")) {
                 row(L("Stay available in chat apps"), detail: L("While you're idle it sends an invisible mouse event just before Teams and the like would show you as away. This also keeps the screen saver, the lock and display sleep from starting.")) {
                     toggle(L("Stay available in chat apps"), $m.stayActive)

@@ -148,6 +148,8 @@ enum ScriptingDialog {
             if let u = r.until { return String(format: L("keep the Mac awake until %@"), PanelView.timeString(u)) }
             if let m, m > 0 { return String(format: L("keep the Mac awake for %@"), Dur.short(minutes: m)) }
             return L("keep the Mac awake")
+        case .profile(let name, let enabled):
+            return String(format: enabled ? L("turn on the profile “%@”") : L("turn off the profile “%@”"), name)
         default: return L("control Cocaine")
         }
     }
