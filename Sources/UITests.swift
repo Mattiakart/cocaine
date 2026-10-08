@@ -220,6 +220,10 @@ enum UITests {
             ("en", "Power", "Smart Triggers|Power", 1),
             ("it", "Alimentazione", "Smart Triggers|Power", 1),
             ("en", "battery smart triggers", "Smart Triggers|Power", 3),     // three words: one may miss
+            ("it", "apunti", "Clipboard|", 3),                                 // the examples of docs/settings-search.it.md
+            ("it", "bateria", "Battery Guard|", 3),
+            ("it", "lingu", "Cocaine|Language", 1),
+            ("it", "agg", "Cocaine|Updates", 2),
         ]
         var engines: [String: SearchEngine] = [:]
         for (lang, q, want, top) in cases {

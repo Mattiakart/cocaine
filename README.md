@@ -24,6 +24,8 @@ A tiny, free, open-source menu bar app for macOS.</p>
 - **Speaks your language:** English, Italian, Chinese (Simplified and Traditional), Spanish, French, German and Japanese.
   It follows your Mac's language (English otherwise), or you can pick one from the flag in the panel.
   More translations are welcome.
+- **Search the settings:** ⌘F (or just type) in the panel finds any setting from your own words, in any of those languages,
+  typos included, and takes you to it: [Settings search](docs/settings-search.en.md).
 
 <p align="center"><img src="docs/pannello.png" width="340" alt="Cocaine's menu bar panel"></p>
 

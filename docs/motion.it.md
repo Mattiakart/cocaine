@@ -70,6 +70,11 @@ di cambiamento (un *ruolo*) una curva, e piccoli helper di vista costruiti sopra
 - Riduci movimento: nulla si sposta, scala o rimbalza. Ciò che solo si muove (morph dell'isola, ali, pomello, barre) cambia
   subito; ciò che arriva compare in dissolvenza in 0,15 s; l'avviso è una sola tinta morbida; la pillola del controllo segmentato
   non scorre; un controllo premuto si scurisce.
+- Il pannello: dal notch scende come l'isola aperta (parte alto come la striscia del notch e cresce verso il basso, bordo
+  superiore fermo, 0,3 s); sotto l'icona della barra dei menu scivola giù di 8 pt mentre appare (0,22 s). Riduci movimento: una
+  dissolvenza di 0,15 s sul posto. Alla chiusura svanisce in 0,15 s (dal notch risale anche dentro, 0,2 s); mentre svanisce
+  conta come chiuso, così un clic lo riapre subito. Il livello dei dialoghi resta finché la scheda non è uscita.
+- Messa a fuoco: nel pannello niente anello di sistema; i controlli disegnano il loro anello solo mentre ti muovi con Tab.
 - Riduci trasparenza: le velature dietro i dialoghi sono più opache.
 - `Motion.disabled` (impostato da ogni render e dai controlli a istantanea): nessuna animazione, i cicli fermi, così le immagini
   non colgono mai una transizione a metà.

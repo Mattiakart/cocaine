@@ -249,8 +249,13 @@ struct SearchEngine {
             score -= Double(n) * 1e-6                               // equal scores keep the index's order
             hits.append(SearchHit(entry: d.entry, score: score, via: via))
         }
-        return Array(hits.sorted { $0.score > $1.score }.prefix(limit))
+        // Only what is close to the best: a strong match doesn't drown in everything that shares one loose word with it.
+        let sorted = hits.sorted { $0.score > $1.score }
+        let floor = max(0.3, (sorted.first?.score ?? 0) * Self.relativeFloor)
+        return Array(sorted.prefix { $0.score >= floor }.prefix(limit))
     }
+    /// Results below this share of the best one's score are left out.
+    static let relativeFloor = 0.55
 }
 
 // MARK: - Strings in every language, concepts, embeddings
@@ -378,6 +383,9 @@ final class SettingsSearch: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
     }
 
+    /// Lights a row or card up at once (render tool: --lit "Card|Row", in English keys).
+    func light(card: String, row: String?) { lit = L(card) + "|" + (row.map(L) ?? "") }
+
     /// The anchor key a hit jumps to: its row when the row reported a frame, else its card.
     func target(_ e: SettingsEntry) -> String {
         let card = L(e.card)
@@ -451,7 +459,8 @@ final class SettingsSearch: ObservableObject {
     static func place(_ e: SettingsEntry) -> String {
         let tab: String
         switch e.tab { case "ai": tab = L("AI alerts"); case "auto": tab = L("Automation"); case "island": tab = L("Island"); default: tab = L("General") }
-        return e.row == nil ? tab : tab + " › " + L(e.card)
+        let card = L(e.card)
+        return e.row == nil || card == tab ? tab : tab + " › " + card      // never "Island › Island"
     }
 
     /// Tests: a fresh engine with these settings.
@@ -657,14 +666,16 @@ struct SettingsSearchResults: View {
         let e = hit.entry
         let needsIsland = e.tab == "island" && !islandOn
         var second = SettingsSearch.place(e)
-        if needsIsland { second += " · " + String(format: L("Turn on “%@” first"), (NotchGeometry.current()?.hasNotch ?? true) ? L("Show in the notch") : L("Show at the top of the screen")) }
-        else if let via = hit.via, via.count <= 40 { second += " · ≈ " + via }
+        // Why it matched, when the title doesn't say it (a synonym, another language): never the very word typed.
+        if let via = hit.via, via.count <= 40, SearchText.fold(via) != SearchText.fold(search.query.trimmingCharacters(in: .whitespaces)) { second += " · ≈ " + via }
+        let hint = needsIsland ? String(format: L("Turn on “%@” first"), (NotchGeometry.current()?.hasNotch ?? true) ? L("Show in the notch") : L("Show at the top of the screen")) : nil
         return Button { search.open(hit) } label: {
             HStack(spacing: Space.m) {
                 Image(systemName: e.icon).font(UI.icon).foregroundStyle(Island.accent).frame(width: UI.iconColumn)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(e.row.map(L) ?? L(e.card)).font(UI.title).lineLimit(1)
-                    Text(second).font(UI.detail).foregroundStyle(needsIsland ? warningColor : UI.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(second).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1).truncationMode(.middle)
+                    if let hint { Text(hint).font(UI.detail).foregroundStyle(warningColor).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
                 }
                 Spacer(minLength: Space.s)
                 Image(systemName: "arrow.turn.down.left").font(UI.chevron).foregroundStyle(UI.hint).opacity(selected ? 1 : 0)
@@ -679,7 +690,7 @@ struct SettingsSearchResults: View {
         .buttonStyle(MotionGlyphStyle(scale: Motion.Distance.pressScaleRow))
         .onHover { inside in if inside, let i = search.results.firstIndex(of: hit) { search.selected = i } }
         .accessibilityLabel(e.row.map(L) ?? L(e.card))
-        .accessibilityValue(second)
+        .accessibilityValue(hint.map { second + ". " + $0 } ?? second)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint(L("Opens this setting"))
     }

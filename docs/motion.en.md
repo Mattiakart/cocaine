@@ -60,6 +60,18 @@ Every animation in Cocaine comes from one system in `Sources/Motion.swift`: a fe
 - `.shimmer(active)` and `BusyDots`: loading, calm, opacity only (camera starting, usage still counting, lyrics being looked up, the updater, busy buttons). The focus ruler's ticks glide to a new length with the `value` spring.
 - `StripHighlight`: the strips' tab highlight with its hover.
 
+## The panel's window and its layers
+
+- Opening (`MenuPanel.present`, `MenuPanel.entrance`): from the notch the panel drops out of it like the open island (it starts
+  as tall as the notch strip and grows down, top edge fixed, 0.3 s on a soft ease-out); under the menu-bar icon it slides down
+  8 pt as it fades in (0.22 s). Reduce Motion: a 0.15 s fade in place. Closing (`dismiss`): a 0.15 s fade (from the notch it
+  also goes back up into it, 0.2 s); while it fades the panel counts as closed, so a click reopens it at once.
+- The dialog layer (`setOverlay`) stays until the card's exit has run (the `dialog` curve's length), then hides: dialogs leave
+  as they arrive instead of vanishing.
+- Focus: the panel shows no system focus ring; controls draw their own accent ring only while you move with Tab
+  (`KeyboardNav`, `.keyboardFocusRing`), never because the panel opened with a button focused.
+- `--ui-test` checks these timings.
+
 ## Rules for a new animation
 
 1. The model is the only truth. Animate a change of it (`Motion.with`, `.motion(_:value:)`), never with a timer or a chain of

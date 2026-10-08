@@ -1070,6 +1070,7 @@ struct PanelView: View {
         .clipped()
         .onPreferenceChange(SettingsFrames.self) { f in search.frames = f }      // where rows and cards are, for the search's jump
         .onAppear { wireSearch() }
+        .onChange(of: m.page) { _, _ in if !search.query.isEmpty { search.query = "" } }   // a tab picked while searching: that tab
         .onChange(of: tabs) { _, _ in wireSearch() }
         .cocaineControlSurface()                             // no system focus ring or bezel; keyboard rings only (Controls.swift)
         .environment(\.colorScheme, .dark)

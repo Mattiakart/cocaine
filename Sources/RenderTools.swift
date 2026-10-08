@@ -345,6 +345,14 @@ func cliRenderPanel() {
         model.alertSpeak = true
         model.alertVoice = Voices.available.map(\.identifier).max { Voices.name($0).count < Voices.name($1).count } ?? ""
     }
+    if let i = CommandLine.arguments.firstIndex(of: "--search"), i + 1 < CommandLine.arguments.count {   // the settings search with a query
+        SettingsSearch.shared.tabs = PanelTabs.list(ai: model.ai.available, island: model.island)
+        SettingsSearch.shared.query = CommandLine.arguments[i + 1]
+    }
+    if let i = CommandLine.arguments.firstIndex(of: "--lit"), i + 1 < CommandLine.arguments.count {   // a search result's light
+        let parts = CommandLine.arguments[i + 1].split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        SettingsSearch.shared.light(card: parts[0], row: parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil)
+    }
     if CommandLine.arguments.contains("--all-rows") {              // every optional row shown (--ui-test's layout check)
         model.triggerSchedule = true; model.scheduleDays = [2, 3, 4, 5, 6]; model.stayActive = true; model.alertSpeak = true
         model.dimEnabled = true; model.phoneCount = max(1, model.phoneCount); model.phone = model.phone.isEmpty ? "Shortcut" : model.phone
