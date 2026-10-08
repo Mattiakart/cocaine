@@ -57,7 +57,7 @@
 "Swipe up to close" = "上にスワイプで閉じる";
 "Swipes" = "スワイプ";
 "Today and overdue" = "今日と期限切れ";
-"Two fingers down on the closed notch" = "閉じたノッチの上で2本指で下へ";
+"Two fingers down just below the closed notch" = "閉じたノッチのすぐ下で2本指で下へ";
 "Two fingers left or right on the open island, not over a list that scrolls" = "開いたアイランドで2本指で左右へ（スクロールするリストの上を除く）";
 "Two fingers up on the open island; it stays closed until the pointer leaves the notch" = "開いたアイランドで2本指で上へ。ポインタがノッチから離れるまで閉じたままです";
 "Upcoming" = "今後";

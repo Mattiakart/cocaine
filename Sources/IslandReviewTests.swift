@@ -14,8 +14,19 @@ enum IslandReviewTests {
         Motion.disabled = true
         var failed = 0
         func check(_ name: String, _ ok: Bool) { print((ok ? "PASS" : "FAIL") + "  island review: " + name); if !ok { failed += 1 } }
-        brightness(check); swipes(check); scale(check); layoutFit(check)
+        brightness(check); swipes(check); scale(check); layoutFit(check); controller(check)
         return failed
+    }
+
+    // MARK: 8. the controller's rules found by the review
+
+    static func controller(_ check: (String, Bool) -> Void) {
+        check("watch: the window server's list is read only when a full-screen app matters (the setting, a hiding menu bar)",
+              !IslandRouting.needsWindowList(hideInFullScreen: false, menuBarHidden: false)
+              && IslandRouting.needsWindowList(hideInFullScreen: true, menuBarHidden: false)
+              && IslandRouting.needsWindowList(hideInFullScreen: false, menuBarHidden: true))
+        check("watch: back from the settings over a full-screen app, the island is not covered unless the user hides it there",
+              !IslandRouting.hidden(fullScreen: true, hideInFullScreen: false))
     }
 
     // MARK: 2. the brightness bar over the charging HUD

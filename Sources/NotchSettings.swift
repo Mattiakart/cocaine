@@ -78,7 +78,7 @@ struct NotchSettingsView: View {
                 kit.row(L("Swipe up to close"), detail: L("Two fingers up on the open island; it stays closed until the pointer leaves the notch")) {
                     kit.toggle(L("Swipe up to close"), gesture(\.swipeClose))
                 }
-                kit.row(L("Swipe down to open"), detail: L("Two fingers down on the closed notch")) {
+                kit.row(L("Swipe down to open"), detail: L("Two fingers down just below the closed notch")) {
                     kit.toggle(L("Swipe down to open"), gesture(\.swipeOpen))
                 }
                 kit.row(L("Swipe sideways for screens"), detail: L("Two fingers left or right on the open island, not over a list that scrolls")) {

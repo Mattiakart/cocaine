@@ -57,7 +57,7 @@
 "Swipe up to close" = "向上滑動以關閉";
 "Swipes" = "滑動手勢";
 "Today and overdue" = "今天和已過期";
-"Two fingers down on the closed notch" = "在收起的瀏海上雙指向下";
+"Two fingers down just below the closed notch" = "在收起的瀏海正下方雙指向下";
 "Two fingers left or right on the open island, not over a list that scrolls" = "在展開的島上雙指左右滑動（不在可捲動的列表上）";
 "Two fingers up on the open island; it stays closed until the pointer leaves the notch" = "在展開的島上雙指向上；指標離開瀏海前保持收起";
 "Upcoming" = "即將到來";

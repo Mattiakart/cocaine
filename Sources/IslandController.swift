@@ -366,8 +366,11 @@ final class IslandController {
             guard let id = suspended else { return }
             suspended = nil
             guard enabled, let s = spots[id] else { return }
-            // Not over a full-screen app (it would only vanish again at the next check) nor under a hidden menu bar.
-            s.covered = Self.fullScreenCovers(s.g, windows: Self.windowList())
+            // Not over a full-screen app when the user hides it there (it would only vanish again at the next check) nor under a
+            // hidden menu bar. (2.8.0 took any full-screen app for "covered" here, whatever the setting: back from the settings
+            // over a full-screen Space the island stayed away for a few seconds, with no HUD and no swipes, until the failsafe.)
+            s.covered = IslandRouting.hidden(fullScreen: Self.fullScreenCovers(s.g, windows: Self.windowList()),
+                                             hideInFullScreen: Settings().islandHidesInFullScreen)
             if !s.covered && !s.g.menuBarHidden { s.panel.orderFrontRegardless() }
         }
     }
@@ -470,10 +473,14 @@ final class IslandController {
         if suspended != nil && !settingsOpen() { setSuspended(false) }    // never left hidden behind a settings panel that is gone
         if ticks % 4 == 0 {
             relayout()
-            let windows = Self.windowList()                                 // read once for every screen
             let hide = Settings().islandHidesInFullScreen
+            // The window server's list (read once for every screen) only when something depends on a full-screen app: the
+            // setting, or a screen whose menu bar hides itself. Otherwise the island stays whatever is in front of it, and
+            // this 1.2 s check no longer copies every window's info for nothing.
+            let needWindows = IslandRouting.needsWindowList(hideInFullScreen: hide, menuBarHidden: spots.values.contains { $0.g.menuBarHidden })
+            let windows = needWindows ? Self.windowList() : []
             for s in spots.values {
-                let fullScreen = Self.fullScreenCovers(s.g, windows: windows)
+                let fullScreen = needWindows && Self.fullScreenCovers(s.g, windows: windows)
                 // Moving between full-screen Spaces must not make the island disappear: it hides under a full-screen app only
                 // when the user asked for that (General → Island → *Hide in full-screen apps*, off by default).
                 s.covered = IslandRouting.hidden(fullScreen: fullScreen, hideInFullScreen: hide)
@@ -658,6 +665,10 @@ enum IslandRouting {
     /// Is an island hidden because a full-screen app covers its screen? Only when the user chose to hide it there: by default it stays
     /// put, through every move between full-screen Spaces.
     static func hidden(fullScreen: Bool, hideInFullScreen: Bool) -> Bool { fullScreen && hideInFullScreen }
+
+    /// Does the watch need the window server's list of windows (is a full-screen app on a screen worth knowing)? Only when the
+    /// island hides there, or a screen's menu bar hides itself (its pill stays tucked except in a full-screen Space).
+    static func needsWindowList(hideInFullScreen: Bool, menuBarHidden: Bool) -> Bool { hideInFullScreen || menuBarHidden }
 
     /// Which island is open and which one the pointer is over. Only one island is open at a time (there is one pointer); hovering
     /// the notch of screen B opens B's island and closes A's. An island with a dialog in it stays (and keeps the others closed)
