@@ -364,6 +364,8 @@ sleep, and external-monitor and clamshell behaviour is documented but was not te
 
 ## Good to know
 
+- Apart from keeping the Mac awake, Cocaine leaves basic things alone (copy and paste with your other devices, media keys,
+  system shortcuts…) unless you turn a feature on: [what it touches by default and how to turn it off](docs/defaults-and-basics.en.md).
 - While Cocaine is on, your Mac **won't lock by itself**, even with the lid closed. Lock it with ⌃⌘Q before you walk away.
 - On battery with the lid closed the Mac keeps running. At 5 % Cocaine turns itself off so the Mac can sleep, even with
   Battery Guard off; set Battery Guard higher to stop earlier.

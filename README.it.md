@@ -383,6 +383,8 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
 
 ## Da sapere
 
+- A parte tenere acceso il Mac, Cocaine non tocca le funzioni di base (copia e incolla con gli altri dispositivi, tasti
+  multimediali, scorciatoie di sistema…) se non attivi tu una funzione: [cosa tocca di default e come spegnerlo](docs/defaults-and-basics.it.md).
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.
 - A batteria e col coperchio chiuso il Mac continua a consumare. Al 5 % Cocaine si spegne da solo per lasciare andare in stop
   il Mac, anche con la Protezione batteria spenta; impostala più in alto per fermarti prima.
