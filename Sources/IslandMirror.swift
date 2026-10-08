@@ -35,6 +35,8 @@ final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutp
     /// Checks the camera permission, asks for it if it was never asked, then starts the camera.
     func start() {
         denied = false; hasFrames = false; stalled = false
+        // Renders and tests (memory-only settings) never start the camera nor ask for it: the page is drawn waiting.
+        guard !AppDefaults.isolated else { return }
         wanted = true
         switch Permissions.state(.camera) {
         case .granted: run()

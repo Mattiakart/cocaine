@@ -97,11 +97,21 @@ struct NotchSwipe {
 
     /// An NSEvent in the finger's terms (natural scrolling or not).
     static func event(_ e: NSEvent) -> Event {
-        let sign: CGFloat = e.isDirectionInvertedFromDevice ? 1 : -1
-        let phase: Phase = e.phase.contains(.began) || e.phase.contains(.mayBegin) ? .began
-            : e.phase.contains(.ended) || e.phase.contains(.cancelled) ? .ended : e.phase.contains(.changed) ? .changed : .other
-        return Event(dx: e.scrollingDeltaX * sign, dy: e.scrollingDeltaY * sign, phase: phase, momentum: !e.momentumPhase.isEmpty,
-                     precise: e.hasPreciseScrollingDeltas)
+        event(dx: e.scrollingDeltaX, dy: e.scrollingDeltaY, inverted: e.isDirectionInvertedFromDevice, phase: e.phase,
+              momentum: !e.momentumPhase.isEmpty, precise: e.hasPreciseScrollingDeltas)
+    }
+
+    /// The same from its parts (pure): with natural scrolling (`inverted`) the deltas already follow the fingers; without it
+    /// they are the other way round.
+    static func event(dx: CGFloat, dy: CGFloat, inverted: Bool, phase: NSEvent.Phase, momentum: Bool, precise: Bool) -> Event {
+        let sign: CGFloat = inverted ? 1 : -1
+        return Event(dx: dx * sign, dy: dy * sign, phase: self.phase(phase), momentum: momentum, precise: precise)
+    }
+
+    /// The trackpad's phases: fingers down (mayBegin) or moving (began) start a gesture; lifted or cancelled end it.
+    static func phase(_ p: NSEvent.Phase) -> Phase {
+        p.contains(.began) || p.contains(.mayBegin) ? .began
+            : p.contains(.ended) || p.contains(.cancelled) ? .ended : p.contains(.changed) ? .changed : .other
     }
 }
 

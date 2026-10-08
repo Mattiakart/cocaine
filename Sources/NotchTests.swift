@@ -376,7 +376,17 @@ enum NotchFixtures {
             let w = RemindersWatch()                                  // Settings → Island → Notch: sample lists
             w.use(FakeReminders(access: n == "reminders" ? .granted : .notAsked))
             NotchSettingsLink.reminders = w
-        case "sizes": NotchPrefs.shared.updateSizing { $0.apply(.large) }
+        case "sizes", "large": NotchPrefs.shared.updateSizing { $0.apply(.large) }
+        case "xl": NotchPrefs.shared.updateSizing { $0.apply(.extraLarge) }
+        case let n where n.hasPrefix("mod-"):        // mod-<kind>-<s|m|l>[-xl|-max]: one module at a size on Home, beside Agents
+            let parts = n.split(separator: "-").map(String.init)
+            guard parts.count >= 3, let size = ModuleSize(rawValue: parts[2]) else { break }
+            if parts.count > 3 { NotchFixtures.layout(["", "--notch-fixture", parts[3]]) }
+            ScreenLayoutStore.shared.update { l in
+                guard let i = l.screens.firstIndex(where: { $0.id == "home" }) else { return }
+                l.screens[i].modules = [ModulePlacement(parts[1], 0, size)] + (parts[1] == "agents" ? [] : [ModulePlacement("agents", 1, .l)])
+            }
+        case "max": NotchPrefs.shared.updateSizing { $0.openWidth = NotchSizing.openWidths.upperBound; $0.openHeight = NotchSizing.openHeights.upperBound }
         default: break
         }
     }

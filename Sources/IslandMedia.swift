@@ -70,9 +70,12 @@ private struct MediaApp: Identifiable {
 }
 
 extension IslandView {
-    /// The tiles and their icons grow with the module's box (38 pt icons, 66 pt tiles in the standard island).
+    /// The tiles and their icons grow with the module's box (38 pt icons, 66 pt tiles in the standard island), as tall as fits.
     func mediaModule(_ b: ModuleBox) -> some View {
-        let icon = IslandScale.grow(38, b.factor), tile = IslandScale.grow(66, b.factor)
+        // The tiles' rows and the line under them always fit the box (a 38 pt menu bar left 9 pt of the tiles outside it).
+        let rows = CGFloat((MediaApp.all.count + 4) / 5)
+        let tile = min(IslandScale.grow(66, b.factor), ((b.height - Space.m - 15 - Space.m * (rows - 1)) / rows).rounded(.down))
+        let icon = min(IslandScale.grow(38, b.factor), tile - 20)
         return VStack(alignment: .leading, spacing: Space.m) {
             // Five equal tiles flush with both page edges (fixed 104 pt tiles left a 24 pt hole on the right).
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 5), alignment: .leading, spacing: Space.m) {

@@ -249,7 +249,8 @@ func cliRenderIsland() {
             if let notch {
                 IslandOutline(pose: IslandPose(p: 0, leftW: 0, rightW: 0), layout: l).fill(notch).frame(width: l.size.width, height: l.size.height)
             }
-        }.frame(width: 760, height: im.open || progress != nil ? 250 : im.flash != nil ? 110 : 70, alignment: .top).clipped()
+        }.frame(width: max(760, l.size.width), height: im.open || progress != nil ? max(250, Island.openSize.height + 36) : im.flash != nil ? 110 : 70,
+                alignment: .top).clipped()                     // a bigger island (--notch-fixture large|xl|max) is drawn whole
         let host = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = host
