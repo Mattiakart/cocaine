@@ -911,6 +911,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         board.write(cocaineOn: System.cocaineOn, until: settings.onUntil)   // the board as it was, for the next launch
         mediaKeys.stop()
         ClipboardHistory.shared.flush()          // a saved history gets its last change
+        ShelfEntry.center?.store.flush()         // and so does the shelf (its saves run on a queue)
         WakeSchedule.cancel()                    // nothing would be listening at that wake
         fadeTimer?.invalidate()
         dim.quit()                               // every lowered display back, also in the middle of a fade; then the lease is cleared

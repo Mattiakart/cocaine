@@ -43,18 +43,10 @@ struct AwakeRowKit {
     func segRow<T: Hashable>(_ title: String, detail: String? = nil, tip: String? = nil, live: Bool = false, _ selection: Binding<T>, _ values: [T],
                              _ label: @escaping (T) -> String) -> some View {
         let seg = Segments(selection: selection, values: values, name: title, label: label)
-        return ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: Space.m) {
-                titleBlock(title, detail, live: live, wraps: false)
-                Spacer(minLength: Space.l)
-                seg.fixedSize()
-            }
-            VStack(alignment: .leading, spacing: Space.s) {
-                titleBlock(title, detail, live: live)
-                seg.frame(maxWidth: .infinity)
-            }
+        return FitRow {                          // never ViewThatFits: see FitRow (it reported one line and drew two)
+            titleBlock(title, detail, live: live)
+            seg
         }
-        .frame(minHeight: 22)
         .help(tip ?? detail ?? title)
     }
 
