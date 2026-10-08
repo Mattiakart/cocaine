@@ -37,6 +37,8 @@ opening starts fresh: no search, nothing selected, the newest item highlighted.
 | Esc | clears the search, then the selection, then closes |
 
 Letter keys (P, Y) are found by the letter they type, so they stay on their letter on AZERTY, Dvorak and other layouts.
+While an input method is composing (Japanese, Chinese, Korean…), every key is its own: ↑ ↓ pick a candidate, Return
+commits, Esc cancels the composition; the list's keys work again once the text is committed.
 
 **Search** (*Search* in the settings):
 

@@ -18,7 +18,8 @@ enum ShelfLimits {
     static let linkChars = 4_096
     static let imageBytes = 50 << 20
     static let nameChars = 60
-    static let libraryBytes = 16 << 20          // a library file larger than this isn't read (set aside)
+    static let libraryBytes = 16 << 20          // the most the library file grows to: a change past it is refused
+    static let readBytes = 64 << 20             // a library file larger than this isn't read (set aside); room above libraryBytes
 }
 
 /// One thing on the shelf.
@@ -303,7 +304,7 @@ struct ShelfDisk {
     func load() -> Loaded {
         guard persist else { return .none }
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: library.path) else { return .none }
-        if let size = attrs[.size] as? Int, size > ShelfLimits.libraryBytes { return .unreadable }
+        if let size = attrs[.size] as? Int, size > ShelfLimits.readBytes { return .unreadable }
         guard let data = try? Data(contentsOf: library) else { return .unreadable }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .secondsSince1970
         guard let l = try? dec.decode(ShelfLibrary.self, from: data), l.v == ShelfLibrary.schema else { return .unreadable }
@@ -398,6 +399,7 @@ final class ShelfStore: ObservableObject {
         }
         library = lib
         loadNote = note
+        if disk.persist { savedBytes = ((try? FileManager.default.attributesOfItem(atPath: disk.library.path))?[.size] as? Int) ?? 0 }
         if migrated {
             // Written synchronously: the old key goes only once the new file is safely there.
             if let data = ShelfDisk.encode(library), disk.save(data), disk.persist { defaults.removeObject(forKey: Self.legacyKey) }
@@ -435,22 +437,38 @@ final class ShelfStore: ObservableObject {
     func fileURLs(_ list: [ShelfItem]) -> [URL] { list.filter { $0.isFileBacked && !$0.missing }.compactMap { url(of: $0) } }
 
     private var privateNames: Set<String> {
-        Set(library.collections.flatMap(\.items).filter { $0.kind == .image }.map { ($0.path as NSString).lastPathComponent })
+        // A private image's file, and any file an item points to inside the private folder (a PDF, a ZIP or a resized copy made
+        // from a private image is written next to it): neither is a stray.
+        let folder = disk.items.standardizedFileURL.path
+        return Set(library.collections.flatMap(\.items).compactMap { i -> String? in
+            if i.kind == .image { return (i.path as NSString).lastPathComponent }
+            if i.kind == .file, (i.path as NSString).deletingLastPathComponent == folder { return (i.path as NSString).lastPathComponent }
+            return nil
+        })
     }
 
     // MARK: changing (each change is saved)
 
-    private func change(_ body: (inout ShelfLibrary) -> Void) {
+    /// False: refused, the library would grow past what is saved (and read back) safely.
+    @discardableResult
+    private func change(_ body: (inout ShelfLibrary) -> Void) -> Bool {
         var l = library
         body(&l)
-        guard l != library else { return }
+        guard l != library else { return true }
+        let data = disk.persist ? ShelfDisk.encode(l) : nil
+        if let data, data.count > ShelfLimits.libraryBytes, data.count > savedBytes { return false }   // shrinking is always fine
         library = l
         selection.prune(Set(items.map(\.id)))
-        save()
+        save(data)
+        return true
     }
 
-    private func save() {
-        guard disk.persist, let data = ShelfDisk.encode(library) else { return }
+    /// The size of the library as last written (a change may not push it past ShelfLimits.libraryBytes).
+    private var savedBytes = 0
+
+    private func save(_ encoded: Data? = nil) {
+        guard disk.persist, let data = encoded ?? ShelfDisk.encode(library) else { return }
+        savedBytes = data.count
         let d = disk
         writer.async { if !d.save(data) { log.error("shelf: couldn't save the library") } }
     }
@@ -472,7 +490,7 @@ final class ShelfStore: ObservableObject {
     func add(items new: [ShelfItem], to collection: UUID? = nil) -> (added: [UUID], refused: Int) {
         var r: (added: [UUID], refused: Int) = ([], 0)
         let target = collection ?? library.current
-        change { r = $0.append(new, to: target) }
+        guard change({ r = $0.append(new, to: target) }) else { return ([], new.count) }     // the shelf is full (its size)
         return r
     }
 
@@ -637,7 +655,7 @@ enum ShelfPaste {
     static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff, NSPasteboard.PasteboardType("public.jpeg"), NSPasteboard.PasteboardType("public.heic")]
 
     static func imageTitle(ext: String, date: Date = Date()) -> String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HH.mm.ss"     // no English word in it (the name reads in any language)
         return String(format: L("Image %@"), f.string(from: date)) + "." + ext
     }
 

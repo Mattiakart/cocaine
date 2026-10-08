@@ -198,3 +198,4 @@
 "your command" = "il tuo comando";
 "{file} is the file (required), {name} its name, {mime} its type, {size} its size, {secret_headers} a file with your secret headers (curl -H @{secret_headers}). No shell runs it." = "{file} è il file (obbligatorio), {name} il suo nome, {mime} il suo tipo, {size} la sua dimensione, {secret_headers} un file con i tuoi header segreti (curl -H @{secret_headers}). Nessuna shell lo esegue.";
 "“%1$@” is deleted from %2$@ and the link stops working." = "“%1$@” viene eliminato da %2$@ e il link smette di funzionare.";
+"The service's settings changed since this upload: delete the file on the service itself" = "Le impostazioni del servizio sono cambiate dopo questo caricamento: elimina il file direttamente sul servizio";

@@ -73,7 +73,11 @@ final class MCPConsentStore: ObservableObject {
     func record(_ c: MCPClientIdentity, _ d: MCPConsentRecord.Decision, now: Date = Date()) {
         records.removeAll { $0.id == c.fingerprint }
         records.insert(MCPConsentRecord(id: c.fingerprint, label: c.label, decision: d, date: now), at: 0)
-        records = Array(records.prefix(Self.maxRecords))
+        // Over the limit the oldest Allow goes first: a Deny is never pushed out by new names (a tool can't wear it away by
+        // asking under other names); only when everything kept is a Deny does the oldest Deny go.
+        while records.count > Self.maxRecords {
+            if let i = records.dropFirst().lastIndex(where: { $0.decision == .allow }) { records.remove(at: i) } else { records.removeLast() }
+        }
         save()
     }
 

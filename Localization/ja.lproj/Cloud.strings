@@ -198,3 +198,4 @@
 "your command" = "自分のコマンド";
 "{file} is the file (required), {name} its name, {mime} its type, {size} its size, {secret_headers} a file with your secret headers (curl -H @{secret_headers}). No shell runs it." = "{file}はファイル（必須）、{name}はその名前、{mime}はその種類、{size}はそのサイズ、{secret_headers}は秘密のヘッダを含むファイルです（curl -H @{secret_headers}）。シェルは使われません。";
 "“%1$@” is deleted from %2$@ and the link stops working." = "「%1$@」は%2$@から削除され、リンクは使えなくなります。";
+"The service's settings changed since this upload: delete the file on the service itself" = "このアップロードの後にサービスの設定が変わりました。サービス上でファイルを直接削除してください";

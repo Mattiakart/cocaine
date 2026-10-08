@@ -33,6 +33,7 @@ Where things are:
   provider protocol, rules, HTTP, Keychain, history, engine), ShareProviders{S3,WebDAV,SFTP}.swift, SigV4.swift, ShareUploader.swift
   (the user's command, webhooks), CloudShare.swift (the hook, confirmations, toast), CloudShareSettings.swift (Settings → Sharing),
   ShelfActionsIO.swift (action keys, chains, import/export), CloudShareTests.swift + CloudShareFakes.swift (--cloud-test).
+  DataReviewTests.swift (--data-review-test): regressions of the round-7 review of clipboard, shelf, sharing and AI context.
   Strings: Localization/<lang>.lproj/Cloud.strings. The pages are drawn as modules: ScreenLayout.swift (the
   user's screens, pure rules), ScreenModules.swift (module views, the screen grid), ScreensEditor.swift (the Settings card),
   ScreensTests.swift (--screens-test, render fixtures).

@@ -186,7 +186,9 @@ final class ShelfCenter: ObservableObject {
 
     func report(added: Int, refused: Int, collection: UUID? = nil) {
         let name = (collection.flatMap { store.library.collection($0) } ?? store.current).title
-        if refused > 0 { fail(String(format: L("%1$@ is full (%2$d items at most)"), name, ShelfLimits.itemsPerCollection)) }
+        let target = collection.flatMap { store.library.collection($0) } ?? store.current
+        if refused > 0 && target.items.count < ShelfLimits.itemsPerCollection { fail(L("The shelf is full: remove some items first")) }   // its size
+        else if refused > 0 { fail(String(format: L("%1$@ is full (%2$d items at most)"), name, ShelfLimits.itemsPerCollection)) }
         else if added > 0 {
             say("tray.and.arrow.down.fill", added == 1 ? String(format: L("1 item added to %@"), name) : String(format: L("%1$d items added to %2$@"), added, name))
         }
@@ -205,7 +207,18 @@ final class ShelfCenter: ObservableObject {
     }
 
     /// Watched folders run while the island is on.
-    var watching = false { didSet { if watching != oldValue { applyWatching() } } }
+    var watching = false {
+        didSet {
+            guard watching != oldValue else { return }
+            applyWatching()
+            // A shelf that couldn't be read at launch was set aside: said once, when the island is there to say it.
+            if watching, !noteShown, let note = store.loadNote {
+                noteShown = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.fail(note) }
+            }
+        }
+    }
+    private var noteShown = false
     func applyWatching() { watch.apply(config.config.watched, running: watching) }
 
     // MARK: the operations
@@ -359,9 +372,10 @@ final class ShelfCenter: ObservableObject {
             case .success(let text) where text.isEmpty: self.fail(L("No text found"))
             case .success(let text):
                 let pb = self.pasteboard(); pb.clearContents(); pb.setString(text, forType: .string)
-                Motion.with(.appear) { _ = self.store.addText(text, to: target) }
+                let added = Motion.with(.appear) { self.store.addText(text, to: target) }
                 Haptic.tap(.generic)
-                self.say("text.viewfinder", L("Text copied and added to the shelf"))
+                // Said as it is: a text too long for the shelf (or a full shelf) is only copied.
+                self.say("text.viewfinder", added != nil ? L("Text copied and added to the shelf") : L("Text copied (too long for the shelf)"))
             case .failure(let e): self.fail(e.localizedDescription)
             }
         }

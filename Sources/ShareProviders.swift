@@ -299,11 +299,16 @@ final class KeychainSecretStore: ShareSecretStore {
     }
 
     func save(_ account: String, _ values: [String: String]) throws {
-        try delete(account)
         let clean = values.filter { !$0.value.isEmpty }
-        guard !clean.isEmpty else { return }
+        guard !clean.isEmpty else { try delete(account); return }
+        let data = try JSONEncoder().encode(clean)
+        // Changed in place: the old secrets are never deleted before the new ones are surely kept (a refused or locked
+        // Keychain leaves them as they were).
+        let up = SecItemUpdate(query(account, search: true) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if up == errSecSuccess { return }
+        guard up == errSecItemNotFound else { throw KeychainKeyStore.Failure(status: up) }
         var q = query(account, search: false)
-        q[kSecValueData as String] = try JSONEncoder().encode(clean)
+        q[kSecValueData as String] = data
         q[kSecAttrLabel as String] = "Cocaine sharing"
         q[kSecAttrDescription as String] = "Credentials for a sharing service set up in Cocaine"
         q[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
@@ -486,6 +491,9 @@ struct ShareRecord: Codable, Equatable, Identifiable {
     var ref: String
     var shareID: String?
     var revoked = false
+    /// Where it went (the bucket, folder or server as set up then: ShareEngine.target): revoking after those settings changed
+    /// would delete nothing and still say it worked. nil in entries of older versions.
+    var target: String?
 
     func expired(_ now: Date = Date()) -> Bool { expires.map { $0 <= now } ?? false }
 }
@@ -626,14 +634,28 @@ enum ShareEngine {
         let name = ShareRules.safeName(file.lastPathComponent)
         let up = try p.upload(file, name: name, size: size, ctx: ctx)
         let r = ShareRecord(provider: config.id, providerTitle: config.title, kind: config.kind, name: file.lastPathComponent, size: size,
-                            date: ctx.now(), expires: up.expires, link: up.link.absoluteString, ref: up.ref, shareID: up.shareID)
+                            date: ctx.now(), expires: up.expires, link: up.link.absoluteString, ref: up.ref, shareID: up.shareID,
+                            target: target(config))
         return Done(record: r, learned: up.settingsChange)
     }
 
     /// Takes a link back: deletes the file (and the share) on the service.
     static func revoke(_ r: ShareRecord, with config: ShareProviderConfig, ctx: ShareContext) throws {
         guard config.kind.canRevoke else { throw ShareError.config(L("This service can't take a link back")) }
+        if let t = r.target, t != target(config) {
+            throw ShareError.config(L("The service's settings changed since this upload: delete the file on the service itself"))
+        }
         try ShareProviders.make(config).revoke(r.ref, shareID: r.shareID, ctx: ctx)
+    }
+
+    /// The settings that decide where a file goes (and so what a revoke deletes).
+    static func target(_ c: ShareProviderConfig) -> String {
+        switch c.kind {
+        case .s3: return ["s3", c["endpoint"], c["bucket"], c["pathStyle"], c["prefix"]].joined(separator: "|")
+        case .webdav, .nextcloud: return [c.kind.rawValue, WebDAVProvider(config: c).folderURL, c["server"]].joined(separator: "|")
+        case .sftp: return ["sftp", c["host"], c["port"], c["user"], c["remoteDir"]].joined(separator: "|")
+        case .uploader: return "uploader"
+        }
     }
 
     /// A tiny file to test a connection with (uploaded, then deleted).

@@ -71,7 +71,11 @@ macOS uses), each one can be inverted, all or any of them. Files arriving togeth
 chosen time (0.5–30 s) and land as one batch; downloads in progress (.crdownload, .download, .part…) and files still growing
 are never taken. Only files that appear after the watch began count. If macOS doesn't let Cocaine read the folder (Files and
 Folders permission for Desktop, Documents, Downloads, removable or network volumes), the row says so with a button to the
-right System Settings pane. Watching runs while the island is on.
+right System Settings pane. Watching runs while the island is on. A watched folder that is deleted or renamed shows as missing;
+Cocaine looks again once a minute and after sleep (so a folder that comes back, access granted later, or a new screenshot
+location is picked up by itself). The shelf's file is kept under 16 MB: past that, new items are refused with a message (remove
+some first) rather than saving a shelf that couldn't be read back. A shelf that can't be read at launch is set aside, never
+deleted, and the island says so. Files made from a pasted image (a PDF, a ZIP, a resized copy) stay with the shelf.
 
 **Other ways in**: Finder's Services menu (**Add to Cocaine Shelf**, also for text, links and images selected in other apps),
 `open -a Cocaine file…`, Finder's Open With (Cocaine is listed as a viewer of anything, never the default app), the command

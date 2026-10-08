@@ -124,8 +124,19 @@ struct S3Provider: ShareProvider {
     /// Does the store's answer say it doesn't take UNSIGNED-PAYLOAD?
     static func refusedUnsigned(_ r: ShareHTTP.Response) -> Bool {
         guard [400, 403, 501].contains(r.status) else { return false }
-        let b = String(decoding: r.body.prefix(4096), as: UTF8.self)
-        return b.contains("XAmzContentSHA256Mismatch") || b.contains("NotImplemented") || b.contains("UNSIGNED-PAYLOAD") || b.contains("x-amz-content-sha256")
+        // By the error's code (and its message), never by the whole body: a wrong key's SignatureDoesNotMatch quotes the
+        // canonical request, header "x-amz-content-sha256:UNSIGNED-PAYLOAD" included, and isn't worth hashing and re-sending for.
+        let b = String(decoding: r.body.prefix(8192), as: UTF8.self)
+        func element(_ name: String) -> String? {
+            guard let s = b.range(of: "<\(name)>"), let e = b.range(of: "</\(name)>", range: s.upperBound..<b.endIndex) else { return nil }
+            return String(b[s.upperBound..<e.lowerBound])
+        }
+        let code = element("Code") ?? "", message = element("Message") ?? ""
+        if ["XAmzContentSHA256Mismatch", "NotImplemented"].contains(code) { return true }
+        if code == "InvalidRequest" || code == "InvalidArgument" {
+            return message.contains("UNSIGNED-PAYLOAD") || message.lowercased().contains("x-amz-content-sha256")
+        }
+        return false
     }
 
     func upload(_ file: URL, name: String, size: Int64, ctx: ShareContext) throws -> ShareUploaded {

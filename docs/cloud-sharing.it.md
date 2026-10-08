@@ -89,6 +89,10 @@ scaffale; l'interruttore **Condivisione cloud** in alto spegne tutto.
   servizio accetta UNSIGNED-PAYLOAD lo gestisce il ripiego automatico.
 - Al massimo 100 file per caricamento (più file diventano un solo ZIP, quindi un solo link). Un caricamento alla volta, con
   gli altri lavori dello scaffale.
-- Niente caricamenti ripresi; un multipart S3 annullato viene interrotto, un caricamento SFTP annullato viene rimosso, un PUT
-  WebDAV interrotto non lascia nulla sulla maggior parte dei server.
+- Niente caricamenti ripresi; un multipart S3 annullato viene interrotto, un caricamento SFTP annullato, scaduto o fallito a
+  metà viene rimosso, un PUT WebDAV interrotto non lascia nulla sulla maggior parte dei server. Un caricamento SFTP può durare
+  un'ora, o di più per un file grande (si conta su almeno 1 MB/s).
+- **Revoca** elimina il file dove è stato caricato: se nel frattempo bucket, cartella o server del servizio sono cambiati,
+  Cocaine lo dice invece di non eliminare nulla (elimina il file direttamente sul servizio). Annulla ferma tutto il comando
+  del caricatore, compresi i programmi avviati dal suo script.
 - Il servizio SFTP non usa ancora l'elenco host SSH delle sessioni remote; il server si inserisce qui.

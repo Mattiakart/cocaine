@@ -28,7 +28,7 @@ arrivano all'iPhone tramite iCloud come tutti i tuoi Comandi Rapidi:
   Mac invia un elemento con **Invia all'iPhone** nel suo menu o nella barra della selezione; *Invia ogni copia* (spento di default)
   invia ogni nuova copia.
 
-Come il Mac gestisce la cartella: osserva `inbox/` (eventi della cartella, più un controllo ogni 3 secondi), prende un file solo
+Come il Mac gestisce la cartella: osserva `inbox/` (eventi della cartella, più un controllo ogni 2 secondi mentre arriva un file, altrimenti ogni 20), prende un file solo
 quando la sua dimensione ha smesso di cambiare (scritture a metà e download in corso restano lì), ignora file temporanei e
 nascosti, chiede a iCloud i file che sono solo segnaposto (`.nome.icloud`) e dopo 3 minuti li conta come *in attesa di iCloud*,
 prende una volta sola lo stesso contenuto arrivato due volte, rifiuta senza leggerli i file oltre 25 MB (testo oltre 1 MB) e li

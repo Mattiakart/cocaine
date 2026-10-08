@@ -234,7 +234,7 @@ enum ShelfTests {
         let aside = (try? fm.contentsOfDirectory(atPath: dhome.path))?.contains { $0.hasPrefix("library.json.unreadable-") } ?? false
         check("a damaged library is set aside and a fresh one starts (with a note)", aside && ds.collections.count == 1 && ds.loadNote != nil)
         let huge = dir("huge"); let hdisk = ShelfDisk(dir: huge, persist: true)
-        fm.createFile(atPath: hdisk.library.path, contents: Data(count: ShelfLimits.libraryBytes + 1))
+        fm.createFile(atPath: hdisk.library.path, contents: Data(count: ShelfLimits.readBytes + 1))
         check("a library file past the size limit isn't read", hdisk.load() == .unreadable)
         let v2 = dir("newer"); let vdisk = ShelfDisk(dir: v2, persist: true)
         try? Data(#"{"v":2,"collections":[],"current":"6B29FC40-CA47-1067-B31D-00DD010662DA"}"#.utf8).write(to: vdisk.library)

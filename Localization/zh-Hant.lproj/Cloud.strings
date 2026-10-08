@@ -198,3 +198,4 @@
 "your command" = "你的指令";
 "{file} is the file (required), {name} its name, {mime} its type, {size} its size, {secret_headers} a file with your secret headers (curl -H @{secret_headers}). No shell runs it." = "{file} 是檔案（必填），{name} 是其名稱，{mime} 是其類型，{size} 是其大小，{secret_headers} 是包含你的機密標頭的檔案（curl -H @{secret_headers}）。不會透過 shell 執行。";
 "“%1$@” is deleted from %2$@ and the link stops working." = "「%1$@」會從 %2$@ 中刪除，連結將失效。";
+"The service's settings changed since this upload: delete the file on the service itself" = "此次上傳後服務設定已更改：請直接在該服務上刪除檔案";

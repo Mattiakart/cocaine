@@ -362,11 +362,13 @@ enum ClipRules {
             let item = ClipItem.files(s.files.map(\.path), date: now, source: source)
             return item.bytes > settings.maxItemBytes ? .skip(.tooBig) : .keep(item)
         }
-        if let t = s.text, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if settings.skipSecrets && (looksLikeCard(t) || looksLikeSecret(t)) { return .skip(.secret) }
-            if !settings.patterns.isEmpty && matchesUserPattern(t, settings.patterns) { return .skip(.pattern) }
+        if let t = s.text {
+            // Too big first: a huge copy isn't trimmed, scanned for secrets nor matched against patterns at every change.
             let plainBytes = t.utf8.count
             guard plainBytes <= settings.maxItemBytes else { return .skip(.tooBig) }
+            guard !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .skip(.empty) }
+            if settings.skipSecrets && (looksLikeCard(t) || looksLikeSecret(t)) { return .skip(.secret) }
+            if !settings.patterns.isEmpty && matchesUserPattern(t, settings.patterns) { return .skip(.pattern) }
             let rich = s.rich.flatMap { ClipRich.bounded(rtf: $0.rtf, html: $0.html, limit: settings.maxItemBytes - plainBytes) }
             return .keep(.text(t, date: now, source: source, rich: rich))
         }
@@ -1369,9 +1371,9 @@ final class ClipboardHistory: ObservableObject {
         s.persist = old.persist                                       // only through setPersist
         settings = s
         s.save(defaults)
-        if s.excludedApps != old.excludedApps {                       // an app excluded now: what came from it goes
-            let gone = core.items.filter { ClipRules.isExcluded(source: $0.source, settings: s) }
-            core.items.removeAll { ClipRules.isExcluded(source: $0.source, settings: s) }
+        if s.excludedApps != old.excludedApps {                       // an app excluded now: its unpinned copies go (what the
+            let gone = core.items.filter { !$0.pinned && ClipRules.isExcluded(source: $0.source, settings: s) }   // user pinned stays,
+            core.items.removeAll { !$0.pinned && ClipRules.isExcluded(source: $0.source, settings: s) }           // as for other devices)
             forget(gone)
         }
         if !s.includeRemote && old.includeRemote {                    // other devices excluded now: their unpinned copies go

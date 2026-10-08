@@ -60,6 +60,9 @@ enum ShelfArrange {
             switch i.kind { case .file: return isImage(i) ? 1 : 0; case .image: return 1; case .link: return 2; case .text: return 3 }
         }
         let indexed = Array(items.enumerated())
+        // Sizes read once per item (a stat each), never once per comparison.
+        var sizes: [UUID: Int64] = [:]
+        if sort == .size { for i in items { sizes[i.id] = size(i) } }
         let sorted = indexed.sorted { x, y in
             let a = x.element, b = y.element
             switch sort {
@@ -74,7 +77,7 @@ enum ShelfArrange {
                 if ea != eb { return ea < eb }
                 return byName(a, b) || (!byName(b, a) && x.offset < y.offset)
             case .size:
-                let sa = size(a), sb = size(b)
+                let sa = sizes[a.id] ?? 0, sb = sizes[b.id] ?? 0
                 if sa != sb { return sa > sb }
                 return byName(a, b) || (!byName(b, a) && x.offset < y.offset)
             }

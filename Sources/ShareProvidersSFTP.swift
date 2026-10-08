@@ -12,6 +12,9 @@ struct SFTPProvider: ShareProvider {
     static let sftp = "/usr/bin/sftp"
     static let timeout: TimeInterval = 3600
 
+    /// How long an upload may take: an hour, or longer for a big file (at least 1 MB/s is expected; 50 GB is allowed).
+    static func timeout(for size: Int64) -> TimeInterval { max(timeout, Double(max(0, size)) / 1_000_000) }
+
     var port: Int { Int(config["port"]).flatMap { (1...65535).contains($0) ? $0 : nil } ?? 22 }
 
     static func validHost(_ h: String) -> Bool {
@@ -96,10 +99,14 @@ struct SFTPProvider: ShareProvider {
         defer { try? FileManager.default.removeItem(at: stage) }
         let local = stage.appendingPathComponent(ShareRules.safeName(name))
         try FileManager.default.createSymbolicLink(at: local, withDestinationURL: file.standardizedFileURL)
-        do { try runBatch(Self.batch(put: local.path, to: remote), ctx: ctx, cancel: ctx.cancel) }
-        catch ShareError.cancelled {
-            try? runBatch(Self.batch(remove: remote), ctx: ctx, cancel: CancelToken(), timeout: 30)    // a half file doesn't stay
-            throw ShareError.cancelled
+        do { try runBatch(Self.batch(put: local.path, to: remote), ctx: ctx, cancel: ctx.cancel, timeout: Self.timeout(for: size)) }
+        catch {
+            // Cancelled, timed out, the connection lost or sftp failing half-way: a half file never stays served (a file that
+            // never got there makes this rm fail quietly).
+            if let e = error as? ShareError, case .config = e {} else {
+                try? runBatch(Self.batch(remove: remote), ctx: ctx, cancel: CancelToken(), timeout: 30)
+            }
+            throw error
         }
         ctx.progress(1)
         let base = WebDAVProvider.trimmed(config["publicBase"])

@@ -236,8 +236,10 @@ struct ShelfModuleView: View {
         let f = g.frame(in: .named(ShelfDrop.space)), b = g.frame(in: .named(ShelfBand.space))
         let t = ShelfDropTargets.shared
         if let k = t.tiles.firstIndex(where: { $0.id == id }) { t.tiles[k].frame = f } else { t.tiles.append((id, f)) }
-        let order = store.items.map(\.id)
-        t.tiles = t.tiles.filter { order.contains($0.id) }.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
+        // Positions looked up once (this runs for every tile at every scroll frame: no search per comparison).
+        var pos: [UUID: Int] = [:]
+        for (n, item) in store.items.enumerated() { pos[item.id] = n }
+        t.tiles = t.tiles.filter { pos[$0.id] != nil }.sorted { pos[$0.id]! < pos[$1.id]! }
         band.frames[id] = b
     }
 
@@ -304,7 +306,7 @@ struct ShelfModuleView: View {
                 if let p = r.progress { ShelfProgressBar(value: p).frame(width: 80) }
                 else { BusyDots(color: Island.accent) }
                 Text(r.title).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1)
-                Button(L("Cancel")) { tasks.cancel() }.buttonStyle(.plain).font(UI.detail).foregroundStyle(CTL.accent)
+                Button(L("Cancel")) { tasks.cancel() }.buttonStyle(CocaineButtonStyle(kind: .plain, height: 18))
             }
             .accessibilityElement(children: .combine)
             .transition(.opacity)
@@ -314,7 +316,7 @@ struct ShelfModuleView: View {
             HStack(spacing: Space.xs) {
                 Image(systemName: s.icon).font(UI.detail).foregroundStyle(Island.accent)
                 Text(s.text).font(UI.detail).foregroundStyle(UI.secondary).lineLimit(1).truncationMode(.middle)
-                if s.undo { Button(L("Undo")) { center.undoRename() }.buttonStyle(.plain).font(UI.detail).foregroundStyle(CTL.accent) }
+                if s.undo { Button(L("Undo")) { center.undoRename() }.buttonStyle(CocaineButtonStyle(kind: .plain, height: 18)) }
             }
             .accessibilityElement(children: .combine)
             .transition(.opacity)

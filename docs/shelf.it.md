@@ -73,7 +73,12 @@ mentre trascini dei file sull'isola: l'azione appare come destinazione e parte s
 istantanee, altrimenti i nomi che macOS usa per loro), ognuna invertibile, tutte o almeno una. I file che arrivano insieme
 aspettano che la cartella resti ferma per il tempo scelto (0,5–30 s) e arrivano in un solo gruppo; i download in corso
 (.crdownload, .download, .part…) e i file che stanno ancora crescendo non vengono mai presi. Contano solo i file comparsi dopo
-l'inizio dell'osservazione. Se macOS non lascia leggere la cartella a Cocaine (permesso File e cartelle per Scrivania,
+l'inizio dell'osservazione. Una cartella osservata eliminata o rinominata risulta mancante; Cocaine riprova una volta al minuto
+e dopo lo stop (così una cartella che torna, un accesso concesso dopo o una nuova posizione delle istantanee vengono ripresi da
+soli). Il file dello scaffale resta sotto 16 MB: oltre, i nuovi elementi vengono rifiutati con un messaggio (rimuovine prima
+qualcuno) invece di salvare uno scaffale che non si potrebbe rileggere. Uno scaffale illeggibile all'avvio viene messo da parte,
+mai eliminato, e l'isola lo dice. I file creati da un'immagine incollata (PDF, ZIP, copia ridimensionata) restano con lo
+scaffale. Se macOS non lascia leggere la cartella a Cocaine (permesso File e cartelle per Scrivania,
 Documenti, Download, volumi rimovibili o di rete), la riga lo dice con un pulsante per il pannello giusto di Impostazioni di
 Sistema. L'osservazione è attiva mentre l'isola è accesa.
 

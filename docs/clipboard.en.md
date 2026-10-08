@@ -53,7 +53,8 @@ card number masked, at most 4,000 characters. *Copy text* works either way, on d
 **Never kept**: content that password managers and other apps mark as concealed, transient or auto-generated
 (nspasteboard.org markers, 1Password's own marker); anything copied while a password manager is in front; apps you exclude in
 Settings; and, unless you turn it off, text that looks like a card number or a key/token. You can add your own regular
-expressions. These checks are heuristics: they catch common cases, not every secret.
+expressions. These checks are heuristics: they catch common cases, not every secret. Excluding an app later removes what it
+copied from the history, except what you pinned.
 
 **Memory only by default.** The history lives in memory and is gone when Cocaine quits or the island is turned off; what you
 **pin is always saved** (see pinboards). With **Save on this Mac** the whole history is stored in

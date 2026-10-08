@@ -112,7 +112,7 @@ final class CloudShareCenter: ObservableObject {
         case .s3:
             if !c["publicBase"].isEmpty { return L("Anyone with the link can open it until you revoke it.") }
             let h = S3Provider(config: c).expiry / 3600
-            return String(format: L("Anyone with the link can open it for %@."), h >= 24 ? String(format: L("%d days"), h / 24) : String(format: L("%d hours"), max(1, h)))
+            return String(format: L("Anyone with the link can open it for %@."), h >= 24 ? String(format: L("%d days"), h / 24) : h <= 1 ? L("1 hour") : String(format: L("%d hours"), h))
         case .nextcloud:
             let d = WebDAVProvider(config: c).expiryDays
             return d > 0 ? String(format: L("Anyone with the link can open it for %@."), String(format: L("%d days"), d)) : L("Anyone with the link can open it until you revoke it.")
@@ -266,8 +266,13 @@ final class CloudShareCenter: ObservableObject {
             if let l = done.learned { DispatchQueue.main.async { self.store.updateProvider(c.id) { p in for (k, v) in l { p.settings[k] = v } } } }
             var steps = [L("A test file was uploaded.")]
             if c.kind == .s3 && c["publicBase"].isEmpty, let u = URL(string: done.record.link) {
-                let r = try ctx.http.send(URLRequest(url: u), cancel: ctx.cancel)
-                guard r.status == 200 else { throw ShareError.badResponse(String(format: L("The file went up, but its link doesn't open (%d)"), r.status)) }
+                let cleanUp = { if c.kind.canRevoke { try? ShareEngine.revoke(done.record, with: c, ctx: ctx) } }  // no test file left behind
+                let r: ShareHTTP.Response
+                do { r = try ctx.http.send(URLRequest(url: u), cancel: ctx.cancel) } catch { cleanUp(); throw error }
+                guard r.status == 200 else {
+                    cleanUp()
+                    throw ShareError.badResponse(String(format: L("The file went up, but its link doesn't open (%d)"), r.status))
+                }
                 steps.append(L("Its link opens."))
             }
             if c.kind.canRevoke {

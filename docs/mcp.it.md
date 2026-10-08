@@ -74,7 +74,9 @@ Cosa restituisce un elemento:
 - una cartella o qualsiasi altro file: solo nome, dimensione, tipo e data.
 
 **Limiti**: ogni risposta resta sotto circa 20.000 token (Claude Code si ferma a 25.000 di serie); un elemento più lungo dice da
-dove continuare (`offset`, `cursor`). Una domanda nella notch aspetta al massimo 45 secondi (Codex interrompe una chiamata dopo 60).
+dove continuare (`offset`, `cursor`). Una domanda nella notch aspetta al massimo 45 secondi (Codex interrompe una chiamata dopo 60). Se la domanda di
+consenso ha già usato gran parte di una chiamata `cocaine_request`, la scelta non si apre nella stessa chiamata (le sopravvivrebbe):
+allo strumento viene detto di richiamare.
 Al massimo 60 chiamate al minuto per strumento e 4 `cocaine_request` al minuto.
 
 ## Consenso
@@ -109,7 +111,8 @@ messaggi MCP. Non tocca da sé gli appunti, il Portachiavi né i tuoi file, e te
   resta il resto: si può leggere solo il contesto AI, ogni strumento va consentito nella notch, e il registro mostra ogni lettura.
   Nome e programma di uno strumento sono etichette, non prove d'identità.
 - **Prompt injection.** Il testo copiato può contenere istruzioni rivolte a un'AI. Il contenuto torna sempre tra i segni
-  `<<<BEGIN COCAINE USER DATA (untrusted…)>>>` e `<<<END COCAINE USER DATA>>>`, il server dice allo strumento di trattarlo come dati,
+  `<<<BEGIN COCAINE USER DATA (untrusted…)>>>` e `<<<END COCAINE USER DATA>>>` (una copia di un marcatore dentro i tuoi dati
+  viene cambiata, così non può chiudere la cornice; una risposta tagliata al limite di dimensione viene richiusa), il server dice allo strumento di trattarlo come dati,
   le descrizioni degli strumenti non contengono mai nulla di tuo, il motivo dell'AI mostrato nella notch è ripulito (niente caratteri
   di controllo o che cambiano la direzione del testo, al massimo 120 caratteri), e non ci sono strumenti di scrittura. Comunque uno
   strumento AI può essere ingannato da ciò che legge: metti nel contesto AI solo ciò che incolleresti tu in quello strumento.

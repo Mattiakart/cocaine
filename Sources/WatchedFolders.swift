@@ -229,7 +229,8 @@ enum WatchState: Equatable { case off, watching, denied, missing }
 /// One folder being watched: kernel events on the folder, a listing when they come, the batcher ticking while files wait.
 final class FolderWatcher {
     let folder: WatchedFolder
-    private let dir: URL
+    /// The folder as it was when the watcher was made (a preset's folder can move: Sources/WatchedFolders.swift's recheck).
+    let dir: URL
     private let queue: DispatchQueue
     private var source: DispatchSourceFileSystemObject?
     private var timer: DispatchSourceTimer?
@@ -238,7 +239,13 @@ final class FolderWatcher {
     private let clock: () -> TimeInterval
     /// A batch is ready (main thread).
     var onBatch: ([URL]) -> Void = { _ in }
-    private(set) var state: WatchState = .off
+    private let lock = NSLock()
+    private var _state: WatchState = .off
+    /// Read from any thread (the watcher's queue changes it when the folder goes away).
+    private(set) var state: WatchState {
+        get { lock.lock(); defer { lock.unlock() }; return _state }
+        set { lock.lock(); _state = newValue; lock.unlock() }
+    }
 
     init(_ folder: WatchedFolder, queue: DispatchQueue = DispatchQueue(label: "local.cocaine.shelf.watch"),
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -263,7 +270,12 @@ final class FolderWatcher {
         let fd = open(dir.path, O_EVTONLY)
         guard fd >= 0 else { state = .denied; return state }
         let s = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .link, .extend], queue: queue)
-        s.setEventHandler { [weak self] in self?.scan() }
+        s.setEventHandler { [weak self, weak s] in
+            // The folder itself deleted or renamed (moved to the Trash): no longer watched, said so; the next recheck finds
+            // it again if it comes back.
+            if let ev = s?.data, ev.contains(.delete) || ev.contains(.rename) { self?.lost(); return }
+            self?.scan()
+        }
         s.setCancelHandler { close(fd) }
         s.resume()
         source = s
@@ -285,11 +297,23 @@ final class FolderWatcher {
         state = .off
     }
 
+    /// The folder went away while watched.
+    private func lost() {
+        source?.cancel(); source = nil
+        timer?.cancel(); timer = nil
+        state = .missing
+    }
+
     deinit { stop() }
 
     /// The folder changed: new names are looked at (rules), and join the batch.
     func scan() {
-        guard let now = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+        guard state == .watching else { return }
+        guard let now = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
+            var isDir: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir) { lost() }
+            return
+        }
         let set = Set(now)
         for gone in known.subtracting(set) { batcher.forget(dir.appendingPathComponent(gone).path) }
         for name in set.subtracting(known) where !WatchMatch.isPartial(name) {
@@ -311,7 +335,10 @@ final class FolderWatcher {
         if let ready = batcher.due(now: t) {
             let urls = ready.map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
             guard !urls.isEmpty else { return }
-            DispatchQueue.main.async { self.onBatch(urls) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.state == .watching else { return }           // stopped meanwhile: nothing lands
+                self.onBatch(urls)
+            }
         }
     }
 }
@@ -321,13 +348,36 @@ final class WatchedFolders: ObservableObject {
     @Published private(set) var states: [UUID: WatchState] = [:]
     private var watchers: [UUID: FolderWatcher] = [:]
     var onBatch: (WatchedFolder, [URL]) -> Void = { _, _ in }
+    private var wanted: [WatchedFolder] = []
+    private var recheckTimer: Timer?
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        // Back from sleep, or Cocaine brought forward (after allowing access in System Settings): every folder is checked again.
+        let again: (Notification) -> Void = { [weak self] _ in self?.recheck() }
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: again))
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main, using: again))
+    }
+
+    deinit {
+        observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
+        recheckTimer?.invalidate()
+    }
+
+    /// Restarts what isn't watching any more (a folder gone, access granted since, a preset folder that moved: the screenshot
+    /// location changed). Once a minute while folders are watched, and on wake.
+    func recheck() {
+        guard !wanted.isEmpty else { return }
+        apply(wanted, running: true)
+    }
 
     /// Matches the watchers to `folders` (only enabled ones run). Called at launch and whenever the settings change.
     func apply(_ folders: [WatchedFolder], running: Bool) {
         var keep = Set<UUID>()
+        wanted = running ? folders.filter(\.enabled) : []
         for f in folders where f.enabled && running {
             keep.insert(f.id)
-            if let w = watchers[f.id], w.folder == f, w.state == .watching { continue }
+            if let w = watchers[f.id], w.folder == f, w.state == .watching, w.dir.standardizedFileURL.path == f.url.standardizedFileURL.path { continue }
             watchers[f.id]?.stop()
             let w = FolderWatcher(f)
             w.onBatch = { [weak self] urls in self?.onBatch(f, urls) }
@@ -337,6 +387,13 @@ final class WatchedFolders: ObservableObject {
         for (id, w) in watchers where !keep.contains(id) { w.stop(); watchers[id] = nil }
         for f in folders where !keep.contains(f.id) { states[f.id] = .off }
         for id in states.keys where !folders.contains(where: { $0.id == id }) { states[id] = nil }
+        if wanted.isEmpty { recheckTimer?.invalidate(); recheckTimer = nil }
+        else if recheckTimer == nil {
+            let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.recheck() }
+            t.tolerance = 15
+            RunLoop.main.add(t, forMode: .common)
+            recheckTimer = t
+        }
     }
 
     func state(_ id: UUID) -> WatchState { states[id] ?? .off }

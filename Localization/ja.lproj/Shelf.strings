@@ -220,3 +220,6 @@
 "unchanged" = "変更なし";
 "Letter case" = "大文字小文字";
 "Add text" = "追加";
+"Cocaine actions" = "Cocaineアクション";
+"Text copied (too long for the shelf)" = "テキストをコピーしました（シェルフには長すぎます）";
+"The shelf is full: remove some items first" = "シェルフがいっぱいです。先に項目をいくつか削除してください";

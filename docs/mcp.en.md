@@ -72,7 +72,9 @@ What an item gives:
 - a folder, or any other file: name, size, type and date only.
 
 **Limits**: each answer stays under about 20,000 tokens (Claude Code stops at 25,000 by default); a longer item says where to
-continue (`offset`, `cursor`). A question in the notch waits at most 45 seconds (Codex stops a call after 60). At most 60 calls a
+continue (`offset`, `cursor`). A question in the notch waits at most 45 seconds (Codex stops a call after 60). When the consent question
+already used most of a `cocaine_request` call, the picker isn't opened in the same call (it would outlive it): the tool is told to
+call again. At most 60 calls a
 minute per tool and 4 `cocaine_request` a minute.
 
 ## Consent
@@ -106,7 +108,8 @@ It never touches the clipboard, the Keychain or your files itself, and exits whe
   then is the rest: only the AI context is ever readable, each tool must be allowed in the notch, and the log shows every read.
   A tool's name and program are labels, not proof of identity.
 - **Prompt injection.** Copied text can contain instructions aimed at an AI. Item content is always returned between
-  `<<<BEGIN COCAINE USER DATA (untrusted…)>>>` and `<<<END COCAINE USER DATA>>>` markers, the server tells the tool to treat it as
+  `<<<BEGIN COCAINE USER DATA (untrusted…)>>>` and `<<<END COCAINE USER DATA>>>` markers (a copy of a marker inside your data
+  is changed, so it can't close the frame; an answer cut at the size limit is closed again), the server tells the tool to treat it as
   data, tool descriptions never contain anything of yours, the AI's reason shown in the notch is cleaned (no control or
   direction-changing characters, at most 120 characters), and there are no write tools. Still, an AI tool can be misled by what it
   reads: put in the AI context only what you would paste into that tool yourself.
