@@ -82,10 +82,7 @@ final class SSHHostManager: ObservableObject {
         store = SSHHostStore.load(support)
         status = Dictionary(uniqueKeysWithValues: store.hosts.map { ($0.id, SSHHostStatus()) })
         AgentBoard.remoteLiveness = { [weak self] e in self?.liveness(e) ?? (e.unreachable == true ? true : nil) }
-        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
-        t.tolerance = 0.3
-        RunLoop.main.add(t, forMode: .common)
-        ticker = t
+        updateTicker()
         if watchSystem {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.everyHost(.wake)
@@ -111,6 +108,20 @@ final class SSHHostManager: ObservableObject {
         conns = [:]
         started = false
     }
+
+    /// The once-a-second housekeeping runs only while there is a host to keep (most Macs have none: no wake-up a second).
+    private func updateTicker() {
+        let want = started && !store.hosts.isEmpty
+        if want, ticker == nil {
+            let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+            t.tolerance = 0.3
+            RunLoop.main.add(t, forMode: .common)
+            ticker = t
+        } else if !want, let t = ticker {
+            t.invalidate(); ticker = nil
+        }
+    }
+    var tickerRunning: Bool { ticker != nil }
 
     private func wanted(_ h: SSHHost) -> Bool { store.enabled && h.enabled && h.deployed }
     private func isOff(_ id: String) -> Bool { (machines[id]?.phase ?? .off) == .off }
@@ -308,6 +319,7 @@ final class SSHHostManager: ObservableObject {
         store.hosts.append(h)
         store.save(support)
         status[h.id] = SSHHostStatus()
+        updateTicker()
         audit(h.id, "added")
         return .success(h)
     }
@@ -485,6 +497,7 @@ final class SSHHostManager: ObservableObject {
             store.hosts.removeAll { $0.id == id }
             store.save(support)
             status[id] = nil; machines[id] = nil; alive[id] = nil; downSince[id] = nil; relayUpdatedAt[id] = nil
+            updateTicker()
             try? FileManager.default.removeItem(atPath: SSHHostStore.folder(support).appendingPathComponent("\(id).command").path)
             onRemoved(id)
             done(true)

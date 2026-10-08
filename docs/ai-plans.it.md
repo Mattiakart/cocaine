@@ -41,7 +41,10 @@ nascondeva **Consenti** oltre i 120 caratteri non c'è più: la revisione scorre
   modalità attuale. Non è stato verificato dal vivo se Claude Code invia ExitPlanMode anche tramite `PermissionRequest`.
 - Mentre l'isola trattiene un piano o una domanda, il dialogo di Claude Code non compare ancora (l'hook sta aspettando): usa
   **Nel terminale** per rispondere lì; lo stesso piano o domanda non viene poi trattenuto una seconda volta.
-- Gli hook per piani e domande richiedono Claude Code 2.1.78 o successivo (i più vecchi ricevono solo quelli dei permessi).
+- Gli hook per piani e domande richiedono Claude Code 2.1.78 o successivo (i più vecchi ricevono solo quelli dei permessi). La sua
+  versione si legge con una shell di login, altrimenti dalle sue cartelle d'installazione abituali (installer nativo, nvm, Homebrew,
+  npm); quando stavolta non si riesce a leggerla (una shell lenta, un'installazione che Cocaine non vede), gli hook delle richieste
+  già presenti restano come sono e non ne vengono aggiunti.
 - I **piani di Codex** (`update_plan`) sono mostrati in sola lettura nella scheda della sessione (passi fatti / totali, il passo
   in corso), con un hook `PostToolUse` che esegue il binario di Cocaine; Codex chiede una volta di fidarti del nuovo hook
   (`/hooks`). Il "Implement this plan?" della modalità piano di Codex non si può rispondere dall'esterno. Piani di **Gemini CLI**:

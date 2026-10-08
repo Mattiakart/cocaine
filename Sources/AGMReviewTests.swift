@@ -21,6 +21,7 @@ enum AGMReviewTests {
         reminders(check)
         pearLateReply(check)
         quotas(check)
+        sshTicker(check)
         relayProtocol(check)
         print(failed == 0 ? "agm: all passed" : "agm: \(failed) failed")
         return failed
@@ -195,6 +196,26 @@ enum AGMReviewTests {
               bar.resetText(now.addingTimeInterval(3601)) == L("Reset: no new reading yet") && bar.resetText(now) != L("Reset: no new reading yet"))
         check("quotas: VoiceOver reads the percent alone when no reset time is known",
               QuotaBar.spoken(QuotaWindow(id: "x", minutes: 300, percent: 40, resets: nil), now: now) == "40%")
+    }
+
+    // MARK: SSH hosts' housekeeping only with hosts
+
+    /// Before: the SSH hosts' 1-second timer ran from launch on every Mac, with no host at all (a wake-up a second for nothing).
+    static func sshTicker(_ check: Check) {
+        let dir = AgentTests.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let m = SSHHostManager()
+        m.support = dir
+        m.keys = SSHMemoryKeys()
+        m.watchSystem = false
+        m.start()
+        defer { m.stop() }
+        check("ssh: no host: no once-a-second timer", !m.tickerRunning)
+        guard case .success(let h) = m.add(alias: "devbox") else { check("ssh: a host is added", false); return }
+        check("ssh: a host added: its housekeeping runs", m.tickerRunning)
+        var removed: Bool?
+        m.remove(h.id, cleanUp: false) { removed = $0 }
+        check("ssh: the last host removed: the timer stops", removed == true && !m.tickerRunning)
     }
 
     // MARK: a relay speaking another protocol

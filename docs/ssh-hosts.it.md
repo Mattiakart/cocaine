@@ -37,7 +37,9 @@ rete), oppure fermo con il motivo:
   connessione master (`ssh -M`, tenuta 8 ore); Cocaine poi si connette attraverso quella.
 - *Niente perl*, *relay mancante*, *un'altra chiave* — installa di nuovo il relay.
 
-Un relay più vecchio viene sostituito da solo con quello dell'app (la versione è controllata a ogni connessione). Mentre un host
+Un relay più vecchio viene sostituito da solo con quello dell'app (la versione — il protocollo e il file — è controllata a ogni
+connessione), al massimo una volta ogni 10 minuti per host: uno che risulta ancora diverso subito dopo l'aggiornamento resta fermo
+con il motivo indicato, e **Riprova** rimette lì il relay dell'app. Mentre un host
 non è raggiungibile le sue sessioni restano nell'elenco con la dicitura *host non raggiungibile* (fino a 6 ore) invece di sparire;
 le novità avvenute nel frattempo (solo quale sessione è partita, finita o chiusa — mai alcun testo) restano sull'host e aggiornano
 l'elenco quando la connessione torna. Ogni minuto si chiede al relay se il processo di ogni sessione remota è ancora vivo.

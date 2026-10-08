@@ -40,7 +40,8 @@ Where things are:
   PlanReviewModel.swift (detail, diff, questions, review state, ⌘ keys), PlanReviewView.swift, PlanReviewTests.swift,
   PlanReviewFixtures.swift (render fixtures); Markdown.swift (block Markdown for plans); Quotas.swift (the statusline wrapper
   `--statusline` / `--quota-hook`, plan limits, the "quotas" module); JumpRules.swift (the user's jump rules).
-  Strings: Localization/<lang>.lproj/Plans.strings.
+  Strings: Localization/<lang>.lproj/Plans.strings. AGMReviewTests.swift: --agm-review-test (regression tests of the AI agents'
+  and the information modules' review: hooks with an unreadable Claude Code version, relay updates, Pear, reminders, limits).
 - AI context (MCP, docs/mcp.en.md): AIContext.swift (the basket, by reference, and reading an item at request time),
   AIContextConsent.swift (settings, per-tool consent, rate limits, the content-free log), MCPProtocol.swift (JSON-RPC/MCP, both
   protocol generations, pure), MCPBridge.swift (`--mcp`: stdio ↔ the private socket), MCPServer.swift (the app's socket and what a

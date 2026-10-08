@@ -24,7 +24,8 @@ Claude Code sends its statusline program a JSON on every reply that includes `ra
 
 Codex writes `rate_limits` into its session files (`~/.codex/sessions/**`). Each window is named by its own length
 (`window_minutes`: 300 = 5 h, 10080 = Week, 1440 = Day, a month = Month): `primary` is **not** always the 5-hour window (on some
-plans it is the weekly one and `secondary` is empty). The plan type (`plan_type`) is shown next to it.
+plans it is the weekly one and `secondary` is empty). The plan type (`plan_type`) is shown next to it. As for Claude Code, a
+window past its reset time with no newer session file is shown as reset, not with the old number.
 
 ## What is not done
 

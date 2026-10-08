@@ -36,7 +36,9 @@ again with a growing wait from 2 seconds to 5 minutes, sooner after the Mac wake
   connection there (`ssh -M`, kept 8 hours); Cocaine then connects through it.
 - *No perl*, *relay missing*, *another key* — install the relay again.
 
-An older relay is replaced automatically by the app's own (the version is checked at each connection). While a host is
+An older relay is replaced automatically by the app's own (the version — its protocol and its file — is checked at each
+connection), at most once in 10 minutes per host: one that still differs right after its update stays stopped with the reason
+shown, and **Retry** puts the app's relay there again. While a host is
 unreachable its sessions stay in the list marked *host unreachable* (for up to 6 hours) instead of disappearing; news that happened
 meanwhile (only which session started, finished or ended — never any text) is kept on the host and brings the list up to date when
 the connection is back. The relay is asked every minute whether each remote session's process still runs.
