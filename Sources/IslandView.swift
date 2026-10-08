@@ -74,8 +74,8 @@ struct IslandView: View {
             if !open { closedElement(l) }
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
-        // A two-finger swipe being followed (Sources/NotchGestures.swift): pushed up, the open island gives a little and its
-        // content dims, as if closing; pulled down, the closed notch grows a little. Let go, it springs back.
+        // A two-finger swipe being followed (Sources/NotchGestures.swift): pushed up, the open island shrinks a little toward the
+        // notch, as if closing; pulled down, the closed notch grows a little. Let go, it springs back. (Reduce Motion: still.)
         .modifier(GestureFollow(progress: reduce ? 0 : model.gestureProgress))
         .contentShape(Rectangle())
         // Files, images, links and text dropped anywhere on the island land on the shelf; items dragged inside it are reordered;

@@ -256,7 +256,7 @@ struct ChargeGlyphView: View {
             .frame(width: w, height: h)
             RoundedRectangle(cornerRadius: 1).fill(Color.white.opacity(0.5)).frame(width: 1.5, height: 4)
         }
-        .motionPulse(glyph.state == .low ? 1 : 0)                 // low: one beat when it comes
+        .motionPulse(glyph.state == .low ? 1 : 0)                 // turning low while shown: one beat
         .accessibilityHidden(true)
     }
 }

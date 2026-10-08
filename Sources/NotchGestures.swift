@@ -66,7 +66,7 @@ struct NotchSwipe {
         guard s.enabled, e.precise, !e.momentum else { return .none }
         if e.phase == .began { self = NotchSwipe(); active = owned }
         guard active else { return .none }
-        if e.phase == .ended || e.phase == .other && e.dx == 0 && e.dy == 0 { self = NotchSwipe(); return .none }
+        if e.phase == .ended { self = NotchSwipe(); return .none }
         acc.x += e.dx; acc.y += e.dy
         if axis == .undecided {
             let ax = abs(acc.x), ay = abs(acc.y)
