@@ -57,7 +57,8 @@ basso, o ⌘Z). **Pausa** smette di registrare, per 15 minuti, un'ora, fino a do
 **Mai tenuto**: ciò che i gestori di password e altre app segnano come nascosto, temporaneo o generato (indicatori di
 nspasteboard.org, l'indicatore di 1Password); qualsiasi cosa copiata mentre un gestore di password è in primo piano; le app che
 escludi nelle Impostazioni; e, a meno che lo spegni, testo che sembra un numero di carta o una chiave/token. Puoi aggiungere le
-tue espressioni regolari. Sono euristiche: colgono i casi comuni, non ogni segreto.
+tue espressioni regolari. Sono euristiche: colgono i casi comuni, non ogni segreto. Escludere un'app in seguito toglie dalla
+cronologia ciò che ha copiato, tranne quello che hai fissato.
 
 **Solo in memoria di default.** La cronologia vive in memoria e sparisce quando Cocaine si chiude o l'isola si spegne; ciò che
 **fissi in una bacheca è sempre salvato** (vedi bacheche). Con **Salva su questo Mac** tutta la cronologia è salvata in

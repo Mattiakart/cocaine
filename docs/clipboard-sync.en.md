@@ -27,7 +27,7 @@ through iCloud like any of your Shortcuts:
 - **Get from Mac** — puts the newest item the Mac sent onto the iPhone's clipboard (an image wins over a text). On the Mac, send
   an item with **Send to iPhone** in its menu or in the selection bar; *Send every copy* (off by default) sends each new copy.
 
-How the Mac handles the folder: it watches `inbox/` (folder events, plus a check every 3 seconds), takes a file only once its
+How the Mac handles the folder: it watches `inbox/` (folder events, plus a check every 2 seconds while a file is arriving, else every 20), takes a file only once its
 size has stopped changing (partial writes and downloads in progress are left alone), skips temporary and hidden files, asks iCloud
 for files that are only placeholders (`.name.icloud`) and counts them as *waiting for iCloud* after 3 minutes, takes the same
 content arriving twice once, refuses files over 25 MB (text over 1 MB) unread and sets them aside in `processed/`, makes photos

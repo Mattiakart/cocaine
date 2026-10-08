@@ -187,6 +187,18 @@ enum DataReviewTests {
         let thrown = (try? sftp.upload(f, name: "photo.jpg", size: 30_000_000_000, ctx: ctx)) == nil
         check("SFTP: a timed-out upload is removed from the server", thrown && batches.count == 2 && batches[1].hasPrefix("rm \""))
         check("SFTP: a 30 GB upload gets more than an hour", (timeouts.first ?? 0) > 3600)
+
+        // Revoking after the bucket changed says so, instead of deleting nothing and calling the link revoked.
+        var s3 = ShareProviderConfig(kind: .s3, title: "S3", settings: ["endpoint": "https://127.0.0.1:9", "bucket": "a", "region": "auto"])
+        s3.enabled = true
+        var rec = ShareRecord(provider: s3.id, providerTitle: "S3", kind: .s3, name: "f", size: 1, date: Date(), expires: nil, link: "https://x/a/k", ref: "k")
+        rec.target = ShareEngine.target(s3)
+        s3.settings["bucket"] = "b"
+        var why: Error?
+        do { try ShareEngine.revoke(rec, with: s3, ctx: ShareContext(cancel: CancelToken(), progress: { _ in }, http: ShareHTTP(), secrets: ["accessKey": "k", "secretKey": "s"])) }
+        catch { why = error }
+        if case .config? = why as? ShareError { check("revoke: refused (said) after the bucket changed", true) }
+        else { check("revoke: refused (said) after the bucket changed", false) }
     }
 
     // MARK: AI context (MCP)
@@ -233,6 +245,16 @@ enum DataReviewTests {
         let until = Date().addingTimeInterval(2)
         while audit.recent.first?.outcome != "cancelled" && Date() < until { q.sync {}; RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
         check("MCP: a cancelled pick is withdrawn and logged", withdrawn && audit.recent.first?.outcome == "cancelled")
+
+        // A pick isn't asked when the consent question already took most of the call: it would outlive the bridge's wait.
+        var asked = false
+        h.askPick = { _, _, _, done in asked = true; done(nil); return {} }
+        var late = MCPCall(verb: "request", args: ["reason": "a test"], client: client, session: "s", token: MCPCancelToken())
+        late.started = Date().addingTimeInterval(-30)
+        var reply: [String: Any]?
+        q.async { h.handle(late) { reply = $0 } }
+        q.sync {}
+        check("MCP: no pick question past the call's time (the tool is told to ask again)", !asked && reply?["code"] as? String == "retry")
 
         // Connect: a config the tool rewrote while the question was open isn't overwritten with the old content.
         let home = dir("mcp-home")

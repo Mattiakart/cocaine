@@ -13,6 +13,15 @@ struct MCPCall {
     var client: MCPClientIdentity
     var session: String
     let token: MCPCancelToken
+    /// When the app got it: a question asked within it (consent, then the pick) must end before the bridge stops waiting.
+    var started = Date()
+}
+
+extension MCPLimits {
+    /// The longest a pick question may stay up within one call (Sources/AIContextWiring.swift's pickTimeout).
+    static let pickWindow: TimeInterval = 45
+    /// A pick asked after this much of the call is gone would outlive the bridge's wait (callTimeout): asked in a new call.
+    static var lateForPick: TimeInterval { callTimeout - pickWindow - 3 }
 }
 
 /// Listens on mcp.sock. Each connection: challenge → one signed request → one signed answer. Socket work runs on its queue;
@@ -329,6 +338,13 @@ final class MCPHandler {
             if i < list.count { r["next"] = i }
             done(r)
         case "request":
+            // The consent question took most of this call's time: a pick asked now would still be on screen when the AI tool
+            // has given up on the call. The tool is told to ask again (the user's Allow is kept).
+            if Date().timeIntervalSince(call.started) > MCPLimits.lateForPick {
+                log("ask again", 0, 0)
+                done(Self.err("Access was just allowed. Call cocaine_request again to let the user pick what to share.", "retry"))
+                return
+            }
             guard limiter.allow(call.client.fingerprint, request: true, now: now()) else { log("rate limited", 0, 0); done(Self.err("Too many requests: wait a minute", "rate")); return }
             let reason = AIContextText.clean(call.args["reason"] as? String ?? "", 300)
             let kinds = (call.args["kinds"] as? [String] ?? ["clipboard", "shelf"]).filter { ["clipboard", "shelf"].contains($0) }

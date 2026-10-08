@@ -21,7 +21,7 @@ final class AIContextCenter: ObservableObject {
     /// The shelf (the island's model owns it): the picker offers its current collection.
     weak var shelf: ShelfStore?
     static let consentTimeout: TimeInterval = 40
-    static let pickTimeout: TimeInterval = 45
+    static let pickTimeout: TimeInterval = MCPLimits.pickWindow
 
     /// `support`: Cocaine's private folder (nil: no files at all, as under test and render flags).
     init(defaults: UserDefaults = AppDefaults.store, support: URL? = AppDefaults.isolated ? nil : AgentPaths.support()) {

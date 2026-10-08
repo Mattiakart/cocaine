@@ -37,7 +37,8 @@ dello schermo. Ogni apertura riparte da zero: nessuna ricerca, nulla selezionato
 | Esc | cancella la ricerca, poi la selezione, poi chiude |
 
 I tasti lettera (P, Y) si riconoscono dalla lettera che scrivono, quindi restano sulla loro lettera con AZERTY, Dvorak e
-altri layout.
+altri layout. Mentre un metodo di input compone (giapponese, cinese, coreano…) ogni tasto è suo: ↑ ↓ scelgono un candidato,
+Invio conferma, Esc annulla la composizione; i tasti dell'elenco tornano a funzionare quando il testo è confermato.
 
 **Ricerca** (*Cerca* nelle impostazioni):
 

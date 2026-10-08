@@ -198,3 +198,4 @@
 "your command" = "your command";
 "{file} is the file (required), {name} its name, {mime} its type, {size} its size, {secret_headers} a file with your secret headers (curl -H @{secret_headers}). No shell runs it." = "{file} is the file (required), {name} its name, {mime} its type, {size} its size, {secret_headers} a file with your secret headers (curl -H @{secret_headers}). No shell runs it.";
 "“%1$@” is deleted from %2$@ and the link stops working." = "“%1$@” is deleted from %2$@ and the link stops working.";
+"The service's settings changed since this upload: delete the file on the service itself" = "The service's settings changed since this upload: delete the file on the service itself";

@@ -89,6 +89,10 @@ the **Cloud sharing** switch at the top turns everything off.
   host). Not yet tried against the real R2, B2, Wasabi, Spaces, Nextcloud or an SFTP server: whether each store accepts
   UNSIGNED-PAYLOAD is handled by the automatic fallback.
 - At most 100 files per upload (several are one ZIP, so one link). Uploads run one at a time with the shelf's other jobs.
-- No resumable uploads; a cancelled S3 multipart upload is aborted, a cancelled SFTP upload is removed, an interrupted
-  WebDAV PUT leaves nothing on most servers.
+- No resumable uploads; a cancelled S3 multipart upload is aborted, an SFTP upload that is cancelled, times out or fails
+  half-way is removed, an interrupted WebDAV PUT leaves nothing on most servers. An SFTP upload may take an hour, or longer
+  for a big file (at least 1 MB/s is expected).
+- **Revoke** deletes the file where it was uploaded: if the service's bucket, folder or server changed since, Cocaine says so
+  instead of deleting nothing (delete the file on the service itself). Cancel stops the uploader's whole command, including
+  programs its script started.
 - The SFTP service doesn't use the SSH hosts list of the remote-sessions feature yet; its server is entered here.
