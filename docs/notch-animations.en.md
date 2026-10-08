@@ -42,8 +42,10 @@ These events show a HUD under the notch:
 - the battery low on battery power: once at the chosen level (20 % by default) and once more at 10 %. It is said again only after the level has risen 3 points or the charger was in,
 - Low Power Mode turned on or off.
 
-The HUD shows the badge (a bolt, or a plug while held), the title, the percentage (its digits roll), the detail and a battery
-glyph. While the container drops, the glyph's fill runs from empty to the level and the bolt grows in. They follow the drop
+The HUD shows the badge (a bolt, or a plug while held), the title (on two lines when there is no detail), the detail, and a
+battery glyph with the percentage under it (its digits roll). Round 7 moved the percentage there: "62% · Full in 48 min" on
+one line was cut under a 14" notch in most languages, as were Low Power Mode's title and "Plug in the charger soon" (now
+"Charge soon"). --island-review-test measures every title and detail in the 8 languages against that width. While the container drops, the glyph's fill runs from empty to the level and the bolt grows in. They follow the drop
 frame by frame, so a reversal half-way takes them back with it. Charging then full updates the same glyph in place. A volume
 bar arriving over the battery HUD puts it aside, and it comes back after the bar. With Reduce Motion, the container fades in,
 the fill is at its level at once, and the bolt fades.

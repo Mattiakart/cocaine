@@ -43,8 +43,8 @@
 "Open Privacy Settings" = "プライバシーとセキュリティを開く";
 "Open island" = "開いたアイランド";
 "Overdue" = "期限切れ";
-"Plug in the charger now" = "今すぐ充電器を接続してください";
-"Plug in the charger soon" = "まもなく充電器を接続してください";
+"Charge now" = "今すぐ充電してください";
+"Charge soon" = "早めに充電してください";
 "Plugged in" = "電源に接続";
 "Reminders" = "リマインダー";
 "Reset sizes" = "サイズをリセット";

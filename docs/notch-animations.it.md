@@ -53,6 +53,9 @@ Sotto il notch compare un HUD in questi casi:
 - Cambia la modalità Risparmio energetico.
 
 Il riempimento della batteria corre da vuoto al livello mentre il contenitore scende, e il fulmine cresce insieme a lui.
+La percentuale sta sotto la batteria, così il titolo (su due righe se non c'è un dettaglio) e il dettaglio hanno tutta la
+larghezza: nella 2.8.0 "62% · Carica tra 48 min" veniva tagliato sotto il notch di un 14", come il titolo del Risparmio
+energetico e "Collega presto il caricatore" (ora "Ricarica presto").
 
 Le impostazioni sono in Impostazioni → Isola → Notch: **Avvisi di ricarica** e **Avviso batteria scarica** (no, 10, 20 o
 30 %).

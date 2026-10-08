@@ -110,7 +110,7 @@ enum NotchTests {
               && item.kind == "power" && item.level == nil && Island.hudHeight(item) == 42)
         check("HUD item: unplugged, full, low", ChargeEvents.item(.disconnected, r(80, ac: false), low: 20).text == L("On battery")
               && ChargeEvents.item(.full, r(100, ac: true, charged: true), low: 20).text == L("Fully charged")
-              && ChargeEvents.item(.low(10), r(9, ac: false), low: 20).power?.detail == L("Plug in the charger now"))
+              && ChargeEvents.item(.low(10), r(9, ac: false), low: 20).power?.detail == L("Charge now"))
 
         // The watch with a fake reader: events reach the HUD only when the setting is on.
         let watch = NotchPowerWatch()

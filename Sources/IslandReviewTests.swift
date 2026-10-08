@@ -100,6 +100,33 @@ enum IslandReviewTests {
         for i in 1...6 { clock += 0.25; t += 0.25; hud.observe(1, 0.4 + Float(i) * 0.03) }
         check("brightness: the charging HUD is not covered by the brightness macOS sets on plugging in (2.8.0: it was)",
               first == "power" && im.hudItem?.kind == "power" && im.hudShown)
+
+        // The battery HUD's lines fit a 14" notch (185 pt) in every language: 2.8.0 cut "62% · Carica tra 48 min" and every
+        // language's "Plug in the charger soon".
+        func width(_ s: String, _ size: CGFloat, _ w: NSFont.Weight = .regular) -> CGFloat {
+            (s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: w)]).width
+        }
+        // The text column: the HUD less its margins, the badge, the gaps and the battery with its level under it.
+        let avail: CGFloat = 185 - 2 * (Space.l + 2) - 18 - 2 * Space.m - max(ChargeGlyphView.size.width + 2.5, width("100%", 10, .medium))
+        var cut: [String] = []
+        let events: [(ChargeEvent, PowerReading)] = [(.connected, PowerReading(percent: 62, onAC: true, charging: true, minutesToFull: 48)),
+            (.connected, PowerReading(percent: 80, onAC: true, charging: false)), (.full, PowerReading(percent: 100, onAC: true, charged: true)),
+            (.disconnected, PowerReading(percent: 86, onAC: false, minutesToEmpty: 412)), (.low(20), PowerReading(percent: 18, onAC: false)),
+            (.low(10), PowerReading(percent: 9, onAC: false)), (.lowPower(true), PowerReading(percent: 41, onAC: false, lowPower: true)),
+            (.lowPower(false), PowerReading(percent: 41, onAC: false))]
+        for code in Language.codes {
+            Language.set(code, persist: false)
+            for (e, r) in events {
+                let item = ChargeEvents.item(e, r, low: 20)
+                guard let g = item.power else { continue }
+                // The title has two lines when there is no detail (a word never breaks: 1.7 lines' worth at most).
+                let title = width(item.text, 11, .semibold) * 0.85, detail = g.detail.map { width($0, 10) * 0.85 } ?? 0
+                if title > (g.detail == nil ? 1.7 * avail : avail) || detail > avail { cut.append("\(code): \(item.text) / \(g.detail ?? "")") }
+            }
+        }
+        Language.set(nil, persist: false)
+        if !cut.isEmpty { print(cut.joined(separator: "\n")) }
+        check("battery HUD: its title, level and detail fit the notch-wide HUD in all 8 languages", cut.isEmpty)
     }
 
     // MARK: 3. the swipe down to open
