@@ -100,17 +100,18 @@ struct ChargeEvents {
         switch e {
         case .connected:
             title = g.state == .full ? L("Fully charged") : g.state == .plugged ? L("Plugged in") : L("Charging")
-            g.detail = g.state == .charging ? r.minutesToFull.map { String(format: L("Full in %@"), Dur.short(minutes: max(1, $0))) } : nil
+            g.detail = g.state == .charging ? r.minutesToFull.map { String(format: L("Full in %@"), Dur.left(seconds: max(1, $0) * 60)) } : nil
         case .disconnected:
             title = L("On battery")
-            g.detail = r.minutesToEmpty.map { String(format: L("%@ left"), Dur.short(minutes: max(1, $0))) }
+            g.detail = r.minutesToEmpty.map { String(format: L("%@ left"), Dur.left(seconds: max(1, $0) * 60)) }
         case .full: title = L("Fully charged")
         case .low(let t):
             title = L("Low battery")
             g.detail = t <= critical ? L("Plug in the charger now") : L("Plug in the charger soon")
         case .lowPower(let on): title = on ? L("Low Power Mode on") : L("Low Power Mode off")
         }
-        return HUDItem(icon: g.badge ?? (g.state == .low ? "battery.25percent" : "battery.75percent"), text: title, level: nil, power: g)
+        let icon = g.badge ?? (e == .disconnected ? "bolt.slash.fill" : g.state == .low ? "battery.25percent" : "battery.75percent")
+        return HUDItem(icon: icon, text: title, level: nil, power: g)
     }
 }
 

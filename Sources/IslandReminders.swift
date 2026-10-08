@@ -390,14 +390,13 @@ struct RemindersModuleView: View {
                 }
                 .frame(width: 16, height: 16)
                 .animation(Motion.animation(.toggle), value: done)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(r.title).font(UI.value).foregroundStyle(done ? UI.hint : UI.primary).strikethrough(done, color: UI.hint).lineLimit(1)
-                    if let d = dueText(r) {
-                        Text(d).font(UI.detail).foregroundStyle(overdue && !done ? ChargeGlyph.red : UI.hint).lineLimit(1)
-                    }
+                // One line: the title, then when it is due (red when overdue), so a short module still shows several.
+                Text(r.title).font(UI.value).foregroundStyle(done ? UI.hint : UI.primary).strikethrough(done, color: UI.hint).lineLimit(1)
+                    .animation(Motion.animation(.stateSwap), value: done)
+                Spacer(minLength: Space.s)
+                if let d = dueText(r) {
+                    Text(d).font(UI.detail).foregroundStyle(overdue && !done ? ChargeGlyph.red : UI.hint).lineLimit(1).fixedSize()
                 }
-                .animation(Motion.animation(.stateSwap), value: done)
-                Spacer(minLength: 0)
                 if r.priority > 0 && r.priority <= 4 {
                     Image(systemName: "exclamationmark").font(.system(size: 10, weight: .bold)).foregroundStyle(warningColor).accessibilityHidden(true)
                 }
