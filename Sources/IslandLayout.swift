@@ -22,7 +22,8 @@ import os
 enum Island {
     static let accent = Color(red: 0.40, green: 0.64, blue: 1.0)
     static let overscan = Layout.overscan
-    static let openSize = CGSize(width: 640, height: 214)
+    /// The open island: 640 × 214, or larger as set in Settings → Island → Notch (Sources/NotchSizing.swift).
+    static var openSize: CGSize { let s = NotchPrefs.current; return CGSize(width: s.openWidth, height: s.openHeight) }
     static let wing: CGFloat = 62                              // each side of the notch when something is live
     static let slack: CGFloat = 8                              // room around the open island for the spring's overshoot
     /// Opening: quick off the mark, with a touch of give at the end (Motion.bouncy). Closing: a bit quicker, settling without
@@ -75,6 +76,7 @@ struct NotchGeometry: Equatable {
         var builtin: Bool
         var id: CGDirectDisplayID = 0
         var mirrorOf: CGDirectDisplayID = 0          // CGDisplayMirrorsDisplay: the display this one mirrors (0: none)
+        var key = ""                                 // NotchSizing.displayKey: its own closed-bar size, if set
     }
 
     /// The screens as AppKit sees them now (a mirror set is one NSScreen).
@@ -83,7 +85,7 @@ struct NotchGeometry: Equatable {
             let id = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? 0
             return Screen(frame: s.frame, visibleTop: s.visibleFrame.maxY, safeTop: s.safeAreaInsets.top, auxLeft: s.auxiliaryTopLeftArea?.width,
                           auxRight: s.auxiliaryTopRightArea?.width, builtin: id != 0 && CGDisplayIsBuiltin(id) != 0, id: id,
-                          mirrorOf: id == 0 ? 0 : CGDisplayMirrorsDisplay(id))
+                          mirrorOf: id == 0 ? 0 : CGDisplayMirrorsDisplay(id), key: NotchSizing.displayKey(id))
         }
     }
 
@@ -116,8 +118,9 @@ struct NotchGeometry: Equatable {
         }
         let bar = (s.frame.maxY - s.visibleTop).rounded()
         let hidden = bar < 1
-        let height = hidden ? max(22, barThickness) : min(max(bar, 22), 44)
-        return NotchGeometry(frame: s.frame, notchWidth: 150, height: height, centerX: s.frame.midX, hasNotch: false, menuBarHidden: hidden, display: s.id)
+        // The closed bar's size: the user's for this screen, or for every screen without a notch (150 pt, the menu bar's height).
+        let pill = NotchSizing.closedPill(NotchPrefs.current.pill(for: s.key), bar: bar, fallback: barThickness)
+        return NotchGeometry(frame: s.frame, notchWidth: pill.width, height: pill.height, centerX: s.frame.midX, hasNotch: false, menuBarHidden: hidden, display: s.id)
     }
 
     /// Every island to show: one per screen (a mirror set once: its members show one picture), the main one first. With
@@ -164,7 +167,11 @@ struct IslandPose {
 struct IslandLayout {
     let notch: CGFloat          // the notch's width
     let notchH: CGFloat         // and its height (the menu bar's)
-    static let openBody = Island.openSize.width - 28        // the open island between its two top flares
+    /// The closed island's bottom corners: the notch's own on a notched screen, the user's on a bar (NotchSizing.pillCorner).
+    var closedCorner: CGFloat = HUDShape.corner
+    /// The open island's (NotchSizing.openCorner).
+    var openCorner: CGFloat = NotchPrefs.current.openCorner
+    static var openBody: CGFloat { Island.openSize.width - 28 }       // the open island between its two top flares
 
     var size: CGSize { CGSize(width: max(Island.openSize.width + 2 * Island.slack, notch + 2 * IslandModel.maxWing + 20),
                               height: Island.openSize.height + Island.slack + Island.overscan) }
@@ -190,7 +197,7 @@ struct IslandLayout {
         let y0 = top, y1 = top + max(notchH, Island.mix(notchH, Island.openSize.height, d))
         let flare = max(0, Island.mix(6.5, 14, p))                                                  // how far the flare reaches out
         let flareH = min(max(0, Island.mix(7, 15, p)), (y1 - y0) * 0.4)                             // and down the side
-        let corner = max(0, min(Island.mix(10, 24, d) * 1.35, y1 - y0 - flareH, (maxX - minX) / 2)) // span of a bottom corner
+        let corner = max(0, min(Island.mix(closedCorner, openCorner, d), y1 - y0 - flareH, (maxX - minX) / 2)) // span of a bottom corner
         let kf: CGFloat = 0.6, kc: CGFloat = 0.7          // handle lengths: long handles ease into the straight lines (no kink)
         var path = Path()
         path.move(to: CGPoint(x: minX - flare, y: 0))

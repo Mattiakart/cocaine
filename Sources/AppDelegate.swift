@@ -51,7 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mediaKeys = MediaKeys()
     private var autoAsked = Set<Permission>()
     private var presenceAssertion: IOPMAssertionID = 0
-    private var lastOnAC: Bool?
     /// What each AI session is doing, from the hooks; what it held before a restart comes back first (also in an instance
     /// started just for an alert, which used to overwrite the saved board with that one alert).
     private lazy var board: AgentBoard = { let b = AgentBoard(); b.restore(); return b }()
@@ -1195,14 +1194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A message in the island when the charger is plugged in or out.
-    private func watchPower() {
-        guard let b = System.battery else { return }
-        if let last = lastOnAC, last != b.onAC {
-            island.model.flashNotice(b.onAC ? "bolt.fill" : "battery.50", (b.onAC ? L("Charging") : L("On battery")) + " \(b.percent)%")
-        }
-        lastOnAC = b.onAC
-    }
+    /// The battery's HUD in the island (charger in/out, full, low): Sources/NotchPower.swift; this 2 s poll backs up IOKit's callback.
+    private func watchPower() { NotchPowerWatch.shared.poll() }
 
     /// Volume, mute and brightness keys: applied here, shown in the island. False leaves the key to macOS.
     private func handleMediaKey(_ key: Int, fine: Bool) -> Bool {

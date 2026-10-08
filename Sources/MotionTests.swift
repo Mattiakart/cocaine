@@ -16,8 +16,9 @@ enum MotionTests {
               zip(d, d.dropFirst()).allSatisfy { $0 < $1 } && d.first! > 0 && d.last! <= 0.5)
         check("motion: every spring has a response of 0.15…0.6 s and a damping of 0.7…1 (no wobble, nothing sluggish)",
               Motion.springs.allSatisfy { (0.15...0.6).contains($0.response) && (0.7...1).contains($0.damping) })
-        check("motion: snappy is the quickest spring, gentle the calmest",
-              Motion.springs.allSatisfy { Motion.snappy.response <= $0.response } && Motion.springs.allSatisfy { Motion.gentle.damping >= $0.damping })
+        check("motion: snappy is the quickest spring, gentle the calmest of those that may overshoot (the notch's close never does)",
+              Motion.springs.allSatisfy { Motion.snappy.response <= $0.response }
+              && Motion.springs.filter { $0.damping < 1 }.allSatisfy { Motion.gentle.damping >= $0.damping } && Motion.notchClose.damping == 1)
         check("motion: every spring settles within 0.6 s", Motion.springs.allSatisfy { $0.settle > 0 && $0.settle < 0.6 })
         check("motion: the island's window shrinks only after its close spring has settled",
               Motion.islandSettle >= Motion.curve(.islandClose, reduce: false)!.duration)

@@ -33,6 +33,8 @@ extension IslandView {
         case "aicontext": aiContextModule(b)         // Sources/AIContextViews.swift
         case "mirror": mirrorTab
         case "monitors": displayTab
+        case "reminders": remindersModule(b)         // Sources/IslandReminders.swift
+        case "controls": controlsModule(b)           // Sources/NotchControls.swift
         default: EmptyView()
         }
     }

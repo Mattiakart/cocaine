@@ -30,6 +30,8 @@ struct IslandView: View {
     @ObservedObject var display = DisplayOptions.shared
     /// A request from an AI waiting for an answer takes the open island's page (Sources/PlanReviewView.swift) until put aside.
     @ObservedObject var review = ApprovalReviewModel.shared
+    /// The notch's sizes and controls (Sources/NotchSizing.swift).
+    @ObservedObject var prefs = NotchPrefs.shared
     /// The screen this island is on (one island per screen, IslandController); nil = the model's own geometry (render tools).
     var place: IslandPlace? = nil
 
@@ -49,9 +51,13 @@ struct IslandView: View {
     var body: some View {
         let open = isOpen
         let pose = IslandPose(p: model.renderProgress ?? (open ? 1 : 0), leftW: model.leftW, rightW: model.rightW)
-        let l = IslandLayout(notch: g.notchWidth, notchH: g.height)
+        let l = IslandLayout(notch: g.notchWidth, notchH: g.height, closedCorner: g.hasNotch ? HUDShape.corner : prefs.sizing.pillCorner,
+                             openCorner: prefs.sizing.openCorner)
+        let reduce = Motion.reduce || display.reduceMotion
         ZStack(alignment: .topLeading) {
             IslandOutline(pose: pose, layout: l).fill(Color.black)                  // reaches above the screen's edge
+                // Open, it floats a little over what is under it (Boring Notch's shadow); closed it is part of the screen's edge.
+                .shadow(color: .black.opacity(open ? 0.55 : 0), radius: open ? 6 : 0, y: open ? 2 : 0)
             ZStack(alignment: .topLeading) {
                 strip(pose, l)
                 VStack(spacing: 0) {
@@ -68,6 +74,9 @@ struct IslandView: View {
             if !open { closedElement(l) }
         }
         .frame(width: l.size.width, height: l.size.height, alignment: .topLeading)
+        // A two-finger swipe being followed (Sources/NotchGestures.swift): pushed up, the open island gives a little and its
+        // content dims, as if closing; pulled down, the closed notch grows a little. Let go, it springs back.
+        .modifier(GestureFollow(progress: reduce ? 0 : model.gestureProgress))
         .contentShape(Rectangle())
         // Files, images, links and text dropped anywhere on the island land on the shelf; items dragged inside it are reordered;
         // with ⌥ held, an instant action takes them (Sources/ShelfInteraction.swift).

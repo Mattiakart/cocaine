@@ -48,6 +48,8 @@ struct ScreenSpec {
     let modules: [ModulePlacement]
     /// Shown only while something makes it useful (the Monitors screen: an external monitor).
     var conditional = false
+    /// Hidden until the user shows it (screens added after 2.7: an update never adds a tab nobody asked for).
+    var defaultVisible = true
 }
 
 /// The registry. Module and screen ids are stored, so they never change; titles are L() keys (Screens.strings and the main table).
@@ -69,6 +71,8 @@ enum ModuleCatalog {
         ModuleSpec(id: "aicontext", title: "AI context", icon: "sparkles", home: "clipboard", sizes: [.s, .m, .l], width: .narrow),
         ModuleSpec(id: "mirror", title: "Mirror", icon: "person.crop.square", home: "mirror", sizes: [.l], width: .full),
         ModuleSpec(id: "monitors", title: "Monitors", icon: "display", home: "display", sizes: [.l], width: .full),
+        ModuleSpec(id: "reminders", title: "Reminders", icon: "checklist", home: "reminders", sizes: [.s, .m, .l], width: .narrow),   // Sources/IslandReminders.swift
+        ModuleSpec(id: "controls", title: "Controls", icon: "slider.horizontal.3", home: "home", sizes: [.s, .m], width: .narrow),     // Sources/NotchControls.swift
     ]
 
     static let screens: [ScreenSpec] = [
@@ -83,6 +87,7 @@ enum ModuleCatalog {
         ScreenSpec(id: "status", icon: "gauge.with.needle", title: "Status", modules: [.init("batteries", 0), .init("usage", 1)]),
         ScreenSpec(id: "mirror", icon: "person.crop.square", title: "Mirror", modules: [.init("mirror", 0)]),
         ScreenSpec(id: "display", icon: "display", title: "Monitors", modules: [.init("monitors", 0)], conditional: true),
+        ScreenSpec(id: "reminders", icon: "checklist", title: "Reminders", modules: [.init("reminders", 0)], defaultVisible: false),
     ]
 
     static func module(_ id: String) -> ModuleSpec? { modules.first { $0.id == id } }
@@ -137,7 +142,7 @@ struct ScreenLayout: Codable, Equatable {
 
     /// Exactly the island as it was before screens could be arranged.
     static var standard: ScreenLayout {
-        ScreenLayout(screens: ModuleCatalog.screens.map { ScreenConfig(id: $0.id, visible: true, modules: $0.modules) })
+        ScreenLayout(screens: ModuleCatalog.screens.map { ScreenConfig(id: $0.id, visible: $0.defaultVisible, modules: $0.modules) })
     }
 
     // MARK: storing
@@ -165,7 +170,7 @@ struct ScreenLayout: Codable, Equatable {
             out.append(ScreenConfig(id: s.id, visible: s.visible, modules: mods))
         }
         for spec in ModuleCatalog.screens where !seen.contains(spec.id) {
-            out.append(ScreenConfig(id: spec.id, visible: true, modules: spec.modules))
+            out.append(ScreenConfig(id: spec.id, visible: spec.defaultVisible, modules: spec.modules))
         }
         var l = ScreenLayout(version: Self.currentVersion, screens: out, start: start)
         if !l.screens.contains(where: { $0.visible && !Self.isConditional($0.id) }),

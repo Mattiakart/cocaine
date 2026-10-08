@@ -89,6 +89,7 @@ final class IslandController {
         startKeyboard()
         ClipboardWiring.attach(model: model, openKeyboard: { [weak self] in self?.toggleKeyboard() }, close: { [weak self] in self?.setOpen(false) })
         AIContextWiring.attach(model: model)                          // Sources/AIContextWiring.swift: the AI-context basket, MCP
+        NotchWiring.attach(model: model, controller: self)            // Sources/NotchWiring.swift: battery HUD, swipes, sizes
         model.setKeyable = { [weak self] on in
             guard let p = self?.activeSpot?.panel else { return }
             p.keyable = on
@@ -608,6 +609,25 @@ final class IslandController {
         }
     }
     private var localKeys: Any?
+
+    // MARK: swipes on the notch (Sources/NotchGestures.swift)
+
+    /// The island under a point where a swipe may act: closed, its notch (and the screen's top edge); open, the open island.
+    func gestureTarget(at p: CGPoint) -> NotchGestureTarget? {
+        guard enabled, let s = spot(at: p), s.panel.isVisible, suspended != s.id, !s.covered else { return nil }
+        let open = state.open == s.id && model.open
+        guard IslandRouting.hoverZone(s.g, open: open, leftW: model.leftW, rightW: model.rightW).contains(p) else { return nil }
+        return NotchGestureTarget(display: s.id, open: open, window: s.panel)
+    }
+
+    /// A question, a shelf form or the keyboard mode holds the island: swipes leave it alone.
+    var gestureBlocked: Bool { DialogCenter.shared.isShowing(on: .island) || model.shelfHold || keyboardOpen }
+
+    /// Swiped down on a closed notch: it opens there, as if the pointer had just arrived (the swipe gave the haptic).
+    func gestureOpen(_ id: CGDirectDisplayID) {
+        guard enabled, spots[id] != nil else { return }
+        apply(state.openNow(id, hovering: true), haptic: false)
+    }
 }
 
 extension Settings {

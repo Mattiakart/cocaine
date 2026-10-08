@@ -10,9 +10,12 @@ struct HUDItem: Equatable {
     var icon: String
     var text: String
     var level: Double?
+    /// The battery's HUD (the charger plugged in or out, full, low: Sources/NotchPower.swift): its glyph instead of a bar.
+    var power: ChargeGlyph? = nil
     /// Bars of one kind (all the volume steps of a held key) update in place; another kind (volume, then brightness) swaps the
-    /// icon and label inside the same container; every text notice is one kind ("latest wins").
-    var kind: String { level != nil ? "level:" + text : "text" }
+    /// icon and label inside the same container; every text notice is one kind ("latest wins"); the battery's is its own
+    /// (charging, then full: the same glyph changes in place).
+    var kind: String { power != nil ? "power" : level != nil ? "level:" + text : "text" }
     var isLevel: Bool { level != nil }
 }
 
@@ -25,6 +28,8 @@ struct HUDTimeline {
     static let levelQuiet: TimeInterval = 1.4
     static let resumeMin: TimeInterval = 1.2
     static let parkMin: TimeInterval = 1.0
+    /// The battery's HUD stays a little longer than a short notice: the fill has to run and be read (Boring Notch: 3 s).
+    static let powerTime: TimeInterval = 3
     static func textTime(_ text: String) -> TimeInterval { min(5, max(2.2, 1.2 + Double(text.count) * 0.05)) }
 
     enum Change: Equatable { case appear, update, swap, hide, none }
@@ -45,7 +50,7 @@ struct HUDTimeline {
         }
         item = new
         shown = true
-        until = now + (new.isLevel ? Self.levelQuiet : Self.textTime(new.text))
+        until = now + (new.isLevel ? Self.levelQuiet : new.power != nil ? Self.powerTime : Self.textTime(new.text))
         return change
     }
 
@@ -100,6 +105,8 @@ struct HUDShape: Shape {
     let join: CGFloat           // the closed island's bottom (the notch's)
     let filletLeft: Bool        // the island goes on past this side (a wing): a fillet joins the two
     let filletRight: Bool
+    /// The closed island's bottom corner (the notch's, or the user's on a bar without one): the container ends in the same.
+    var cornerSpan: CGFloat = HUDShape.corner
     var animatableData: AnimatablePair<CGFloat, CGFloat> { get { AnimatablePair(reveal, height) } set { reveal = newValue.first; height = newValue.second } }
 
     static let overlap: CGFloat = 14          // reaches up into the island: covers its own bottom corner when no wing is there
@@ -109,7 +116,7 @@ struct HUDShape: Shape {
     func path(in rect: CGRect) -> Path {
         let drop = max(0, height * reveal)
         let top = join - Self.overlap, bottom = join + drop
-        let corner = max(0, min(Self.corner, drop * 0.9, (right - left) / 2))
+        let corner = max(0, min(cornerSpan, drop * 0.9, (right - left) / 2))
         let f = min(Self.fillet, drop / 3)
         let fl = filletLeft ? f : 0, fr = filletRight ? f : 0
         let kf: CGFloat = 0.6, kc: CGFloat = 0.7
@@ -137,6 +144,7 @@ private struct HUDContentReveal: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         let a = reduce ? 1 : Island.smooth((reveal - 0.35) / 0.65)
         return content.opacity(a).offset(y: reduce ? 0 : -6 * (1 - Island.clamp(reveal)))
+            .environment(\.hudReveal, reveal)          // the battery's fill and bolt follow the drop frame by frame
     }
 }
 
@@ -164,7 +172,7 @@ struct IslandHUDView: View {
         let h = Island.hudHeight(item)
         let join = layout.top + notchH
         let shape = HUDShape(reveal: reduce ? 1 : reveal, height: h, left: layout.notchLeft, right: layout.notchRight, join: join,
-                             filletLeft: pose.leftW > 1, filletRight: pose.rightW > 1)
+                             filletLeft: pose.leftW > 1, filletRight: pose.rightW > 1, cornerSpan: layout.closedCorner)
         ZStack(alignment: .topLeading) {
             if reduce {
                 shape.fill(Color.black).opacity(Double(reveal))                          // Reduce Motion: fades, never moves
@@ -186,7 +194,14 @@ struct IslandHUDView: View {
     }
 
     @ViewBuilder private func content(_ item: HUDItem?, h: CGFloat, reduce: Bool) -> some View {
-        if let item {
+        if let item, let glyph = item.power {
+            ChargeHUDContent(item: item, glyph: glyph, reduce: reduce)
+                .padding(.horizontal, Space.l + 2)
+                .padding(.top, 1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(item.kind)
+                .transition(.opacity)
+        } else if let item {
             HStack(spacing: Space.m) {
                 Image(systemName: item.icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(Island.accent)
                     .frame(width: 18)

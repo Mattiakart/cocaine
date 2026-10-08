@@ -53,7 +53,15 @@ enum Motion {
     static let gentle = Spring(response: 0.42, damping: 0.92)
     /// Things that come out of the notch, and the switch's knob: a touch of give at the end.
     static let bouncy = Spring(response: 0.36, damping: 0.8)
-    static let springs = [snappy, smooth, gentle, bouncy]
+    /// The notch opening (docs/notch-animations.en.md; Boring Notch's open spring): a little longer than `bouncy`, so the
+    /// island visibly runs along the screen's edge before it drops, with the same give at the end. It starts the moment the
+    /// pointer arrives: a spring's length never delays the open, it only shapes it.
+    static let notchOpen = Spring(response: 0.42, damping: 0.8)
+    /// The notch closing: critically damped (no bounce back out of the notch), as quick to look settled as `smooth`.
+    static let notchClose = Spring(response: 0.45, damping: 1.0)
+    /// Following a finger (a two-finger swipe on the notch): quick to catch up, a little give when let go.
+    static let follow = Spring(response: 0.38, damping: 0.8)
+    static let springs = [snappy, smooth, gentle, bouncy, notchOpen, notchClose, follow]
 
     /// Items that arrive together come one after another, this far apart (and never more than `maxStagger` in all).
     static let stagger = 0.035
@@ -75,7 +83,7 @@ enum Motion {
     }
 
     /// The window waits this long after the island starts closing before it shrinks back (the close spring has settled).
-    static let islandSettle = 0.5
+    static let islandSettle = 0.56
 
     // MARK: roles
 
@@ -85,6 +93,10 @@ enum Motion {
         case expand, page, appear, dropdown, dialog, notice, crossfade, dragSettle
         case islandOpen, islandClose, wing
         case hudDrop, hudRetract, hudBar, hudSwap
+        /// The notch (Sources/Notch*.swift): the charger's bolt popping in or out, a battery's fill running to its level, a
+        /// state shown in place changing (play/pause, the closed island's live item), a finger being followed, the open page's
+        /// modules arriving one after another.
+        case chargeIn, levelFill, stateSwap, gestureFollow, contentIn
     }
 
     enum Curve: Equatable {
@@ -113,8 +125,9 @@ enum Motion {
         if reduce {
             switch r {
             // Movement only: with Reduce Motion it happens at once.
-            case .islandOpen, .islandClose, .wing, .toggle, .hudBar, .expand, .dragSettle, .value: return nil
-            case .press, .hudSwap: return .easeOut(Duration.instant)
+            case .islandOpen, .islandClose, .wing, .toggle, .hudBar, .expand, .dragSettle, .value, .levelFill, .gestureFollow: return nil
+            case .press, .hudSwap, .stateSwap: return .easeOut(Duration.instant)
+            case .chargeIn, .contentIn: return .easeOut(Duration.quick)
             case .hover: return .easeOut(Duration.quick)
             case .hudDrop: return .easeOut(Duration.quick)
             case .hudRetract: return .easeIn(Duration.quick)
@@ -124,8 +137,13 @@ enum Motion {
         switch r {
         case .press, .selection, .value, .hudBar: return .spring(snappy)
         case .hover: return .easeOut(Duration.quick)
-        case .toggle, .islandOpen, .hudDrop: return .spring(bouncy)
-        case .expand, .page, .dropdown, .dragSettle, .islandClose, .wing, .hudRetract: return .spring(smooth)
+        case .toggle, .hudDrop, .chargeIn: return .spring(bouncy)
+        case .islandOpen: return .spring(notchOpen)
+        case .islandClose: return .spring(notchClose)
+        case .gestureFollow: return .spring(follow)
+        case .stateSwap: return .spring(snappy)
+        case .levelFill, .contentIn: return .spring(smooth)
+        case .expand, .page, .dropdown, .dragSettle, .wing, .hudRetract: return .spring(smooth)
         case .appear, .dialog, .notice: return .spring(gentle)
         case .crossfade: return .easeInOut(Duration.standard)
         case .hudSwap: return .easeInOut(Duration.quick)

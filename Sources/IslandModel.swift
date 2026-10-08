@@ -34,6 +34,8 @@ final class IslandModel: ObservableObject {
     /// Which way the last screen change went (by the tabs' order): the pages slide from that side (Motion.page).
     let pager = PageDirection()
     @Published var geometry = NotchGeometry.current() ?? NotchGeometry(frame: .zero, notchWidth: 150, height: 24, centerX: 0, hasNotch: false)
+    /// A two-finger swipe on the notch being followed, -1…1 (Sources/NotchGestures.swift); 0 at rest.
+    @Published var gestureProgress: CGFloat = 0
     /// Opened from the keyboard (⌃⌥⌘I): kept open, with the keys of IslandKeys.
     @Published var keyboard = false
     /// The arrangement of the screens, shared by every island and the settings card.
@@ -66,6 +68,8 @@ final class IslandModel: ObservableObject {
     /// Files are being dragged over the island: the shelf shows where they will land.
     @Published var dropHover = false
     let calendar = CalendarWatch()
+    /// Reminders (Sources/IslandReminders.swift): EventKit once the island starts (NotchWiring), a fake in tests and renders.
+    let reminders = RemindersWatch()
     let music = MusicWatch()
     let mirror = MirrorController()
     let ddc = DDCDisplays()
@@ -186,6 +190,16 @@ final class IslandModel: ObservableObject {
         if hudYields(target) { return }                  // that island is open: the HUD doesn't come down under it
         if target != hudScreen { hudScreen = target }
         hudTimeline.post(HUDItem(icon: icon, text: text, level: level), now: now())
+        publishHUD()
+    }
+
+    /// A whole HUD item (the battery's, Sources/NotchPower.swift), shown where the user is.
+    func flashItem(_ item: HUDItem, display: CGDirectDisplayID? = nil) {
+        A11y.announce(item.text + (item.power.map { ", \($0.percent)%" } ?? ""))
+        let target = hudRoute(display)
+        if hudYields(target) { return }
+        if target != hudScreen { hudScreen = target }
+        hudTimeline.post(item, now: now())
         publishHUD()
     }
 
