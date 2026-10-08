@@ -9,6 +9,9 @@
 #   cocaine mode screen-off|normal|status   screen off: the Mac stays awake but its displays may sleep (and lock)
 #   cocaine clip list|get|put|paste …   the clipboard history and pinboards of the running Cocaine.app (off until allowed
 #                             in Settings → Island → Clipboard → Command line; see docs/clipboard.en.md)
+#   cocaine profiles [list [--json]|enable <name>|disable <name>]   keep-awake profiles (docs/awake-profiles.en.md);
+#                             enable/disable go through the app's guarded cocaine:// link
+#   cocaine disks [--json]    the disks Cocaine keeps awake, and whether each is mounted
 #   cocaine release | forget  used by Cocaine.app (quit, crash recovery); `watch` is its watchdog, `expire` ends a passed
 #                             command-line deadline (Cocaine --boot-check)
 # cocaine-recovery: 1   (marker: this engine and its app know release/watch and --prepare-update; the cask checks it)
@@ -405,5 +408,11 @@ case "$1" in
             [[ -x $b ]] && exec "$b" --clip "${@:-help}"
           done
           print -ru2 -- "cocaine clip: Cocaine.app not found"; exit 69 ;;
-  *)      print -ru2 -- "usage: cocaine on [duration]|on until HH:MM|off|status [--json]|mode …|release|forget|remote …|shelf …|clip …"; exit 64 ;;
+  profiles|disks)   # keep-awake profiles (list [--json] | enable|disable <name>) and kept-awake disks, read from the app's settings
+          w=$1; shift
+          for b in "${SELF:h:h}/MacOS/Cocaine" "$COPY" /Applications/Cocaine.app/Contents/MacOS/Cocaine; do
+            [[ -x $b ]] && { [[ $w == disks ]] && exec "$b" --profiles disks "$@"; exec "$b" --profiles "${@:-list}"; }
+          done
+          print -ru2 -- "cocaine $w: Cocaine.app not found"; exit 69 ;;
+  *)      print -ru2 -- "usage: cocaine on [duration]|on until HH:MM|off|status [--json]|mode …|release|forget|remote …|shelf …|clip …|profiles …|disks"; exit 64 ;;
 esac

@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let awake = AwakeCenter()                // keep-awake extras (Sources/AwakeCenter.swift)
     private var arbiter = TriggerArbiter()
     private var triggerGrace: TimeInterval = 180
+    private var profileOnly = false                  // the last time triggers held, only a profile did (Sources/AwakeProfiles.swift)
     private var requestedOn: Bool?                   // what Cocaine itself last applied; any other change came from outside
     private var realIdle = RealIdle()
     private var idleNow = 0.0                        // the user's idle time, Stay active's nudges left out
@@ -431,6 +432,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .resume: pauseAlerts(until: nil)
         case .panel: if !panel.isVisible { showPanel(fromClick: false) }
         case .status: break
+        case .profile(let name, let enabled):
+            guard awake.setProfile(name, enabled: enabled) else {       // no such profile: the caller's x-error, if any
+                if let e = req.failure, let r = ControlURL.reply(e, [("errorMessage", "no such profile")]) { NSWorkspace.shared.open(r) }
+                return
+            }
         }
         guard let s = req.success else { return }
         // Answer with what was asked for (a change is applied in the background: report the target, not the old state).
@@ -447,6 +453,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .on, .off, .toggle, .timer: A11y.announce((wantOn ?? System.cocaineOn) ? L("Cocaine is on") : L("Cocaine is off"))
         case .pause: A11y.announce(L("Alerts paused"))
         case .resume: A11y.announce(L("Alerts resumed"))
+        case .profile(let name, let enabled):
+            A11y.announce(String(format: enabled ? L("Profile “%@” is on") : L("Profile “%@” is off"), name))
         case .panel, .status: break
         }
     }
@@ -1338,9 +1346,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings.triggerSchedule { states[.schedule] = settings.schedule.contains(Date(), calendar: .autoupdatingCurrent) }
         states.merge(awake.triggerStates()) { $1 }              // VPN, CPU, audio output, volume, USB (Sources/AwakeTriggers.swift)
         let floorBlocked = b.map { batteryFloor.blocks(percent: $0.percent, onAC: $0.onAC) } ?? false
-        let blocked = lowBattery || heatGuard.tripped || floorBlocked || awake.blocksTriggers   // (or the screen locked, paused)
-        let (active, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: blocked)
-        if !active { triggerGrace = grace }
+        // Profiles (Sources/AwakeProfiles.swift): the first engaged one decides; "Let the Mac sleep" holds every trigger back.
+        let prof = awake.profileStep()
+        let blocked = lowBattery || heatGuard.tripped || floorBlocked || awake.blocksTriggers || prof.block   // (or the screen locked, paused)
+        let (arbiterActive, grace) = arbiter.evaluate(states, all: settings.triggerAll, blocked: blocked)
+        let active = arbiterActive || (prof.keepAwake && !blocked)
+        // A profile already waited its own "stop after": nothing more once it alone was keeping the Mac awake.
+        if active { profileOnly = !arbiterActive } else { triggerGrace = profileOnly ? 0 : grace }
         triggerActive = active
         switch autoOn.step(active: active, isOn: wantOn ?? on, now: Date(), grace: triggerGrace) {
         case .turnOn: log.notice("smart trigger: on"); setCocaine(true, auto: true)
@@ -1350,12 +1362,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // What the panel says about it: which are true now, who turned Cocaine on, why they can't.
         let live = Set(states.filter { $0.value == true }.map(\.key.rawValue))
         if model.liveTriggers != live { model.liveTriggers = live }
-        let words = [TriggerWords.reason(states, apps: openApps, power: settings.triggerPower)].compactMap { $0 } + awake.words(states)
+        let words = (prof.keepAwake && !blocked ? [prof.lead?.name] : []).compactMap { $0 }
+            + [TriggerWords.reason(states, apps: openApps, power: settings.triggerPower)].compactMap { $0 } + awake.words(states)
         let by: String? = autoOn.owned && active && !words.isEmpty ? words.joined(separator: ", ") : nil
 
         if model.triggeredBy != by { model.triggeredBy = by }
-        let hold: String? = !blocked || states.values.allSatisfy({ $0 != true }) ? nil
-            : lowBattery || floorBlocked ? L("Triggers on hold: battery low") : L("Triggers on hold: too hot with the lid closed")
+        let wanted = states.values.contains(true) || !prof.holding.isEmpty
+        let hold: String? = !blocked || !wanted ? nil
+            : lowBattery || floorBlocked ? L("Triggers on hold: battery low")
+            : heatGuard.tripped ? L("Triggers on hold: too hot with the lid closed")
+            : prof.block ? String(format: L("Triggers on hold: “%@” lets the Mac sleep"), prof.lead?.name ?? "")
+            : nil                                                              // the screen is locked (paused): nothing to say
         if model.triggerHold != hold { model.triggerHold = hold }
     }
 
@@ -1659,6 +1676,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.setCocaine(false, auto: true)
             }
         }
+        awake.idleSeconds = { [weak self] in self?.idleNow ?? 0 }
+        awake.displaySleepChanged = { [weak self] in self?.syncScreenMode() }
         let m = awake.model
         m.triggersChanged = { [weak self] in self?.evaluateTriggers(System.cocaineOn) }
         m.iconChanged = { [weak self] in self?.redrawStatusItem() }
@@ -1761,7 +1780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Tells the engine's display helper whether to keep the displays on (normal) or let them sleep (screen off).
     private func syncScreenMode() {
-        let mode = screenOffMode ? "screen-off" : "normal"
+        let mode = screenOffMode || awake.profileDisplaySleep ? "screen-off" : "normal"    // (or a profile lets the displays sleep)
         updateDimming(on: System.cocaineOn)                        // switching over while dimmed: the idle dim lets go
         DispatchQueue.global().async { run("/bin/zsh", [scriptPath, "mode", mode]) }
     }

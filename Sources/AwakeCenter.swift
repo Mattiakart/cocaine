@@ -25,6 +25,40 @@ final class AwakeModel: ObservableObject {
     @Published var menuIcon: String { didSet { settings.menuIcon = menuIcon; iconChanged() } }
     @Published var notifyChanges: Bool { didSet { settings.notifyChanges = notifyChanges } }
 
+    // Profiles (Sources/AwakeProfiles.swift): the list in priority order, cleaned on every change.
+    @Published var profiles: [AwakeProfile] {
+        didSet {
+            let c = AwakeProfiles.clean(profiles)
+            if c != profiles { profiles = c }
+            settings.awakeProfiles = profiles
+            triggersChanged()
+        }
+    }
+    /// Engaged profiles (ids, priority order), the ones whose conditions hold now, the profile that decides.
+    @Published var engagedProfiles: [String] = []
+    @Published var holdingProfiles: Set<String> = []
+    @Published var leadProfile: String?
+    /// The profile open in the editor (not a setting).
+    @Published var editingProfile: String?
+    @Published var locationAllowed = false
+    /// Bluetooth devices the Mac knows (for the picker; read when asked for).
+    @Published var bluetoothKnown: [String] = []
+    // Keep disks awake (Sources/DriveAlive.swift).
+    @Published var driveAliveVolumes: [String] {
+        didSet {
+            let gone = oldValue.filter { o in !driveAliveVolumes.contains { $0.caseInsensitiveCompare(o) == .orderedSame } }
+            settings.driveAliveVolumes = driveAliveVolumes
+            if !gone.isEmpty { drivesRemoved(gone) }
+        }
+    }
+    @Published var driveAliveInterval: Int { didSet { settings.driveAliveInterval = driveAliveInterval } }
+    @Published var driveAliveMethod: String { didSet { settings.driveAliveMethod = driveAliveMethod } }
+    @Published var driveAliveAlways: Bool { didSet { settings.driveAliveAlways = driveAliveAlways } }
+    @Published var driveStatus: [String: DriveAliveRunner.Status] = [:]
+    // Statistics and the reminder (Sources/AwakeSessions.swift).
+    @Published var stats: AwakeStats
+    @Published var remindHours: Int { didSet { settings.remindHours = remindHours } }
+
     /// "Keep awake while…": what is being waited for (nil: nothing), and a line about it.
     @Published var whileTarget: WhileTarget?
     @Published var whileNote: String?
@@ -42,7 +76,10 @@ final class AwakeModel: ObservableObject {
     /// `--render-panel … --awake`: every keep-awake row filled with sample values (in memory; nothing of this Mac is shown).
     func fillSample(rows: Bool) {
         sample = ["audio": ["MacBook Pro Speakers", "AirPods Pro", "LG UltraFine Display Audio"], "volumes": ["Backup 2TB", "Photos"],
-                  "usb": ["YubiKey 5C NFC", "Studio Display"], "processes": ["Xcode", "ffmpeg", "node", "Terminal"]]
+                  "usb": ["YubiKey 5C NFC", "Studio Display"], "processes": ["Xcode", "ffmpeg", "node", "Terminal"],
+                  "wifi": ["Office", "Office-5G", "Home"], "bluetooth": ["MX Keys", "AirPods Pro", "Magic Trackpad"],
+                  "apps": ["Keynote", "Xcode", "Final Cut Pro", "Zoom"]]
+        fillTriggersSample(CommandLine.arguments)              // --triggers: sample profiles and disks (Sources/TriggersTests.swift)
         guard rows else { return }
         triggerVPN = true; triggerCPU = "above"; triggerCPUPercent = 75; triggerCPUMinutes = 10
         triggerAudio = ["AirPods Pro"]; triggerVolumes = ["Backup 2TB", "Photos"]; triggerUSB = ["YubiKey 5C NFC"]
@@ -52,12 +89,20 @@ final class AwakeModel: ObservableObject {
         packNote = String(format: L("“%@” opened in Shortcuts"), AwakeShortcuts.title(.keepAwake))
     }
 
+    /// `--render-panel … --triggers` (Sources/TriggersTests.swift): sample profiles, disks and statistics, in memory.
+    func fillTriggersSample(_ args: [String]) {
+        guard args.contains("--triggers") else { return }
+        TriggersFixtures.fill(self, edit: args.contains("--edit-profile"))
+    }
+
     var triggersChanged: () -> Void = {}
     var iconChanged: () -> Void = {}
     var startWhile: (WhileTarget) -> Void = { _ in }
     var stopWhile: () -> Void = {}
     var keepAwakeUntil: (Date) -> Void = { _ in }
     var addShortcuts: () -> Void = {}
+    var drivesRemoved: ([String]) -> Void = { _ in }
+    var resetStats: () -> Void = {}
 
     var config: AwakeTriggerConfig {
         AwakeTriggerConfig(vpn: triggerVPN, cpu: triggerCPU, cpuPercent: triggerCPUPercent, cpuMinutes: triggerCPUMinutes,
@@ -79,6 +124,21 @@ final class AwakeModel: ObservableObject {
         menuIcon = settings.menuIcon
         notifyChanges = settings.notifyChanges
         whileTarget = settings.whileTarget
+        profiles = settings.awakeProfiles
+        driveAliveVolumes = settings.driveAliveVolumes
+        driveAliveInterval = settings.driveAliveInterval
+        driveAliveMethod = settings.driveAliveMethod
+        driveAliveAlways = settings.driveAliveAlways
+        stats = settings.awakeStats
+        remindHours = settings.remindHours
+    }
+
+    /// Changes one profile (by id) in place.
+    func update(_ id: String, _ change: (inout AwakeProfile) -> Void) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        var p = profiles[i]
+        change(&p)
+        profiles[i] = p
     }
 
     /// Two hours from now, on the half hour (what the "until" row starts on).
@@ -107,6 +167,18 @@ final class AwakeCenter {
     private var watch = WhileWatch()
     private var downloads = DownloadActivity()
     private var observers: [NSObjectProtocol] = []
+    // Profiles, disks, statistics, the reminder.
+    var profileProbe: ProfileProbe = SystemProfileProbe()
+    private var engine = ProfileEngine()
+    private var profileDownloads = DownloadActivity()
+    private(set) var outcome = ProfileOutcome()
+    let drives = DriveAliveRunner()
+    private var reminder = OnReminder()
+    private var lastStatsSave = Date.distantPast
+    /// Set by AppDelegate: the user's idle time (Stay active's own nudges left out).
+    var idleSeconds: () -> Double = { System.idleSeconds }
+    /// Set by AppDelegate: the lead profile's "display may sleep" changed (the engine's display hold follows it).
+    var displaySleepChanged: () -> Void = {}
 
     /// Set by AppDelegate.
     var perform: (AwakeRequest) -> Void = { _ in }
@@ -124,6 +196,16 @@ final class AwakeCenter {
         observers.append(dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             self?.screenUnlocked()
         })
+        drives.start()
+        settings.d.set([String](), forKey: "profilesLive")            // nothing engaged yet in this run
+        drives.statusChanged = { [weak self] name, st in self?.model.driveStatus[name] = st }
+        model.drivesRemoved = { [weak self] names in self?.drives.removed(names) }
+        model.resetStats = { [weak self] in self?.resetStats() }
+        LocationAccess.shared.changed = { [weak self] in
+            self?.model.locationAllowed = LocationAccess.shared.allowed
+            self?.model.triggersChanged()
+        }
+        if AwakeProfiles.needs(model.profiles).contains(.wifi) { model.locationAllowed = LocationAccess.shared.allowed }
         // A volume coming or going: the triggers look again soon (they also look every 5 s).
         for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in
@@ -144,9 +226,67 @@ final class AwakeCenter {
 
     func words(_ states: [TriggerKind: Bool]) -> [String] { AwakeTriggerSet.words(states, settings.awakeTriggers, probe: probe) }
 
+    // MARK: Profiles
+
+    /// One step of the profiles (every 5 s, with the triggers): what they decide, the panel's state, the notices.
+    func profileStep(now: Date = Date()) -> ProfileOutcome {
+        let list = model.profiles
+        let before = outcome
+        if !list.contains(where: { $0.enabled }) {
+            engine.reset()
+            outcome = ProfileOutcome()
+        } else {
+            let needs = AwakeProfiles.needs(list)
+            var snap = profileProbe.snapshot(needs: needs, base: probe, now: now)
+            if needs.contains(.idle) { snap.idle = idleSeconds() }
+            if needs.contains(.downloads) { snap.downloading = profileDownloads.sample(SystemAwakeProbe.downloads()) }
+            outcome = engine.step(list, snapshot: snap)
+        }
+        publish(outcome, before: before)
+        return outcome
+    }
+
+    private func publish(_ o: ProfileOutcome, before: ProfileOutcome) {
+        if model.engagedProfiles != o.engaged { model.engagedProfiles = o.engaged }
+        if model.holdingProfiles != o.holding { model.holdingProfiles = o.holding }
+        if model.leadProfile != o.lead?.id { model.leadProfile = o.lead?.id }
+        if before.displaySleep != o.displaySleep { displaySleepChanged() }
+        if before.engaged != o.engaged {
+            let names = o.engaged.compactMap { id in model.profiles.first { $0.id == id }?.name }
+            settings.d.set(names, forKey: "profilesLive")                 // what `cocaine profiles` shows
+        }
+        for p in o.started where p.notify {
+            log.notice("profile started")
+            notice(p.action == .letSleep ? "moon.zzz.fill" : "bolt.fill",
+                   String(format: p.action == .letSleep ? L("“%@” started: triggers wait") : L("“%@” started: keeping the Mac awake"), p.name))
+        }
+        for p in o.stopped where p.notify {
+            log.notice("profile stopped")
+            notice("checkmark.circle", String(format: L("“%@” ended"), p.name))
+        }
+    }
+
+    /// The lead profile lets the displays sleep.
+    var profileDisplaySleep: Bool { outcome.displaySleep }
+
+    /// `cocaine://profile?name=…&enabled=…`, AppleScript, `cocaine profiles enable|disable`: false when there is no such profile.
+    @discardableResult
+    func setProfile(_ key: String, enabled: Bool) -> Bool {
+        guard let p = AwakeProfiles.find(key, in: model.profiles) else { return false }
+        model.update(p.id) { $0.enabled = enabled }
+        return true
+    }
+
     // MARK: Every 2 s: unplugging, "while…"
 
     func tick(on: Bool, onAC: Bool?, now: Date = Date()) {
+        drives.tick(settings: settings, on: on, now: now)                // keep disks awake (Sources/DriveAlive.swift)
+        if let h = reminder.step(onSince: model.stats.onSince, every: settings.remindHours, now: now) {
+            notice("clock.fill", String(format: L("Cocaine has been on for %@"), Dur.short(minutes: h * 60)))
+        }
+        if on, now.timeIntervalSince(lastStatsSave) >= 60 {
+            model.stats.seen(now: now); settings.awakeStats = model.stats; lastStatsSave = now
+        }
         if let onAC, unplug.step(delay: settings.unplugOff, onAC: onAC, on: on, now: now) {
             log.notice("unplugged: Cocaine off")
             perform(.stopByHand(L("Charger unplugged: Cocaine is off")))
@@ -200,6 +340,8 @@ final class AwakeCenter {
 
     /// At launch: a "while…" kept from before goes on only when Cocaine is still on (an update, a crash's adopted session).
     func restore(on: Bool) {
+        model.stats.launched(on: on, now: Date())
+        settings.awakeStats = model.stats
         guard let t = settings.whileTarget else { return }
         if on && (t.kind == .downloads || ProcessInfoReader.alive(t)) { model.whileTarget = t } else { endWhile(nil) }
     }
@@ -232,8 +374,17 @@ final class AwakeCenter {
 
     /// A change of state: a notice when asked for (never for the first reading).
     func changed(on: Bool, reason: String?) {
+        model.stats.turned(on: on, now: Date())
+        settings.awakeStats = model.stats
         guard settings.notifyChanges else { return }
         notice(on ? "bolt.fill" : "moon.zzz.fill", ChangeNotice.text(on: on, reason: reason))
+    }
+
+    func resetStats() {
+        var s = AwakeStats(since: Date())
+        if model.stats.onSince != nil { s.turned(on: true, now: Date()) }   // the session going on keeps counting, from now
+        model.stats = s
+        settings.awakeStats = s
     }
 
     /// The menu-bar image for the chosen style; nil = the baggie.

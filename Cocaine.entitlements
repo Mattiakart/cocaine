@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <!-- Only for the Developer ID tier (hardened runtime). The minimum the app uses: Apple Events to Music and Spotify,
-     the camera for the Mirror page, the calendar for the Calendar page. No audio input (the mic indicator only reads
+     the camera for the Mirror page, the calendar for the Calendar page, location only for the Wi-Fi network's name (keep-awake
+     profiles; macOS 14+ gives that name only with Location Services). No audio input (the mic indicator only reads
      whether the input device is running), no JIT, no unsigned libraries (DisplayServices and Security are Apple's). -->
 <dict>
 	<key>com.apple.security.automation.apple-events</key>
@@ -10,6 +11,8 @@
 	<key>com.apple.security.device.camera</key>
 	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<key>com.apple.security.personal-information.location</key>
 	<true/>
 </dict>
 </plist>

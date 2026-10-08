@@ -73,6 +73,10 @@
 	<string>Cocaine shows your next events in the island.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Cocaine shows a mirror in the island while you have its Mirror page open.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Cocaine reads only the Wi-Fi network's name, for a keep-awake profile that uses it. Your location is never read or kept.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cocaine reads only the Wi-Fi network's name, for a keep-awake profile that uses it. Your location is never read or kept.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSServices</key>

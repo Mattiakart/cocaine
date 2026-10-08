@@ -62,6 +62,8 @@ if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--make-sync-sh
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--clipsync-test" { exit(ClipSyncTests.run() == 0 ? 0 : 1) }   // Sources/ClipSyncTests.swift
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--island-selfcheck" { cliIslandSelfcheck() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--awake-test" { exit(AwakeTests.run() == 0 ? 0 : 1) }   // Sources/AwakeTests.swift
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--triggers-test" { exit(TriggersTests.run() == 0 ? 0 : 1) }   // Sources/TriggersTests.swift
+if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--profiles" { cliProfiles() }   // `cocaine profiles|disks` (Sources/AwakeProfilesCLI.swift)
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--scripting-selftest" { cliScriptingSelfTest() }        // Sources/Scripting.swift
 if CommandLine.arguments.count <= 3, CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--scripting-serve" { cliScriptingServe() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--calendar-test" { exit(CalendarTests.run() == 0 ? 0 : 1) }

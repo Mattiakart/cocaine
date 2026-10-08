@@ -248,6 +248,7 @@ struct AwakeOptionsCard: View {
             kit.row(L("Notices when it turns on or off"), tip: L("A short notice in the island (or VoiceOver) whenever Cocaine turns on or off")) {
                 kit.toggle(L("Notices when it turns on or off"), $am.notifyChanges)
             }
+            AwakeSessionRows()                                    // the reminder, statistics (Sources/AwakeProfilesPanel.swift)
         }
     }
 }

@@ -116,6 +116,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--ssh-test (fake ssh + the real relay, temporary homes, keys in memory)" "$ISO" --ssh-test
   run "--clipsync-test (iPhone clipboard sync: temporary folders, simulated Shortcuts, fake relay)" "$ISO" --clipsync-test
   run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test
+  run "--triggers-test (keep-awake profiles on fixed snapshots, disks kept awake in a temporary folder)" "$ISO" --triggers-test
   if [ "${CI:-}" = true ]; then skipped "--scripting-selftest" "CI: Apple Events in a headless session"
   else run "--scripting-selftest (real AppleScript sent to the copy itself; fake state)" "$ISO" --scripting-selftest; fi
   run "--recovery-test (its own temporary copy, stand-ins, temporary folders)" "$ISO" --recovery-test
