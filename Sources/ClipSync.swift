@@ -155,6 +155,8 @@ final class ClipSyncCenter: ObservableObject {
     private var watchSub: AnyCancellable?
     private var lastAuto: (id: UUID, date: Date)?
     private var lastSentDigest = ""
+    private var pending = false                        // the last scan left files waiting (settling, downloading)
+    private var lastScan = Date.distantPast
 
     init(history: ClipboardHistory, defaults: UserDefaults, home: URL) {
         self.history = history
@@ -193,7 +195,7 @@ final class ClipSyncCenter: ObservableObject {
     @discardableResult
     func enableFolder() -> Bool {
         do { try folder.create() } catch {
-            refreshStatus()
+            status = SyncFolderStatus.of(folder)
             note = status == .noICloud ? L("iCloud Drive isn't on for this Mac: turn it on in System Settings → Apple Account → iCloud.")
                                        : L("Couldn't make the folder in iCloud Drive.")
             return false
@@ -209,7 +211,11 @@ final class ClipSyncCenter: ObservableObject {
         guard settings.folderOn, !running else { return }
         running = true
         watchFolder()
-        let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.scan() }
+        // Every 2 s while a file is settling or downloading, else every 20 s (the folder's own events wake it sooner).
+        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self, self.pending || self.now().timeIntervalSince(self.lastScan) >= 20 else { return }
+            self.scan()
+        }
         t.tolerance = 1
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -223,10 +229,11 @@ final class ClipSyncCenter: ObservableObject {
         ClipSyncHook.send = nil
     }
 
+    /// Off: not even looked at (opening the settings never touches iCloud Drive, nor makes macOS ask about it).
     func refreshStatus() {
-        let f = folder
-        if AppDefaults.isolated && home == FileManager.default.homeDirectoryForCurrentUser { status = settings.folderOn ? .ready : .notCreated; return }   // renders: never the real folder
-        status = SyncFolderStatus.of(f)
+        guard settings.folderOn else { status = .notCreated; return }
+        if AppDefaults.isolated && home == FileManager.default.homeDirectoryForCurrentUser { status = .ready; return }   // renders: never the real folder
+        status = SyncFolderStatus.of(folder)
     }
 
     /// The inbox's own changes wake a scan at once; the timer covers what doesn't (iCloud finishing a download, size settling).
@@ -247,6 +254,7 @@ final class ClipSyncCenter: ObservableObject {
     func scan(done: (() -> Void)? = nil) {
         let f = folder, t = now(), clean = t.timeIntervalSince(lastClean) > 600, hours = Double(settings.keepHours)
         if clean { lastClean = t }
+        lastScan = t
         io.async { [weak self] in
             guard let self else { return }
             let entries = Self.list(f.inbox)
@@ -267,10 +275,11 @@ final class ClipSyncCenter: ObservableObject {
                     taken.append((name, SyncDecode.decode(data, name: name), digest))
                 }
             }
-            let stuck = self.scanner.stuck.count
+            let stuck = self.scanner.stuck.count, waiting = self.scanner.waiting > 0
             if clean { SyncOutbox.clean(f, now: t, processedHours: hours, outboxHours: hours) }
             DispatchQueue.main.async {
                 self.notDownloaded = stuck
+                self.pending = waiting
                 for (name, result, digest) in taken { self.take(name, result, digest: digest, folder: f) }
                 done?()
             }
