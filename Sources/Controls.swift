@@ -370,7 +370,8 @@ private struct SegmentCell: View {
 
     var body: some View {
         Button(action: action) {
-            label.font(CTL.label.monospacedDigit()).lineLimit(1)
+            // Differentiate Without Colour: the picked segment is also bolder, not only in the accent.
+            label.font((on && DisplayOptions.shared.differentiateWithoutColor ? CTL.labelStrong : CTL.label).monospacedDigit()).lineLimit(1)
                 .foregroundStyle(on ? CTL.onAccentInk : Color.white.opacity(DisplayOptions.contrast ? 0.95 : 0.78))
                 .padding(.horizontal, 3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

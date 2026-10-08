@@ -383,6 +383,12 @@ final class SettingsSearch: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
     }
 
+    /// The panel opened: no query, the field not in use.
+    func reset() {
+        if !query.isEmpty { query = "" }
+        if editing { editing = false }
+    }
+
     /// Lights a row or card up at once (render tool: --lit "Card|Row", in English keys).
     func light(card: String, row: String?) { lit = L(card) + "|" + (row.map(L) ?? "") }
 
@@ -427,7 +433,7 @@ final class SettingsSearch: ObservableObject {
         let flags = e.modifierFlags.intersection([.command, .control, .option])
         if flags == .command, e.charactersIgnoringModifiers?.lowercased() == "f" { focusField(); return true }
         if let tv = e.window?.firstResponder as? NSTextView, tv.hasMarkedText() { return false }   // an input method composing
-        let inField = editing
+        let inField = editing && e.window?.firstResponder is NSTextView      // the field's editor has the keyboard now
         if !query.isEmpty || inField {
             switch e.keyCode {
             case 125: if !results.isEmpty { selected = min(results.count - 1, selected + 1); speakSelected() }; return true

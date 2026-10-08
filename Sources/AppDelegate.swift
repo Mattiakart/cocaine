@@ -955,7 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelTop = settings.island ? screen.frame.maxY : (screen.visibleFrame.maxY - 6).rounded()   // from the notch, or under the menu bar
         panel.attach(toTop: settings.island)
         model.page = ""                                              // always opens on the home
-        SettingsSearch.shared.query = ""                             // …with no search left from last time
+        SettingsSearch.shared.reset()                                // …with no search left from last time
         fitPanel(animated: false, centeredOn: anchorX, screen: screen)
         panel.present(at: panel.frame)                               // drops from the notch / slides from the icon (Sources/MenuPanel.swift)
         if settings.island { island.setSuspended(true) }

@@ -61,6 +61,7 @@ struct PanelView: View {
                 Image(systemName: icon).font(UI.icon).foregroundStyle(Island.accent)
                     .frame(width: UI.iconColumn, height: UI.iconColumn)    // wide symbols (battery, badges) stay centred on the column
                 Text(title).font(UI.groupTitle).lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)                 // VoiceOver's rotor jumps card to card (as the other cards do)
                 if warning { Image(systemName: "exclamationmark.triangle.fill").font(UI.detail).foregroundStyle(warningColor) }
                 Spacer(minLength: Space.m)
                 trailing().fixedSize()

@@ -282,6 +282,11 @@ func cliRenderPanel() {
     _ = NSApplication.shared
     precondition(AppDefaults.isolated, "renders run with memory-only settings (main.swift): their samples never reach the real ones")
     Motion.disabled = true                                     // deterministic: a dropdown or dialog drawn fully there
+    // The Mac's accessibility display options, pretended: --contrast (Increase Contrast), --differentiate (Differentiate
+    // Without Colour), --reduce-motion (the static looks that differ: the segmented control's own fills).
+    if CommandLine.arguments.contains("--contrast") { DisplayOptions.shared.forceContrast = true }
+    if CommandLine.arguments.contains("--differentiate") { DisplayOptions.shared.forceDifferentiate = true }
+    if CommandLine.arguments.contains("--reduce-motion") { Motion.reduceOverride = true }
     let model = PanelModel()
     model.persistLanguage = false
     let langArg = CommandLine.arguments.firstIndex(of: "--lang").flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
