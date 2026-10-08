@@ -143,7 +143,7 @@ enum SettingsIndex {
             r("Open island", nil, ["size"]),
             r("Charging notices", "Below the notch when the charger goes in or out, the battery is full or Low Power Mode changes", ["charger", "battery", "alert"]),
             r("Low battery notice", "Once when the battery reaches this level, and again at 10%", ["battery", "alert"]),
-            r("Swipe down to open", "Two fingers down on the closed notch", ["swipe"]),
+            r("Swipe down to open", "Two fingers down just below the closed notch", ["swipe"]),
             r("Swipe up to close", nil, ["swipe"]),
             r("Swipe sideways for screens", nil, ["swipe", "modules"]),
             r("Sensitivity", nil, ["swipe"]),
