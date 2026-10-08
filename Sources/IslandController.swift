@@ -787,6 +787,7 @@ enum IslandKeys {
         guard plain else { return false }
         switch code {
         case 53:                                                                  // Esc
+            if ClipboardKeys.composing() { return false }                         // an input method's own Esc cancels the composition
             if editing && !model.clipboard.query.isEmpty { return false }         // the search field clears itself first
             guard model.open else { return false }
             close()

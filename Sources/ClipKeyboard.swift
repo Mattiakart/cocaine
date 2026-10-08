@@ -367,7 +367,7 @@ final class ClipPopup: ObservableObject {
         p.isMovableByWindowBackground = true            // dragged elsewhere, "Last place" opens it there next time
         p.isReleasedWhenClosed = false
         p.animationBehavior = .utilityWindow
-        p.contentView = NSHostingView(rootView: ClipPopupView())
+        p.contentView = NSHostingView(rootView: ClipPopupView().cocaineControlSurface())
         p.setAccessibilityLabel(L("Clipboard"))
         p.setAccessibilityRole(.window)
         p.setAccessibilitySubrole(.floatingWindow)
@@ -493,7 +493,7 @@ func cliRenderClipPopup() -> Never {
     let s = ClipPopupGeometry.size
     let view = ZStack {
         LinearGradient(colors: [Color(red: 0.55, green: 0.7, blue: 0.9), Color(red: 0.8, green: 0.6, blue: 0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        ClipPopupView()
+        ClipPopupView().cocaineControlSurface()
     }.frame(width: s.width + 40, height: s.height + 40)
     let host = NSHostingView(rootView: view)
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)

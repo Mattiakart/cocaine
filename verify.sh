@@ -98,7 +98,8 @@ if ./build.sh --no-install --sign "$SIGN"; then
   codesign --force --deep --sign - "$T/Cocaine.app" 2>/dev/null
   ISO="$T/Cocaine.app/Contents/MacOS/Cocaine"
   # NSStatusItem … keys are written by macOS itself for a running copy's menu-bar item (not by a test): left out of the hash.
-  domain() { /usr/bin/defaults read "$1" 2>/dev/null | /usr/bin/grep -v 'NSStatusItem' | /sbin/md5 -q 2>/dev/null; }
+  # awakeStats is rewritten every couple of minutes by a running Cocaine (the statistics), so it is left out too.
+  domain() { /usr/bin/defaults export "$1" - 2>/dev/null | /usr/bin/plutil -remove awakeStats -o - - 2>/dev/null | /usr/bin/plutil -p - 2>/dev/null | /usr/bin/grep -v 'NSStatusItem' | /sbin/md5 -q 2>/dev/null; }
   REAL_BEFORE=$(domain local.cocaine.toggle)
 
   step "app test suites (isolated copy, bundle id $ISOID)"
