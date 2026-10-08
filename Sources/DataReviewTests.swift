@@ -41,8 +41,9 @@ enum DataReviewTests {
         ClipboardKeys.composing = { true }
         let usedWhileComposing = ClipboardKeys.handle(UInt16(kVK_DownArrow), flags: [], editing: true, model: nil)
         check("IME: ↓ while composing is the input method's (not used, highlight unchanged)", !usedWhileComposing && h.hovered == a.id)
-        let escWhileComposing = ClipboardKeys.handle(UInt16(kVK_Return), flags: [], editing: true, model: nil)
-        check("IME: Return while composing commits the text, pastes nothing", !escWhileComposing)
+        // (Return isn't sent here even so: on a regression it would paste, through the real pasteboard.)
+        let pageWhileComposing = ClipboardKeys.handle(UInt16(kVK_PageDown), flags: [], editing: true, model: nil)
+        check("IME: Page Down while composing is the input method's too", !pageWhileComposing && h.hovered == a.id)
         ClipboardKeys.composing = { false }
         let used = ClipboardKeys.handle(UInt16(kVK_DownArrow), flags: [], editing: true, model: nil)
         check("IME: without composition ↓ moves the highlight as before", used && h.hovered == b.id)
