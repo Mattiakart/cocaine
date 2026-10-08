@@ -127,17 +127,19 @@ enum KeyboardTests {
     // MARK: settings and the global shortcut
 
     static func settingsTests(_ check: (String, Bool) -> Void) {
-        let s = ClipSettings()
-        check("defaults: ⌃⌘V opens, in the island, words, newest, ⌘ numbers shown",
-              s.openShortcut == Shortcut(keyCode: UInt32(kVK_ANSI_V), mods: Shortcut.ctrl | Shortcut.cmd) && s.openPlace == "island"
-              && s.searchMode == "words" && s.sortOrder == "recent" && s.numberHints)
+        let d = ClipSettings()
+        check("defaults: no global open shortcut until chosen (2.9: ⌃⌘V is Office's Paste Special), in the island, words, newest, ⌘ numbers shown",
+              d.openShortcut == nil && ClipSettings.defaultOpen == Shortcut(keyCode: UInt32(kVK_ANSI_V), mods: Shortcut.ctrl | Shortcut.cmd)
+              && d.openPlace == "island" && d.searchMode == "words" && d.sortOrder == "recent" && d.numberHints)
+        check("defaults: nothing of the clipboard's is registered globally by default", ClipHotKeys.wanted(settings: d, stackActive: false, boards: [], items: []).isEmpty)
+        var s = d; s.openShortcut = ClipSettings.defaultOpen                // the user chose ⌃⌘V
         check("⌃⌘V passes the global shortcuts' rules", ShortcutRules.problem(ClipSettings.defaultOpen, for: .island, others: [:], system: []) == nil)
         var n = s; n.openShortcut = nil; n.pasteNext = nil; n.openPlace = "pointer"; n.searchMode = "mixed"; n.sortOrder = "pasted"; n.numberHints = false
         let back = (try? JSONEncoder().encode(n)).flatMap { try? JSONDecoder().decode(ClipSettings.self, from: $0) }
         check("a shortcut taken away stays away after a relaunch (explicit null), the other choices too", back == n)
         let old = Data(#"{"persist":false,"maxItems":50}"#.utf8)
         let fromOld = try? JSONDecoder().decode(ClipSettings.self, from: old)
-        check("settings of 2.7 (no keyboard keys) get the defaults", fromOld?.openShortcut == ClipSettings.defaultOpen && fromOld?.openPlace == "island")
+        check("settings of 2.7 (no keyboard keys) get the defaults", fromOld != nil && fromOld?.openShortcut == nil && fromOld?.openPlace == "island")
         let junk = Data(#"{"openPlace":"moon","searchMode":"psychic","sortOrder":"random"}"#.utf8)
         let fixed = try? JSONDecoder().decode(ClipSettings.self, from: junk)
         check("unknown choices fall back to the defaults", fixed?.openPlace == "island" && fixed?.searchMode == "words" && fixed?.sortOrder == "recent")

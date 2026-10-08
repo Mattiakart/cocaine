@@ -57,7 +57,9 @@ scaffale; l'interruttore **Condivisione cloud** in alto spegne tutto.
 - **Ogni caricamento è un clic.** I nuovi servizi chiedono **prima di ogni caricamento** (dove vanno i file e per quanto vale
   il link); si può spegnere per servizio. Il tuo comando chiede anche prima della prima esecuzione.
 - **I link sono password.** Chi ha il link può scaricare il file finché non scade o lo revochi. I link vanno negli appunti
-  marcati *nascosti*: la cronologia appunti di Cocaine e le altre app di appunti che rispettano quel marcatore non li tengono.
+  come una copia normale (dalla 2.9; prima marcati *nascosti*, il che può tenere la copia lontana anche dagli altri tuoi
+  dispositivi): la cronologia appunti di Cocaine non li tiene; le altre app di appunti e gli Appunti universali li trattano come
+  ogni copia.
 - **Niente nei log**: né segreti né URL firmati; i messaggi d'errore nominano al massimo l'host.
 - **Nomi dei file** resi sicuri per chiavi e percorsi (lettere, cifre, `.`, `_`, `-`); la cronologia tiene il nome originale.
   Il Content-Type viene dal tipo del file.

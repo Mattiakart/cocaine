@@ -165,15 +165,18 @@ struct ClipSettings: Codable, Equatable {
     // 2.7: pasting, formatting, other devices, text in images, the command line.
     var directPaste = true           // Return / double-click paste into the app in front (Accessibility); off: copy only
     var pastePlain = false           // paste without formatting unless ⇧ is held (⇧ then keeps it)
-    var includeRemote = true         // keep copies from another device (Universal Clipboard)
+    // Off by default (2.9): a copy made on another device (Universal Clipboard) is left alone, not even read, so Handoff's
+    // copy and paste works exactly as without Cocaine. On, only its plain text is read, after the system has delivered it.
+    var includeRemote = false        // keep copies from another device (Universal Clipboard)
     var ocr = false                  // recognise the text in copied images (on this Mac), for search
     var separator = "newline"        // between items pasted or merged together (separatorChoices)
     var suggestions = true           // suggest items by the app in front
     var hideFromCapture = false      // the island isn't recorded or shared while it shows the clipboard
     var cliAccess = 0                // `cocaine clip`: 0 off, 1 add only, 2 add, read and paste
-    var pasteNext: Shortcut? = ClipSettings.defaultPasteNext   // the Paste Stack's "paste the next one"
+    var pasteNext: Shortcut? = ClipSettings.defaultPasteNext   // the Paste Stack's "paste the next one" (registered only while a stack runs)
     // 2.8: the keyboard-only clipboard (Sources/ClipKeyboard.swift).
-    var openShortcut: Shortcut? = ClipSettings.defaultOpen     // opens the clipboard with the keyboard in it, from any app
+    // None by default (2.9): ⌃⌘V is Paste Special in Microsoft Word, Excel and PowerPoint; a global shortcut would take it away.
+    var openShortcut: Shortcut? = nil    // opens the clipboard with the keyboard in it, from any app (the user records one)
     var openPlace = "island"         // ClipPopupPlace: island, pointer, center, last
     var searchMode = "words"         // ClipSearchMode: words, fuzzy, regex, mixed
     var sortOrder = "recent"         // ClipSortOrder: recent, pasted, name
@@ -185,8 +188,12 @@ struct ClipSettings: Codable, Equatable {
     static let itemSizeChoices = [1, 5, 10, 25]
     static let separatorChoices = ["newline", "blank", "space", "comma", "tab", "none"]
     static let defaultPasteNext = Shortcut(keyCode: 9, mods: Shortcut.hyper)       // ⌃⌥⌘V (the key of ANSI V)
+    /// What the setting suggests (and what 2.8 registered by itself): ⌃⌘V.
     static let defaultOpen = Shortcut(keyCode: 9, mods: Shortcut.ctrl | Shortcut.cmd)  // ⌃⌘V
     static let key = "clipboardSettings"
+    /// 2: other devices off and no open shortcut unless chosen (Sources/Basics.swift). Settings saved before carry no schema; the
+    /// two old defaults are reset once then (every key was always saved, so a value left at its default can't be told apart).
+    static let schema = 2
 
     init() {}
     /// Missing keys (older or newer versions) take their default instead of losing every setting.
@@ -207,11 +214,18 @@ struct ClipSettings: Codable, Equatable {
         let mode = v(.searchMode, d.searchMode); searchMode = ClipSearchMode(rawValue: mode) != nil ? mode : d.searchMode
         let order = v(.sortOrder, d.sortOrder); sortOrder = ClipSortOrder(rawValue: order) != nil ? order : d.sortOrder
         numberHints = v(.numberHints, d.numberHints)
+        if v(.schema, 1) < Self.schema { Self.migrate(&self) }
+    }
+
+    /// The old defaults (other devices on, ⌃⌘V) put back to the new ones, once.
+    static func migrate(_ s: inout ClipSettings) {
+        s.includeRemote = false
+        if s.openShortcut == defaultOpen { s.openShortcut = nil }
     }
 
     enum CodingKeys: String, CodingKey {
         case persist, maxItems, maxAgeHours, maxTotalMB, maxItemMB, skipSecrets, excludedApps, patterns, directPaste, pastePlain, includeRemote,
-             ocr, separator, suggestions, hideFromCapture, cliAccess, pasteNext, openShortcut, openPlace, searchMode, sortOrder, numberHints
+             ocr, separator, suggestions, hideFromCapture, cliAccess, pasteNext, openShortcut, openPlace, searchMode, sortOrder, numberHints, schema
     }
 
     /// Every key, and a shortcut taken away as an explicit null (left out, it would come back as its default at the next launch).
@@ -226,7 +240,7 @@ struct ClipSettings: Codable, Equatable {
         if let s = pasteNext { try c.encode(s, forKey: .pasteNext) } else { try c.encodeNil(forKey: .pasteNext) }
         if let s = openShortcut { try c.encode(s, forKey: .openShortcut) } else { try c.encodeNil(forKey: .openShortcut) }
         try c.encode(openPlace, forKey: .openPlace); try c.encode(searchMode, forKey: .searchMode); try c.encode(sortOrder, forKey: .sortOrder)
-        try c.encode(numberHints, forKey: .numberHints)
+        try c.encode(numberHints, forKey: .numberHints); try c.encode(Self.schema, forKey: .schema)
     }
 
     var maxItemBytes: Int { max(1, maxItemMB) * 1_000_000 }
@@ -240,6 +254,9 @@ struct ClipSettings: Codable, Equatable {
 
     static func load(_ d: UserDefaults) -> ClipSettings {
         guard let data = d.data(forKey: key), let s = try? JSONDecoder().decode(ClipSettings.self, from: data) else { return ClipSettings() }
+        // Migrated just now: saved back, so the user's next choice (even the old value again) is kept as theirs.
+        let saved = (((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["schema"] as? Int) ?? 1
+        if saved < schema { s.save(d) }
         return s
     }
     func save(_ d: UserDefaults) { if let data = try? JSONEncoder().encode(self) { d.set(data, forKey: Self.key) } }
@@ -800,6 +817,8 @@ struct ClipSnapshot {
 
 protocol ClipPasteboard: AnyObject {
     var changeCount: Int { get }
+    /// The types declared now (no data is asked for: a copy from another device isn't fetched by this).
+    var currentTypes: [String] { get }
     /// Reads it (may be slow: call it off the main thread). `allowed` sees the types and source first: secrets aren't even read.
     func snapshot(maxImageBytes: Int, allowed: ([String], String?) -> Bool) -> ClipSnapshot
     /// Puts an item back, with the right types (`rich`: its formatting too; nil: plain text only); returns the new change
@@ -817,12 +836,22 @@ final class SystemPasteboard: ClipPasteboard {
     let pb: NSPasteboard
     init(_ pb: NSPasteboard) { self.pb = pb }
     var changeCount: Int { pb.changeCount }
+    var currentTypes: [String] { pb.types?.map(\.rawValue) ?? [] }
 
     func snapshot(maxImageBytes: Int, allowed: ([String], String?) -> Bool) -> ClipSnapshot {
         var s = ClipSnapshot()
         s.changeCount = pb.changeCount
-        s.types = pb.types?.map(\.rawValue) ?? []
+        s.types = currentTypes
         if s.types.contains(ClipRules.ownType) { s.ours = true; return s }
+        // Another device's copy (Universal Clipboard): its data is a promise the system fetches from that device. Nothing is
+        // asked for unless "other devices" is on, and then only the plain text: never its formatting, images, files or source
+        // marker, each of which would be one more transfer (Sources/Basics.swift).
+        if ClipRules.isRemote(s.types) {
+            guard allowed(s.types, nil), s.types.contains(NSPasteboard.PasteboardType.string.rawValue) else { return s }
+            s.text = pb.string(forType: .string)
+            s.stale = pb.changeCount != s.changeCount
+            return s
+        }
         if s.types.contains("org.nspasteboard.source") { s.source = pb.string(forType: NSPasteboard.PasteboardType("org.nspasteboard.source")) }
         guard allowed(s.types, s.source) else { return s }
         let has = { (t: NSPasteboard.PasteboardType) in s.types.contains(t.rawValue) }
@@ -1007,13 +1036,33 @@ final class ClipboardHistory: ObservableObject {
         ticks += 1
         if ticks % 86 == 0 { expire() }                           // about once a minute
         if let u = pausedUntil, now() >= u { paused = false }
-        guard !paused else { seen = board.changeCount; return }
+        guard !paused else { seen = board.changeCount; remoteWait = nil; return }
         guard !reading else { return }
         let c = board.changeCount
+        if let w = remoteWait {
+            if c != w.count { remoteWait = nil }                    // replaced meanwhile: the new change is next
+            else if now() >= w.due { remoteWait = nil; read(attempt: 2, sync: syncReads); return }   // one read, no retries
+            else { return }
+        }
         guard c != seen else { return }
         seen = c
-        read(attempt: 0)
+        let types = board.currentTypes
+        if ClipRules.isRemote(types) {
+            // Another device's copy (Universal Clipboard): never read while the system is still bringing it over (a paste
+            // meanwhile gets it straight from the system); with "other devices" off (the default) never read at all.
+            guard ClipRules.allowed(types: types, source: nil, front: nil, settings: settings) else { return }
+            remoteWait = (c, now().addingTimeInterval(Self.remoteSettle))
+            return
+        }
+        read(attempt: 0, sync: syncReads)
     }
+
+    /// How long another device's copy is left alone before its plain text is read (with "other devices" on).
+    static let remoteSettle: TimeInterval = 3
+    /// A copy from another device waiting for remoteSettle: its change count and when it may be read.
+    private(set) var remoteWait: (count: Int, due: Date)?
+    /// Tests: poll() reads synchronously.
+    var syncReads = false
 
     /// Pauses for a while (nil: until resumed by hand).
     func pause(until: Date?) {
@@ -1037,7 +1086,7 @@ final class ClipboardHistory: ObservableObject {
             var snap = snap
             if snap.source == nil && !snap.remote { snap.source = front }      // another device's copy is never the front app's
             guard !snap.stale, !self.paused else { return }               // a newer change is next in line
-            if !snap.hasContent, !snap.ours, !snap.types.isEmpty, attempt < 2,
+            if !snap.hasContent, !snap.ours, !snap.remote, !snap.types.isEmpty, attempt < 2,
                ClipRules.allowed(types: snap.types, source: snap.source, front: front, settings: s) {
                 if sync { self.read(attempt: attempt + 1, sync: true); return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in

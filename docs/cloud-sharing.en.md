@@ -57,7 +57,8 @@ the **Cloud sharing** switch at the top turns everything off.
 - **Every upload is a click.** New services ask **before every upload** (where the files go and how long the link works);
   you can turn that off per service. Your own command also asks before its first run.
 - **Links are passwords.** Anyone with a link can download the file until it expires or you revoke it. Links are put on the
-  clipboard marked *concealed*: Cocaine's clipboard history and other clipboard apps that honour that marker don't keep them.
+  clipboard as an ordinary copy (since 2.9; before, marked *concealed*, which can also keep a copy away from your other devices):
+  Cocaine's own clipboard history doesn't keep them; other clipboard apps and Universal Clipboard treat them as any copy.
 - **Nothing logs** secrets or signed URLs; error messages name the host at most.
 - **File names** are made safe for keys and paths (letters, digits, `.`, `_`, `-`); the display name is kept in the history.
   Content-Type comes from the file's type.

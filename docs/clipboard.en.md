@@ -39,7 +39,10 @@ what you copied in it, and the pinboard you tied to it (Settings → Island → 
 uses what it already knows; it reads nothing from other apps and needs no Screen Recording.
 
 **Other devices.** A copy that arrives from your iPhone, iPad or another Mac through Universal Clipboard is labelled
-*Another device* (never the app that happened to be in front); *Copies from other devices* can turn them off. Items to and
+*Another device* (never the app that happened to be in front), but only with *Copies from other devices* on, which is **off by
+default** since 2.9: off, Cocaine doesn't even read such a copy, so Universal Clipboard works exactly as without it. On, only the
+plain text is read, 3 seconds after it arrives (never its formatting, images or files, each of which would be one more transfer
+from the other device). Settings from before 2.9 are switched off once ([defaults and basics](defaults-and-basics.en.md)). Items to and
 from the iPhone through iCloud Drive or the paired iPhone, and keeping Universal Clipboard copies off the saved history:
 [iPhone clipboard sync](clipboard-sync.en.md).
 
@@ -83,7 +86,7 @@ a web page can never read or paste it.
 
 The secrets filter and your patterns apply to `put` too.
 
-**Keyboard** (with the clipboard opened by ⌃⌘V, the island opened by ⌃⌥⌘I, or the search field focused; all the keys, the floating panel near the pointer and the search modes: [clipboard-keyboard.en.md](clipboard-keyboard.en.md)): ↑ ↓ move, Return / ⇧Return paste, ⌘1…9 quick
+**Keyboard** (with the clipboard opened by your shortcut, the island opened by ⌃⌥⌘I, or the search field focused; all the keys, the floating panel near the pointer and the search modes: [clipboard-keyboard.en.md](clipboard-keyboard.en.md)): ↑ ↓ move, Return / ⇧Return paste, ⌘1…9 quick
 paste, ⇧↑ ⇧↓ ⌘A select, Space (nothing typed) or ⌘Y details, ⌥P favourite, ⌘P pin, ⌥Return copy only, ⌘C copy, ⌘E edit, ⌘R rename, Delete deletes (or edits what you typed), ⌘Z undo,
 ⌥0…9 and ⌘[ ⌘] pinboards, Esc clears the selection, leaves the details or closes. VoiceOver: activating a row pastes it; its
 actions are Copy, Details, Select, Pin to…, Delete. The module can be S (the newest items), M (search and list) or L.

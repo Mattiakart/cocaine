@@ -3,7 +3,8 @@
 Tutto quello che fanno gli [appunti](clipboard.it.md) si può fare senza mouse, da qualsiasi app, come in
 [Maccy](https://github.com/p0deje/Maccy).
 
-**Aprirli.** **⌃⌘V** (Impostazioni → Isola → Appunti → *Apri gli appunti*; qualsiasi combinazione registrata lì, o nessuna)
+**Aprirli.** La combinazione che registri in Impostazioni → Isola → Appunti → *Apri gli appunti* (nessuna di default dalla 2.9:
+⌃⌘V, il vecchio default, è Incolla speciale in Microsoft Office, quindi Cocaine non lo prende più se non lo registri tu)
 apre gli appunti con la tastiera già dentro. Premuto di nuovo, o Esc, li chiude. *Si apre* sceglie dove:
 
 - **Isola** (predefinito): la pagina Appunti dell'isola, aperta dal notch.

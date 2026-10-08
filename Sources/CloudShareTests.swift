@@ -519,7 +519,8 @@ enum CloudShareTests {
         CloudClipboard.write([link], to: pb)
         let types = pb.types?.map(\.rawValue) ?? []
         check("links: on the clipboard as text", pb.string(forType: .string) == link.absoluteString)
-        check("links: marked concealed, so other clipboard apps skip them too", ClipRules.isConcealed(types))
+        check("links: a plain copy (2.9): no concealed/transient marker that could keep it from Universal Clipboard or other apps",
+              !ClipRules.isConcealed(types) && types.contains(ClipRules.ownType))
         let snap = SystemPasteboard(pb).snapshot(maxImageBytes: 1 << 20, allowed: { _, _ in true })
         if case .skip = ClipRules.decide(snap, settings: ClipSettings()) { check("links: Cocaine's clipboard history doesn't keep them", true) }
         else { check("links: Cocaine's clipboard history doesn't keep them", false) }
@@ -648,7 +649,7 @@ enum CloudShareTests {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         let link = pb.string(forType: .string) ?? ""
         check("hook: the upload runs as the shelf's job (its progress line, Cancel)", progressSeen)
-        check("hook: the link is on the clipboard, marked concealed", link.hasPrefix(fake.server.base + "/bucket/share/test/") && ClipRules.isConcealed(pb.types?.map(\.rawValue) ?? []))
+        check("hook: the link is on the clipboard, as a plain copy", link.hasPrefix(fake.server.base + "/bucket/share/test/") && !ClipRules.isConcealed(pb.types?.map(\.rawValue) ?? []))
         check("hook: the history has it and the toast shows it", cloud.history.records.first?.link == link && cloud.recent?.link == link)
         check("hook: nothing failed the signature check", fake.badSignatures == 0 && fake.objects.count == 1)
         cloud.store.update { $0.on = false }

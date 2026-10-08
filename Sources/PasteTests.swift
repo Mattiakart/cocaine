@@ -184,6 +184,7 @@ enum PasteTests {
         do {
             let fb = FakePasteboard(), h = history("remote", board: fb)
             h.frontApp = { "com.apple.Safari" }
+            var on = h.settings; on.includeRemote = true; h.update(on)          // off by default since 2.9 (Sources/Basics.swift)
             fb.put(ClipSnapshot(types: ["public.utf8-plain-text", ClipRules.remoteType], text: "from my iPhone")); h.captureNow()
             check("Universal Clipboard: a copy marked com.apple.is-remote-clipboard is from another device, not the app in front",
                   h.items.first?.source == ClipRules.remoteSource && h.items.first?.remote == true && ClipboardHistory.appName(ClipRules.remoteSource) == L("Another device"))

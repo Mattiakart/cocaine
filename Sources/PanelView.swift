@@ -555,7 +555,7 @@ struct PanelView: View {
                                                                                                      : L("Active only while a Paste Stack waits")) {
             ClipShortcutButton(target: .pasteNext, shortcut: s.pasteNext, label: L("Paste next (Paste Stack)"))
         }
-        row(L("Copies from other devices"), detail: L("Universal Clipboard: shown as Another device")) { toggle(L("Copies from other devices"), clipSetting(\.includeRemote)) }
+        row(L("Copies from other devices"), detail: L("Off: Universal Clipboard is left untouched. On: their plain text, a few seconds later")) { toggle(L("Copies from other devices"), clipSetting(\.includeRemote)) }
         row(L("Find text in images"), detail: L("Read on this Mac when an image is copied; secrets masked")) { toggle(L("Find text in images"), clipSetting(\.ocr)) }
         row(L("Suggestions for the app in front"), tip: L("From what you copied or pasted there, and pinboards tied to it; nothing is read from other apps")) {
             toggle(L("Suggestions for the app in front"), clipSetting(\.suggestions))
@@ -570,6 +570,7 @@ struct PanelView: View {
     @ViewBuilder private var clipKeyboardRows: some View {
         let s = clip.settings
         row(L("Open the clipboard"), detail: ClipShortcutRecorder.shared.recording == .open ? (ClipShortcutRecorder.shared.note ?? L("Type the new shortcut. Esc cancels, Delete removes it."))
+                                                                                           : s.openShortcut == nil ? L("None until you choose one (⌃⌘V is Paste Special in Microsoft Office)")
                                                                                            : L("From any app, with the keyboard in it: type to search, Return pastes")) {
             ClipShortcutButton(target: .open, shortcut: s.openShortcut, label: L("Open the clipboard"))
         }

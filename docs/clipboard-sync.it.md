@@ -76,7 +76,8 @@ troppo lentamente.
 
 Con lo stesso Account Apple, Bluetooth, Wi-Fi e Handoff attivi, una copia fatta su un iPhone o iPad vicino si può incollare sul
 Mac (e viceversa). Cocaine segna queste copie *Un altro dispositivo* (macOS le marca; l'app in primo piano non ne prende il merito)
-e *Copie da altri dispositivi* nelle impostazioni degli Appunti può escluderle. Novità: *Non salvare le sue copie nella
+e *Copie da altri dispositivi* nelle impostazioni degli Appunti (spento di default dalla 2.9: queste copie non vengono nemmeno lette)
+le include. Novità: *Non salvare le sue copie nella
 cronologia* le tiene solo in memoria anche quando la cronologia è salvata su questo Mac (quelle fissate in bacheca restano
 salvate). Cercando `from:iphone` (o `from:device`) trovi sia queste sia gli elementi della sincronizzazione con iPhone.
 
