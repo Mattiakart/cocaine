@@ -55,7 +55,9 @@ importarli in una libreria di Comandi Rapidi); la loro struttura è controllata 
 
 `cocaine://on`, `on?minutes=90`, `on?until=18:30`, `on?timer=off` (senza timer), `off`, `toggle`, `timer?minutes=…`,
 `pause?minutes=…`, `resume`, `panel`, `status`; con `cocaine://x-callback-url/<comando>?x-success=…` Comandi Rapidi riceve lo stato.
-Le risposte vanno solo all'indirizzo di risposta di Comandi Rapidi. Vedi [Alimentazione e trigger](power-and-triggers.it.md).
+Le risposte vanno solo all'indirizzo di risposta di Comandi Rapidi. Vedi [Alimentazione e trigger](power-and-triggers.it.md). Profili:
+`profile?name=Ufficio&enabled=0|1`, AppleScript `enable profile` / `disable profile` / `active profile` / `profile names`, e
+`cocaine profiles` / `cocaine disks` ([Profili per tenere sveglio il Mac](awake-profiles.it.md)).
 
 ## Riga di comando
 

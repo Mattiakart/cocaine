@@ -20,6 +20,7 @@ enum TriggersTests {
         driveTests(check)
         sessionTests(check)
         scriptingTests(check)
+        liveReadTests(check)
         print(failed == 0 ? "triggers: all passed" : "triggers: \(failed) failed")
         return failed
     }
@@ -375,6 +376,21 @@ enum TriggersTests {
         let later = on.addingTimeInterval(20000)
         check("reminder: a new session starts over", r.step(onSince: later, every: 1, now: later.addingTimeInterval(3600)) == 1)
         check("reminder: off, nothing", r.step(onSince: nil, every: 1, now: later) == nil)
+    }
+
+    // MARK: This Mac's readings, read only (nothing changed; only counts are printed, never names or addresses)
+
+    static func liveReadTests(_ check: (String, Bool) -> Void) {
+        let probe = SystemProfileProbe()
+        let all = Set(AwakeCondition.Kind.allCases).subtracting([.bluetooth, .downloads, .wifi])   // no subprocess, no folder, no Location
+        let s = probe.snapshot(needs: all, base: SystemAwakeProbe(), now: Date())
+        print("      this Mac: \(s.addresses.count) addresses, \(s.dns.count) DNS servers, ethernet \(s.ethernet), wifi \(s.wifiConnected), internet \(s.internet), hotspot \(s.expensive), displays \(s.externalDisplays), mirroring \(s.mirroring)")
+        check("live: one reading of everything (read only) works", s.cpuTicks != nil && s.addresses.allSatisfy { IPMatch.v4($0) != nil || $0.contains(":") })
+        check("live: the Wi-Fi interface is found by name, or there is none", NetReadings.wifi().name.map { $0.hasPrefix("en") } ?? true)
+        let r = Proc.run("/usr/sbin/system_profiler", ["-json", "-detailLevel", "mini", "SPBluetoothDataType"], timeout: 30, capture: true, limit: 2 << 20)
+        let bt = BluetoothScan.parse(r.output)
+        print("      this Mac: \(bt.map { "\($0.count) Bluetooth devices connected" } ?? "Bluetooth not readable")")
+        check("live: system_profiler's Bluetooth list parses (or the Mac has no Bluetooth)", bt != nil || r.status != 0)
     }
 
     // MARK: AppleScript (the dictionary as Cocoa loads it from the bundle)

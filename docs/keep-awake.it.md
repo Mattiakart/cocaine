@@ -32,9 +32,9 @@ la tua scelta finché il motivo non sparisce; *Ne vale almeno uno/Valgono tutti*
 | Un disco è collegato | uno dei volumi scelti è montato | nessuno | 30 s |
 | Un dispositivo USB è collegato | uno dei dispositivi USB scelti è collegato (nomi di prodotto da IOKit) | nessuno | 30 s |
 
-Non realizzati: un trigger sulla **rete Wi-Fi** (da macOS 14 le app leggono il nome della rete solo con i Servizi di localizzazione) e
-uno su un **dispositivo Bluetooth** (IOBluetooth richiede il permesso Bluetooth). Un'automazione di Comandi Rapidi può fare entrambe le
-cose (vedi [Script](scripting.it.md)).
+La **rete Wi-Fi**, un **dispositivo Bluetooth** e molto altro sono condizioni dei [profili](awake-profiles.it.md) (Automazione →
+Profili): la rete Wi-Fi richiede i Servizi di localizzazione (da macOS 14 è l'unico modo di leggerne il nome), il Bluetooth nessun
+permesso.
 
 ## Tieni sveglio mentre… (Automazioni)
 

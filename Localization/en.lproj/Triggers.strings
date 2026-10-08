@@ -83,6 +83,7 @@
 "Not an address or a range" = "Not an address or a range";
 "%@: not connected" = "%@: not connected";
 "%1$@: touched %2$@ ago" = "%1$@: touched %2$@ ago";
+"%@: touched just now" = "%@: touched just now";
 "%@: waiting" = "%@: waiting";
 "Keep disks awake" = "Keep disks awake";
 "Disks" = "Disks";

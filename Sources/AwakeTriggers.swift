@@ -3,8 +3,8 @@
 // pause while the screen is locked, turn on at launch, left-click toggles, menu-bar icon styles, start/stop notices.
 // Pure logic here, every system reading behind AwakeProbe (tests give fixed values: --awake-test, Sources/AwakeTests.swift);
 // Sources/AwakeCenter.swift wires it to the app, Sources/AwakePanel.swift draws its rows.
-// Not built, on purpose: a Wi-Fi network trigger (macOS 14+ hides the network name from apps without Location Services) and
-// a Bluetooth device trigger (IOBluetooth needs the Bluetooth permission); see docs/keep-awake.en.md.
+// The Wi-Fi network, Bluetooth devices and the rest are conditions of keep-awake profiles (Sources/AwakeProfiles.swift,
+// docs/awake-profiles.en.md); these single triggers stay as they were.
 
 import AppKit
 import CoreAudio

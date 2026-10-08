@@ -333,7 +333,9 @@ Rapidi e script* crea, firma e apre in Comandi Rapidi; i link (`cocaine://on?min
 `cocaine on until 18:30`, `off`, `status --json`). Ciò che cambia qualcosa funziona solo dopo il tuo consenso (una domanda la prima
 volta, oppure Generale → *App Comandi Rapidi e link*), perché qualsiasi app, script o pagina web potrebbe chiederlo. Vedi
 [Script](docs/scripting.it.md), [Tenere sveglio il Mac](docs/keep-awake.it.md) (fino a un'ora, altri trigger, sveglio finché gira un
-programma o finiscono i download, spegnimento quando scolleghi l'alimentatore, pausa a schermo bloccato) e
+programma o finiscono i download, spegnimento quando scolleghi l'alimentatore, pausa a schermo bloccato),
+[Profili per tenere sveglio il Mac](docs/awake-profiles.it.md) (profili alla Amphetamine su Wi-Fi, rete, VPN, USB, Bluetooth, uscita
+audio, CPU, app in primo piano, inattività, download…; dischi tenuti svegli; statistiche) e
 [Alimentazione e trigger](docs/power-and-triggers.it.md).
 
 ### Automazioni

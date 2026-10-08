@@ -83,6 +83,7 @@
 "Not an address or a range" = "Ce n’est ni une adresse ni une plage";
 "%@: not connected" = "%@ : non connecté";
 "%1$@: touched %2$@ ago" = "%1$@ : sollicité il y a %2$@";
+"%@: touched just now" = "%@ : sollicité à l’instant";
 "%@: waiting" = "%@ : en attente";
 "Keep disks awake" = "Garder les disques éveillés";
 "Disks" = "Disques";

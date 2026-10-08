@@ -83,6 +83,7 @@
 "Not an address or a range" = "Non è un indirizzo né un intervallo";
 "%@: not connected" = "%@: non collegato";
 "%1$@: touched %2$@ ago" = "%1$@: toccato %2$@ fa";
+"%@: touched just now" = "%@: toccato ora";
 "%@: waiting" = "%@: in attesa";
 "Keep disks awake" = "Tieni svegli i dischi";
 "Disks" = "Dischi";

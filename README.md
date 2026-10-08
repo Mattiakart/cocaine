@@ -319,7 +319,9 @@ returning a Dictionary) that Automation → *Shortcuts and scripts* builds, sign
 the bundled command (`cocaine on 90m`, `cocaine on until 18:30`, `off`, `status --json`). What changes something works only after you
 allow it (a one-time question, or General → *Shortcuts app and links*), because any app, script or web page could ask. See
 [Scripting](docs/scripting.en.md), [Keep awake](docs/keep-awake.en.md) (until a time, more triggers, keep awake while a program runs
-or downloads finish, turn off when unplugged, pause while locked) and [Power and triggers](docs/power-and-triggers.en.md).
+or downloads finish, turn off when unplugged, pause while locked), [Keep-awake profiles](docs/awake-profiles.en.md) (Amphetamine-style
+profiles on Wi-Fi, network, VPN, USB, Bluetooth, sound output, CPU, front app, idle, downloads…; keep selected disks awake; statistics)
+and [Power and triggers](docs/power-and-triggers.en.md).
 
 ### Automation
 

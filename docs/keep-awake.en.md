@@ -32,8 +32,8 @@ off yourself wins until the reason goes away; *Any/All* combines them with the r
 | A disk is connected | one of the chosen volumes is mounted | none | 30 s |
 | A USB device is connected | one of the chosen USB devices is plugged in (IOKit's product names) | none | 30 s |
 
-Not built: a **Wi-Fi network** trigger (since macOS 14 apps can read the network name only with Location Services), and a **Bluetooth
-device** trigger (IOBluetooth needs the Bluetooth permission). A Shortcuts automation can do both (see [Scripting](scripting.en.md)).
+The **Wi-Fi network**, a **Bluetooth device** and much more are conditions of [profiles](awake-profiles.en.md) (Automation →
+Profiles): the Wi-Fi network needs Location Services (since macOS 14 the only way to read its name), Bluetooth no permission.
 
 ## Keep awake while… (Automation)
 

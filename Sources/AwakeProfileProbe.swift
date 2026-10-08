@@ -140,13 +140,17 @@ final class PathWatch {
     private var latest = Path()
 
     init() {
+        let first = DispatchSemaphore(value: 0)
+        var once = false
         monitor.pathUpdateHandler = { [weak self] p in
             guard let self else { return }
-            self.lock.lock(); self.latest = Path(satisfied: p.status == .satisfied, expensive: p.isExpensive); self.lock.unlock()
+            self.lock.lock(); self.latest = Path(satisfied: p.status == .satisfied, expensive: p.isExpensive)
+            let signal = !once; once = true
+            self.lock.unlock()
+            if signal { first.signal() }
         }
         monitor.start(queue: DispatchQueue(label: "cocaine.path"))
-        let p = monitor.currentPath
-        latest = Path(satisfied: p.status == .satisfied, expensive: p.isExpensive)
+        _ = first.wait(timeout: .now() + 1)          // the first answer comes at once; never a made-up "offline" before it
     }
 
     deinit { monitor.cancel() }

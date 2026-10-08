@@ -219,7 +219,7 @@ struct ConditionEditor: View {
     var body: some View {
         if let c {
             VStack(alignment: .leading, spacing: Space.s) {
-                kit.row(ProfileWords.kindTitle(c.kind), detail: ProfileWords.value(c)) {
+                kit.row(ProfileWords.kindTitle(c.kind), detail: [.cpu, .idle, .battery, .schedule].contains(c.kind) ? ProfileWords.value(c) : nil) {
                     HStack(spacing: Space.xs) {
                         if Self.negatable.contains(c.kind) {
                             ValueButton(id: "neg-\(c.id)", title: ProfileWords.kindTitle(c.kind), value: c.negate ? L("Is not") : L("Is"), maxWidth: 90, spec: {
@@ -243,14 +243,14 @@ struct ConditionEditor: View {
     @ViewBuilder private func details(_ c: AwakeCondition) -> some View {
         switch c.kind {
         case .cpu:
-            kit.segRow(L("Processor"), bind(\.above, true), [true, false]) { $0 ? L("Above") : L("Below") }
+            kit.segRow(L("When"), bind(\.above, true), [true, false]) { $0 ? L("Above") : L("Below") }
             kit.segRow(L("Load"), bind(\.number, 50), CPURule.percents) { "\($0)%" }
             kit.segRow(L("For at least"), bind(\.minutes, 2), CPURule.minutesChoices) { Dur.short(minutes: $0) }
         case .idle:
-            kit.segRow(L("Idle"), bind(\.above, false), [false, true]) { $0 ? L("At least") : L("Less than") }
+            kit.segRow(L("When"), bind(\.above, false), [false, true]) { $0 ? L("At least") : L("Less than") }
             kit.segRow(L("Minutes"), bind(\.number, 10), [1, 5, 10, 30, 60]) { Dur.short(minutes: $0) }
         case .battery:
-            kit.segRow(L("Battery"), bind(\.above, true), [true, false]) { $0 ? L("At least") : L("Below") }
+            kit.segRow(L("When"), bind(\.above, true), [true, false]) { $0 ? L("At least") : L("Below") }
             kit.segRow(L("Level"), bind(\.number, 30), [10, 20, 30, 50, 80]) { "\($0)%" }
         case .schedule:
             kit.row(L("Days")) {
@@ -362,7 +362,10 @@ struct DriveAliveCard: View {
             guard mounted.contains(n.lowercased()) else { return String(format: L("%@: not connected"), n) }
             if let st = am.driveStatus[n] {
                 if let problem = st.problem { return "\(n): \(problem)" }
-                if let at = st.at { return String(format: L("%1$@: touched %2$@ ago"), n, Dur.ago(seconds: Int(Date().timeIntervalSince(at)))) }
+                if let at = st.at {
+                    let s = Int(Date().timeIntervalSince(at))
+                    return s < 60 ? String(format: L("%@: touched just now"), n) : String(format: L("%1$@: touched %2$@ ago"), n, Dur.ago(seconds: s))
+                }
             }
             return String(format: L("%@: waiting"), n)
         }.joined(separator: "\n")
@@ -379,7 +382,7 @@ struct DriveAliveCard: View {
             }
             Group {
                 kit.segRow(L("Every"), $am.driveAliveInterval, DriveAlive.intervals, every)
-                kit.segRow(L("How"), detail: am.driveAliveMethod == "read"
+                kit.segRow(L("Method"), detail: am.driveAliveMethod == "read"
                            ? L("Nothing is written. Best effort: if macOS has that part of the disk in memory, the disk isn't touched.")
                            : String(format: L("Rewrites one 64-byte hidden file, %@, at the top of the disk, straight to the disk. Removing the disk from the list deletes it."), DriveAlive.fileName),
                            $am.driveAliveMethod, ["write", "read"]) { $0 == "read" ? L("Read only") : L("Tiny hidden file") }

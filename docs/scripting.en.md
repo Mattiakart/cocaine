@@ -52,7 +52,9 @@ checked against Shortcuts' known actions and parameters by `--awake-test`.
 
 `cocaine://on`, `on?minutes=90`, `on?until=18:30`, `on?timer=off` (no timer), `off`, `toggle`, `timer?minutes=…`, `pause?minutes=…`,
 `resume`, `panel`, `status`; with `cocaine://x-callback-url/<command>?x-success=…` Shortcuts gets the state back. Callbacks only ever
-go to Shortcuts' own answer address. See [Power and triggers](power-and-triggers.en.md).
+go to Shortcuts' own answer address. See [Power and triggers](power-and-triggers.en.md). Keep-awake profiles:
+`profile?name=Office&enabled=0|1`, AppleScript `enable profile` / `disable profile` / `active profile` / `profile names`, and
+`cocaine profiles` / `cocaine disks` ([Keep-awake profiles](awake-profiles.en.md)).
 
 ## Command line
 

@@ -83,6 +83,7 @@
 "Not an address or a range" = "アドレスまたは範囲ではありません";
 "%@: not connected" = "%@:未接続";
 "%1$@: touched %2$@ ago" = "%1$@:%2$@前にアクセス";
+"%@: touched just now" = "%@:たった今アクセス";
 "%@: waiting" = "%@:待機中";
 "Keep disks awake" = "ディスクをスリープさせない";
 "Disks" = "ディスク";
