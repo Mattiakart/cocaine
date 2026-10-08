@@ -191,6 +191,7 @@ final class DriveAliveRunner {
     private var targets: [String: String] = [:]          // read mode: the file picked per volume
     private var seed = UInt64.random(in: 0..<UInt64.max)
     private var observers: [NSObjectProtocol] = []
+    private var lastLook = Date.distantPast
     /// By volume name (what the panel shows).
     var statusChanged: (String, Status) -> Void = { _, _ in }
 
@@ -203,7 +204,8 @@ final class DriveAliveRunner {
 
     func tick(settings: Settings, on: Bool, now: Date = Date()) {
         let chosen = settings.driveAliveVolumes
-        guard !chosen.isEmpty else { return }
+        guard !chosen.isEmpty, now.timeIntervalSince(lastLook) >= 5 || now < lastLook else { return }    // a look every 5 s is plenty
+        lastLook = now
         let due = schedule.due(chosen: chosen, mounted: DriveAlive.mounted(), interval: settings.driveAliveInterval, on: on,
                                always: settings.driveAliveAlways, now: now)
         let method = settings.driveAliveMethod
