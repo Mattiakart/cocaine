@@ -85,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if adopted { log.notice("recovered a previous session; its sleep setting goes on") }
         if adopted && settings.triggerOwned && System.cocaineOn { autoOn.resume(now: Date()) }    // still the trigger's ON
         else if settings.triggerOwned { settings.triggerOwned = false }
+        if Recovery.staleDeadline(settings.onUntil, engineUntil: try? String(contentsOfFile: Recovery.directory + "/until", encoding: .utf8), adopted: adopted) {
+            log.notice("a deadline left from an earlier session: dropped")
+            settings.onUntil = nil
+        }
         // A link that started us during an update's hand-over (or after a crash) must not end that session 6 s later.
         launchedForAlert = Recovery.alertOnly(launchedForAlert: launchedForAlert, adoptedSession: adopted)
         CloudShareCenter.shared.install()            // the shelf's "Share link…" (Sources/CloudShare.swift)
@@ -120,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Triggers look again at once after a wake, a clock or time-zone change, or a display coming or going.
         let recheck: (Notification) -> Void = { [weak self] n in
             if n.name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+            if n.name == NSWorkspace.didWakeNotification { self?.autoOn.woke(now: Date()) }   // a trigger's grace counts from the wake
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.evaluateTriggers(System.cocaineOn) }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: recheck)
@@ -1120,7 +1125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ticks % 4 == 0 { checkTimer(on) }                     // every 2 s
         if ticks % 10 == 0 { evaluateTriggers(on) }              // every 5 s
         if ticks % 20 == 0 { checkBattery(on); checkHeat(on); writeBoard(); presenceTick() }    // every 10 s
-        if ticks % 4 == 0 { watchPower(); mediaKeys.healthCheck() }   // every 2 s
+        if ticks % 4 == 0 { watchPower(); PowerSourceWatch.shared.check(); mediaKeys.healthCheck() }   // every 2 s
     }
 
     // MARK: Permissions
@@ -1771,17 +1776,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// "Turn the screen off instead" is chosen (it applies while Cocaine is on).
     private var screenOffMode: Bool { settings.dimEnabled && settings.screenOff }
 
+    /// One at a time and in order: two quick changes (the setting, then a profile) on a concurrent queue could reach the engine
+    /// in the other order and leave the display hold in the mode before the last one.
+    static let modeQueue = DispatchQueue(label: "cocaine.screen-mode")
+
     /// Tells the engine's display helper whether to keep the displays on (normal) or let them sleep (screen off).
     private func syncScreenMode() {
         let mode = screenOffMode || awake.profileDisplaySleep ? "screen-off" : "normal"    // (or a profile lets the displays sleep)
         updateDimming(on: System.cocaineOn)                        // switching over while dimmed: the idle dim lets go
-        DispatchQueue.global().async { run("/bin/zsh", [scriptPath, "mode", mode]) }
+        Self.modeQueue.async { run("/bin/zsh", [scriptPath, "mode", mode]) }   // in order: the last change wins
     }
 
     /// The dimming's wiring: the lid the instant it moves, the other user's session, the fades.
     private func setUpDimming() {
         dim.log = { log.notice("dim: \($0, privacy: .public)") }
         dim.onFade = { [weak self] in self?.runFades() }
+        PowerSourceWatch.shared.start()                            // the charger plugged in or out: macOS's own brightness change
+        // The user's own idle time (Stay active's nudges left out) for the keyboard backlight's auto-off too (Sources/Power.swift).
+        UserIdle.provider = { [weak self] in self?.idleNow ?? System.idleSeconds }
         clamshell.onChange = { [weak self] closed in self?.dim.lidChanged(closed: closed) }
         clamshell.start()
         // Fast user switching: under another user nothing is dimmed (their screen, their brightness), the HUD keys go back to macOS.
@@ -1824,7 +1836,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func dimInputs(on: Bool) -> DimInputs {
         DimInputs(on: on, dimEnabled: settings.dimEnabled, screenOff: screenOffMode, sessionActive: sessionActive, idle: idleNow,
-                  delay: settings.delay, level: settings.level, allowed: Date() > brightUntil)
+                  delay: settings.delay, level: settings.level, allowed: Date() > brightUntil,
+                  powerChangedAt: PowerSourceWatch.shared.changedAt)
     }
 
     private func updateDimming(on: Bool) {

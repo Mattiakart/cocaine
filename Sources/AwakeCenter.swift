@@ -52,7 +52,12 @@ final class AwakeModel: ObservableObject {
         }
     }
     @Published var driveAliveInterval: Int { didSet { settings.driveAliveInterval = driveAliveInterval } }
-    @Published var driveAliveMethod: String { didSet { settings.driveAliveMethod = driveAliveMethod } }
+    @Published var driveAliveMethod: String {
+        didSet {
+            settings.driveAliveMethod = driveAliveMethod
+            if oldValue != driveAliveMethod { driveMethodChanged(driveAliveMethod, driveAliveVolumes) }
+        }
+    }
     @Published var driveAliveAlways: Bool { didSet { settings.driveAliveAlways = driveAliveAlways } }
     @Published var driveStatus: [String: DriveAliveRunner.Status] = [:]
     // Statistics and the reminder (Sources/AwakeSessions.swift).
@@ -102,6 +107,7 @@ final class AwakeModel: ObservableObject {
     var keepAwakeUntil: (Date) -> Void = { _ in }
     var addShortcuts: () -> Void = {}
     var drivesRemoved: ([String]) -> Void = { _ in }
+    var driveMethodChanged: (String, [String]) -> Void = { _, _ in }
     var resetStats: () -> Void = {}
 
     var config: AwakeTriggerConfig {
@@ -200,16 +206,19 @@ final class AwakeCenter {
         settings.d.set([String](), forKey: "profilesLive")            // nothing engaged yet in this run
         drives.statusChanged = { [weak self] name, st in self?.model.driveStatus[name] = st }
         model.drivesRemoved = { [weak self] names in self?.drives.removed(names) }
+        model.driveMethodChanged = { [weak self] method, names in self?.drives.methodChanged(to: method, names: names) }
         model.resetStats = { [weak self] in self?.resetStats() }
         LocationAccess.shared.changed = { [weak self] in
             self?.model.locationAllowed = LocationAccess.shared.allowed
             self?.model.triggersChanged()
         }
         if AwakeProfiles.needs(model.profiles).contains(.wifi) { model.locationAllowed = LocationAccess.shared.allowed }
-        // A volume coming or going: the triggers look again soon (they also look every 5 s).
-        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+        // A volume coming or going: the list is read again (in the background), then the triggers look at once (they also look
+        // every 5 s).
+        MountedVolumes.shared.refresh()
+        for n in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in
-                self?.model.triggersChanged()
+                MountedVolumes.shared.refresh { self?.model.triggersChanged() }
             })
         }
     }

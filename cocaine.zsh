@@ -374,6 +374,12 @@ case "$1" in
   off)    (( $# == 1 )) || { print -ru2 -- "usage: cocaine off"; exit 64; }
           lock
           set_state 0 || { unlock; print -ru2 -- "not authorized to change sleep settings"; exit 2; }
+          # A command-line (or iPhone) deadline ends with the OFF: its onUntil goes too when it is still that deadline (the
+          # app's own timer is a different value and is the app's to clear). Left behind, an app opened later after a plain
+          # `cocaine on` found it passed and turned Cocaine off at once ("Timer over").
+          if [[ -r $UNTIL ]] && u=$(<"$UNTIL") 2>/dev/null && [[ $u == <-> && "$(until_epoch)" == $u ]]; then
+            /usr/bin/defaults delete "$DOMAIN" onUntil 2>/dev/null
+          fi
           /bin/rm -f "$CLAIM" "$UNTIL"
           stop_hold; unlock; exit 0 ;;
   release) lock; release; r=$?; unlock; exit $r ;;

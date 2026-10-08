@@ -38,7 +38,9 @@ tasto, un clic o un tocco sul trackpad li riaccende.
   tramite la propria tabella colori (salvata e rimessa esattamente, senza toccare gli altri schermi; non fa risparmiare
   energia, la retroilluminazione del monitor resta accesa). Uno schermo già più scuro del livello scelto non viene toccato.
   Qualsiasi input riporta tutto com'era; la luminosità automatica che risale su uno schermo abbassato viene rimessa giù, ma un
-  cambio grande fatto da qualcuno (un cursore, uno script) resta fino al periodo di inattività successivo.
+  cambio grande fatto da qualcuno (un cursore, uno script) resta fino al periodo di inattività successivo. Due salti non
+  vengono mai presi per una scelta di qualcuno e vengono rimessi giù: quello dello schermo integrato a coperchio chiuso, e
+  qualsiasi salto nei 10 secondi dopo aver collegato o scollegato l'alimentatore (macOS cambia la luminosità da solo in quel momento).
 - **Ogni caso finisce dove era cominciato:** chiudi-apri-chiudi veloce, un avviso, il passaggio a *Spegni lo schermo*, un
   monitor scollegato (gli altri restano abbassati; uno ricollegato ancora abbassato torna com'era), l'uscita nel mezzo di una
   dissolvenza o un crash (il watchdog rimette le retroilluminazioni che mostrano ancora il livello di Cocaine).

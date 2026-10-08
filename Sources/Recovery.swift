@@ -128,6 +128,15 @@ enum Recovery {
         return lease.ownsSleep ? .release : .drop
     }
 
+    /// At a fresh launch (no session adopted), the saved deadline is a leftover unless it is the engine's own command-line or
+    /// iPhone deadline ($SUPPORT/until holds the same epoch): a panel timer from before a normal quit (sleep was released then)
+    /// would otherwise end, at once and with a "Timer over" alert, an ON made later with a plain `cocaine on`.
+    static func staleDeadline(_ until: Date?, engineUntil: String?, adopted: Bool) -> Bool {
+        guard let until, !adopted else { return false }
+        guard let e = engineUntil.flatMap({ Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) else { return true }
+        return abs(Double(e) - until.timeIntervalSince1970) >= 1
+    }
+
     /// Put a dimmed screen back only while it still shows Cocaine's dimming (from `to` up to just below `from`):
     /// a brightness the user chose since then, higher or lower, is kept.
     static func shouldRestoreBrightness(current: Float, from: Float, to: Float) -> Bool {
@@ -802,8 +811,14 @@ enum RecoveryCLI {
             if r == 0 { Recovery.removeLease() } else { result = released(r) }
         }
         guard result == done else { return result }               // sleep not back yet: keep the state (and the sudo rule)
-        for f in ["recovery.lock", "sleep-claim", "state.lock", "hold.lock", "hold.pid", "until", "instance.lock"] { unlink(Recovery.directory + "/" + f) }
+        for f in stateFiles { unlink(Recovery.directory + "/" + f) }
         try? FileManager.default.removeItem(atPath: Recovery.engineCopyDirectory)
+        // Keep disks awake's tiny hidden file on each chosen disk that is mounted now (Sources/DriveAlive.swift).
+        DriveAliveRunner.removeFiles(names: Settings().driveAliveVolumes, mounted: DriveAlive.mounted())
         return done
     }
+
+    /// The state files the app and the engine keep in $SUPPORT (cocaine.zsh: HLOCK, HPID, DARK, SLOCK, CLAIM, UNTIL), all
+    /// removed by an uninstall. "screen-off" (the engine's display mode) used to stay behind.
+    static let stateFiles = ["recovery.lock", "sleep-claim", "state.lock", "hold.lock", "hold.pid", "until", "instance.lock", "screen-off"]
 }
