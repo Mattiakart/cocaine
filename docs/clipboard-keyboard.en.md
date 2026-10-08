@@ -3,7 +3,8 @@
 Everything the [clipboard](clipboard.en.md) does can be done without the mouse, from any app, the way
 [Maccy](https://github.com/p0deje/Maccy) works.
 
-**Open it.** **⌃⌘V** (Settings → Island → Clipboard → *Open the clipboard*; any combination you record there, or none)
+**Open it.** The shortcut you record in Settings → Island → Clipboard → *Open the clipboard* (none by default since 2.9:
+⌃⌘V, the old default, is Paste Special in Microsoft Office, so Cocaine no longer takes it unless you record it)
 opens the clipboard with the keyboard already in it. Pressed again, or Esc, it closes. *Opens* chooses where:
 
 - **Island** (default): the island's Clipboard page, opened from the notch.

@@ -69,7 +69,7 @@ Images don't go this way: the iPhone's Shortcut would have to encrypt them with 
 
 With the same Apple Account, Bluetooth, Wi-Fi and Handoff on, a copy on a nearby iPhone or iPad can be pasted on the Mac (and the
 other way round). Cocaine labels such copies *Another device* (macOS marks them; the app in front never gets the credit), and
-*Copies from other devices* in the Clipboard settings can leave them out. New: *Keep its copies off the saved history* keeps
+*Copies from other devices* in the Clipboard settings (off by default since 2.9: such copies aren't even read) brings them in. New: *Keep its copies off the saved history* keeps
 them in memory only, even when the history is saved on this Mac (pinned ones are still saved). Search `from:iphone` (or
 `from:device`) finds both these and the items from the iPhone sync.
 

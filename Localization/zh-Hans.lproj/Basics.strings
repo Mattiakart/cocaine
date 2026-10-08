@@ -1,0 +1,3 @@
+/* 除非你打开，Cocaine 交给 macOS 处理的事项（2.9）。 */
+"Off: Universal Clipboard is left untouched. On: their plain text, a few seconds later" = "关：通用剪贴板保持原样。开：仅其纯文本，几秒后读取";
+"None until you choose one (⌃⌘V is Paste Special in Microsoft Office)" = "在你选择之前没有（⌃⌘V 是 Microsoft Office 的“选择性粘贴”）";

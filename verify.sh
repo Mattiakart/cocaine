@@ -123,6 +123,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--notch-test (battery HUD, swipes, sizes, controls; reminders on a fake source, never EventKit)" "$ISO" --notch-test
   run "--island-review-test (brightness bar vs charging HUD, swipe to open, content scale, module fit; fakes only)" "$ISO" --island-review-test
   run "--agm-review-test (AI agents and information modules: temporary homes, fakes, the real relay behind a fake ssh)" "$ISO" --agm-review-test
+  run "--basics-test (Universal Clipboard on a private promised pasteboard, defaults and their migration; memory-only settings)" "$ISO" --basics-test
   run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test
   run "--triggers-test (keep-awake profiles on fixed snapshots, disks kept awake in a temporary folder)" "$ISO" --triggers-test
   run "--power-review-test (keep-awake and system control regressions: fake displays, fixed clocks, temporary folders)" "$ISO" --power-review-test

@@ -30,7 +30,7 @@ Where things are:
   IslandLayout.swift (geometry, NotchGeometry.all), IslandHUD.swift (the HUD below the notch), IslandTests.swift (their tests and
   the haptics'), IslandWatchers.swift (the microphone), and one file per page with its data: IslandHome, IslandFocus (FocusTimer),
   IslandStatus (batteries; usage in Usage.swift), IslandCalendar (logic in CalendarGrid.swift, --calendar-test in CalendarTests.swift), IslandMusic, IslandMedia, IslandMirror, IslandDisplay,
-  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The keyboard-only clipboard: ClipKeyboard.swift (⌃⌘V,
+  IslandFiles, IslandShelf, IslandClipboard (history in Clipboard.swift). The keyboard-only clipboard: ClipKeyboard.swift (the open shortcut, none by default,
   the floating panel, search modes and order, the extra keys; docs/clipboard-keyboard.en.md), KeyboardTests.swift
   (--keyboard-test, also the exact session links of AgentFocus/AIEnvironments). Strings: Localization/<lang>.lproj/Keyboard.strings. Cloud links from the shelf: ShareProviders.swift (the
   provider protocol, rules, HTTP, Keychain, history, engine), ShareProviders{S3,WebDAV,SFTP}.swift, SigV4.swift, ShareUploader.swift
@@ -75,3 +75,5 @@ Where things are:
 - Assets.swift (the baggie glyph, --render-assets), RenderTools.swift (--render-panel, --render-island), SelfTests.swift and
   *Tests.swift (the test flags; UXTests.swift: --ux-test, also part of --selftest).
 - Strings of the shortcuts, keyboard and accessibility work and its fixes: Localization/<lang>.lproj/Keys.strings.
+- Basics.swift: what Cocaine leaves to macOS unless switched on (Universal Clipboard untouched, no ⌃⌘V, plain share links; the
+  default-behaviour inventory, docs/defaults-and-basics.en.md); BasicsTests.swift: --basics-test. Strings: Localization/<lang>.lproj/Basics.strings.

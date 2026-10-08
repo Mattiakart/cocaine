@@ -13,6 +13,7 @@ final class FakePasteboard: ClipPasteboard {
     var writtenRich: [ClipRich?] = []
 
     func put(_ s: ClipSnapshot) { changeCount += 1; content = s }
+    var currentTypes: [String] { content.types }
 
     func snapshot(maxImageBytes: Int, allowed: ([String], String?) -> Bool) -> ClipSnapshot {
         var s = ClipSnapshot(changeCount: changeCount, types: content.types, source: content.source, ours: content.ours)

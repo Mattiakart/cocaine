@@ -199,7 +199,7 @@ pagine:
   primo piano, copie da altri dispositivi riconosciute, e `cocaine clip` (spento di default). **Bacheche** (raccolte con nome) e
   **snippet** con segnaposto sono sempre salvati, cifrati; il resto solo in memoria, a meno che attivi *Salva su questo Mac*
   (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*); mai dai gestori di password.
-  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md). **Dalla tastiera**: ⌃⌘V li apre da qualsiasi app
+  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md). **Dalla tastiera**: una combinazione che registri (nessuna di default) li apre da qualsiasi app
   (nell'isola, o in un pannello mobile vicino al puntatore), scrivi per cercare (parole, approssimata, regex), A capo incolla
   nell'app in cui eri, ⇧A capo senza formattazione. [Tasti](docs/clipboard-keyboard.it.md).
 - **Contesto AI (MCP)** (disattivo di serie): metti nel *contesto AI* elementi degli appunti, file dello scaffale e note, e lascia
@@ -383,6 +383,8 @@ esterno e coperchio chiuso è documentato ma non è stato provato su hardware re
 
 ## Da sapere
 
+- A parte tenere acceso il Mac, Cocaine non tocca le funzioni di base (copia e incolla con gli altri dispositivi, tasti
+  multimediali, scorciatoie di sistema…) se non attivi tu una funzione: [cosa tocca di default e come spegnerlo](docs/defaults-and-basics.it.md).
 - Mentre Cocaine è attivo il Mac **non si blocca da solo**, anche col coperchio chiuso: bloccalo con ⌃⌘Q.
 - A batteria e col coperchio chiuso il Mac continua a consumare. Al 5 % Cocaine si spegne da solo per lasciare andare in stop
   il Mac, anche con la Protezione batteria spenta; impostala più in alto per fermarti prima.

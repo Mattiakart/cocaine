@@ -43,7 +43,11 @@ primo piano, ciò che vi hai copiato e la bacheca che le hai associato (Impostaz
 in*). Cocaine usa solo ciò che già sa; non legge nulla dalle altre app e non serve Registrazione schermo.
 
 **Altri dispositivi.** Una copia che arriva da iPhone, iPad o un altro Mac tramite Appunti universali è indicata come *Un altro
-dispositivo* (mai l'app che per caso era in primo piano); *Copie da altri dispositivi* le può escludere. Elementi da e verso
+dispositivo* (mai l'app che per caso era in primo piano), ma solo con *Copie da altri dispositivi* attivo, che dalla 2.9 è
+**spento di default**: spento, Cocaine non legge nemmeno quella copia, quindi gli Appunti universali funzionano esattamente come
+senza Cocaine. Acceso, legge solo il testo semplice, 3 secondi dopo l'arrivo (mai formattazione, immagini o file, ognuno dei quali
+sarebbe un altro trasferimento dall'altro dispositivo). Le impostazioni di prima della 2.9 vengono spente una volta
+([predefiniti e funzioni di base](defaults-and-basics.it.md)). Elementi da e verso
 l'iPhone tramite iCloud Drive o l'iPhone abbinato, e copie degli Appunti universali tenute fuori dalla cronologia salvata:
 [sincronizzazione appunti con iPhone](clipboard-sync.it.md).
 
@@ -88,7 +92,7 @@ Non c'è un link `cocaine://` per gli appunti: una pagina web non può mai legge
 
 Il filtro dei segreti e i tuoi pattern valgono anche per `put`.
 
-**Tastiera** (con gli appunti aperti da ⌃⌘V, l'isola aperta da ⌃⌥⌘I, o il campo di ricerca attivo; tutti i tasti, il pannello mobile vicino al puntatore e i modi di ricerca: [clipboard-keyboard.it.md](clipboard-keyboard.it.md)): ↑ ↓ si spostano, A capo / ⇧A capo incollano, ⌘1…9
+**Tastiera** (con gli appunti aperti dalla tua combinazione, l'isola aperta da ⌃⌥⌘I, o il campo di ricerca attivo; tutti i tasti, il pannello mobile vicino al puntatore e i modi di ricerca: [clipboard-keyboard.it.md](clipboard-keyboard.it.md)): ↑ ↓ si spostano, A capo / ⇧A capo incollano, ⌘1…9
 incolla rapido, ⇧↑ ⇧↓ ⌘A selezionano, Spazio (senza testo) o ⌘Y dettagli, ⌥P preferito, ⌘P fissa, ⌥A capo solo copia, ⌘C copia, ⌘E modifica, ⌘R rinomina, Elimina elimina (o corregge ciò che
 hai digitato), ⌘Z annulla, ⌥0…9 e ⌘[ ⌘] bacheche, Esc toglie la selezione, esce dai dettagli o chiude. VoiceOver: attivare una
 riga la incolla; le sue azioni sono Copia, Dettagli, Seleziona, Fissa in…, Elimina. Il modulo può essere S (gli elementi più

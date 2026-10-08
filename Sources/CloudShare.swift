@@ -1,17 +1,16 @@
 // Cloud sharing's controller: fills in CloudShareHook at launch (the shelf's "Share link…"), asks before an upload (every time
 // for a provider set so — the default — and before a command's first run), runs the upload as the shelf's job (progress,
-// Cancel), keeps the history, shows the result under the shelf (Copy link, Open, Revoke), puts links on the clipboard marked
-// so no clipboard history keeps them, tests a connection (a tiny file uploaded, its link checked, deleted) and takes links back.
+// Cancel), keeps the history, shows the result under the shelf (Copy link, Open, Revoke), puts links on the clipboard (a plain
+// copy; only Cocaine's own history skips it), tests a connection (a tiny file uploaded, its link checked, deleted) and takes links back.
 // Every upload starts from a click: nothing here uploads by itself (not from watched folders, instant actions or links).
 
 import AppKit
 import Foundation
 
-/// Links on the clipboard, kept out of every clipboard history: nspasteboard.org's "concealed" marker (other clipboard apps
-/// skip it too) and Cocaine's own marker (its history skips its own writes).
+/// Links on the clipboard, as an ordinary copy (they reach your other devices like any copy). Only Cocaine's own marker is
+/// added (its history skips its own writes). Until 2.8 they were also marked "concealed", which other apps and the system may
+/// take as not to be kept or shared: a basic copy must behave as one (Sources/Basics.swift).
 enum CloudClipboard {
-    static let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-
     @discardableResult
     static func write(_ links: [URL], to pb: NSPasteboard) -> Bool {
         guard !links.isEmpty else { return false }
@@ -19,7 +18,6 @@ enum CloudClipboard {
         let it = NSPasteboardItem()
         it.setString(links.map(\.absoluteString).joined(separator: "\n"), forType: .string)
         it.setData(Data(), forType: NSPasteboard.PasteboardType(ClipRules.ownType))
-        it.setData(Data(), forType: concealed)
         return pb.writeObjects([it])
     }
 }

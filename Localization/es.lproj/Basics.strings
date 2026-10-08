@@ -1,0 +1,3 @@
+/* Lo que Cocaine deja a macOS salvo que lo actives (2.9). */
+"Off: Universal Clipboard is left untouched. On: their plain text, a few seconds later" = "No: el Portapapeles universal no se toca. Sí: su texto sin formato, unos segundos después";
+"None until you choose one (⌃⌘V is Paste Special in Microsoft Office)" = "Ninguno hasta que elijas uno (⌃⌘V es Pegado especial en Microsoft Office)";
