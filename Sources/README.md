@@ -17,7 +17,8 @@ Where things are:
   AwakeProfileProbe.swift (the Mac's readings), AwakeProfilesPanel.swift (Profiles, Keep disks awake, statistics rows),
   AwakeProfilesCLI.swift (link, AppleScript, `cocaine profiles|disks`), DriveAlive.swift (keep disks awake), AwakeSessions.swift
   (statistics, reminder), TriggersTests.swift (--triggers-test, render fixtures; strings: Triggers.strings), Scripting.swift (the AppleScript dictionary, Cocaine.sdef), AwakeShortcuts.swift (the Mac
-  Shortcuts pack), AwakeTests.swift (--awake-test). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
+  Shortcuts pack), AwakeTests.swift (--awake-test), PowerReviewTests.swift (--power-review-test: the round-7
+  review's regressions in keep-awake, dimming, disks, uninstall and the backlight; fakes and temporary folders only). AppIntents/ is compiled only by `build.sh --app-intents` (never a release:
   docs/maintainers/app-intents.md).
 - AppDelegate.swift: the app itself (menu-bar item, panel, on/off, dimming, triggers, alerts, links, phone).
 - The panel: PanelModel.swift, PanelView.swift (its tabs), MenuPanel.swift (the window), Styles.swift (shared view pieces),
