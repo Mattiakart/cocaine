@@ -20,7 +20,8 @@ Settings → **Island** → **Screens** arranges the island's pages ("screens") 
 
 ## The fixed size
 
-The island never grows. Two columns are 250 pt and the rest (the column holding a module that needs room, else the one with the
+The island's page has the size set in Settings → Island → Notch (640 × 214 by default; the content grows with a bigger island,
+see docs/notch-animations.en.md). Two columns are 250 pt (more in a bigger island, in step with the page) and the rest (the column holding a module that needs room, else the one with the
 larger module, gets the wider share; on a tie the right one, as the built-in pages); one column takes the whole width. When the
 modules of a column don't fit, the lowest that can be smaller is drawn smaller, else the lowest is left out; a module that needs
 the whole screen (Calendar, Focus, Media, Mirror, Monitors) leaves out the other column; two modules that need the wide column

@@ -110,7 +110,7 @@ enum NotchTests {
               && item.kind == "power" && item.level == nil && Island.hudHeight(item) == 42)
         check("HUD item: unplugged, full, low", ChargeEvents.item(.disconnected, r(80, ac: false), low: 20).text == L("On battery")
               && ChargeEvents.item(.full, r(100, ac: true, charged: true), low: 20).text == L("Fully charged")
-              && ChargeEvents.item(.low(10), r(9, ac: false), low: 20).power?.detail == L("Plug in the charger now"))
+              && ChargeEvents.item(.low(10), r(9, ac: false), low: 20).power?.detail == L("Charge now"))
 
         // The watch with a fake reader: events reach the HUD only when the setting is on.
         let watch = NotchPowerWatch()
@@ -376,7 +376,17 @@ enum NotchFixtures {
             let w = RemindersWatch()                                  // Settings → Island → Notch: sample lists
             w.use(FakeReminders(access: n == "reminders" ? .granted : .notAsked))
             NotchSettingsLink.reminders = w
-        case "sizes": NotchPrefs.shared.updateSizing { $0.apply(.large) }
+        case "sizes", "large": NotchPrefs.shared.updateSizing { $0.apply(.large) }
+        case "xl": NotchPrefs.shared.updateSizing { $0.apply(.extraLarge) }
+        case let n where n.hasPrefix("mod-"):        // mod-<kind>-<s|m|l>[-xl|-max]: one module at a size on Home, beside Agents
+            let parts = n.split(separator: "-").map(String.init)
+            guard parts.count >= 3, let size = ModuleSize(rawValue: parts[2]) else { break }
+            if parts.count > 3 { NotchFixtures.layout(["", "--notch-fixture", parts[3]]) }
+            ScreenLayoutStore.shared.update { l in
+                guard let i = l.screens.firstIndex(where: { $0.id == "home" }) else { return }
+                l.screens[i].modules = [ModulePlacement(parts[1], 0, size)] + (parts[1] == "agents" ? [] : [ModulePlacement("agents", 1, .l)])
+            }
+        case "max": NotchPrefs.shared.updateSizing { $0.openWidth = NotchSizing.openWidths.upperBound; $0.openHeight = NotchSizing.openHeights.upperBound }
         default: break
         }
     }

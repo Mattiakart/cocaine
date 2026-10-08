@@ -43,8 +43,8 @@
 "Open Privacy Settings" = "Datenschutz & Sicherheit öffnen";
 "Open island" = "Offene Insel";
 "Overdue" = "Überfällig";
-"Plug in the charger now" = "Schließe jetzt das Ladegerät an";
-"Plug in the charger soon" = "Schließe bald das Ladegerät an";
+"Charge now" = "Jetzt aufladen";
+"Charge soon" = "Bald aufladen";
 "Plugged in" = "Angeschlossen";
 "Reminders" = "Erinnerungen";
 "Reset sizes" = "Größen zurücksetzen";
@@ -57,7 +57,7 @@
 "Swipe up to close" = "Nach oben wischen zum Schließen";
 "Swipes" = "Wischgesten";
 "Today and overdue" = "Heute und überfällig";
-"Two fingers down on the closed notch" = "Zwei Finger nach unten auf der geschlossenen Notch";
+"Two fingers down just below the closed notch" = "Zwei Finger nach unten direkt unter der geschlossenen Notch";
 "Two fingers left or right on the open island, not over a list that scrolls" = "Zwei Finger nach links oder rechts auf der offenen Insel, nicht über einer scrollenden Liste";
 "Two fingers up on the open island; it stays closed until the pointer leaves the notch" = "Zwei Finger nach oben auf der offenen Insel; sie bleibt zu, bis der Zeiger die Notch verlässt";
 "Upcoming" = "Demnächst";

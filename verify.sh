@@ -120,6 +120,7 @@ if ./build.sh --no-install --sign "$SIGN"; then
   run "--data-review-test (clipboard, shelf, sharing and AI context regressions: temporary folders, fakes, no network)" "$ISO" --data-review-test
   run "--clipsync-test (iPhone clipboard sync: temporary folders, simulated Shortcuts, fake relay)" "$ISO" --clipsync-test
   run "--notch-test (battery HUD, swipes, sizes, controls; reminders on a fake source, never EventKit)" "$ISO" --notch-test
+  run "--island-review-test (brightness bar vs charging HUD, swipe to open, content scale, module fit; fakes only)" "$ISO" --island-review-test
   run "--agm-review-test (AI agents and information modules: temporary homes, fakes, the real relay behind a fake ssh)" "$ISO" --agm-review-test
   run "--awake-test (keep-awake rules, AppleScript commands on a fake app, Mac Shortcuts pack)" "$ISO" --awake-test
   run "--triggers-test (keep-awake profiles on fixed snapshots, disks kept awake in a temporary folder)" "$ISO" --triggers-test

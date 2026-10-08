@@ -43,8 +43,8 @@
 "Open Privacy Settings" = "打开隐私与安全性";
 "Open island" = "展开的岛";
 "Overdue" = "已过期";
-"Plug in the charger now" = "请立即接上充电器";
-"Plug in the charger soon" = "请尽快接上充电器";
+"Charge now" = "请立即充电";
+"Charge soon" = "请尽快充电";
 "Plugged in" = "已接通电源";
 "Reminders" = "提醒事项";
 "Reset sizes" = "重置尺寸";
@@ -57,7 +57,7 @@
 "Swipe up to close" = "向上轻扫以关闭";
 "Swipes" = "轻扫手势";
 "Today and overdue" = "今天和已过期";
-"Two fingers down on the closed notch" = "在收起的刘海上双指向下";
+"Two fingers down just below the closed notch" = "在收起的刘海正下方双指向下";
 "Two fingers left or right on the open island, not over a list that scrolls" = "在展开的岛上双指左右轻扫（不在可滚动的列表上）";
 "Two fingers up on the open island; it stays closed until the pointer leaves the notch" = "在展开的岛上双指向上；指针离开刘海前保持收起";
 "Upcoming" = "即将到来";

@@ -79,7 +79,7 @@ final class BatteryWatch: ObservableObject {
 extension IslandView {
     // MARK: batteries
 
-    /// The batteries: four devices at L, two at M, one at S.
+    /// The batteries: four devices at L, two at M, one at S (one more per 36 pt a bigger island adds).
     func batteriesModule(_ b: ModuleBox) -> some View {
         VStack(alignment: .leading, spacing: Space.m) {
             if batteries.items.isEmpty {
@@ -87,7 +87,7 @@ extension IslandView {
             }
             let cols = [GridItem(.flexible())]
             LazyVGrid(columns: cols, alignment: .leading, spacing: Space.l) {
-                ForEach(batteries.items.prefix(b.size == .l ? 4 : b.size == .m ? 2 : 1)) { item in
+                ForEach(batteries.items.prefix((b.size == .l ? 4 : b.size == .m ? 2 : 1) + Int(b.extraHeight / 36))) { item in   // a bigger island: more
                     HStack(spacing: Space.m) {
                         Image(systemName: item.icon).font(.system(size: 14)).foregroundStyle(UI.secondary).frame(width: 20)   // a device glyph
                         VStack(alignment: .leading, spacing: Space.xs) {

@@ -35,6 +35,8 @@ final class MirrorController: NSObject, ObservableObject, AVCaptureVideoDataOutp
     /// Checks the camera permission, asks for it if it was never asked, then starts the camera.
     func start() {
         denied = false; hasFrames = false; stalled = false
+        // Renders and tests (memory-only settings) never start the camera nor ask for it: the page is drawn waiting.
+        guard !AppDefaults.isolated else { return }
         wanted = true
         switch Permissions.state(.camera) {
         case .granted: run()
@@ -145,8 +147,17 @@ private struct MirrorPreview: NSViewRepresentable {
 extension IslandView {
     // MARK: mirror
 
-    var mirrorTab: some View {
+    /// The camera's picture takes the module's whole height in a bigger island, keeping its shape (IslandScale.fill); the
+    /// controls keep at least `mirrorControls` beside it.
+    static let mirrorBase = CGSize(width: 250, height: 146)
+    static let mirrorControls: CGFloat = 220
+    static func mirrorSize(_ b: ModuleBox) -> CGSize {
+        IslandScale.fill(base: mirrorBase, standard: b.standardSize, box: CGSize(width: b.width, height: b.height), keepWidth: mirrorControls + Space.gutter)
+    }
+
+    func mirrorModule(_ b: ModuleBox) -> some View {
         let mr = model.mirror
+        let cam = Self.mirrorSize(b)
         return HStack(alignment: .top, spacing: Space.gutter) {      // template A: 250 pt, a 22 pt gutter (as Home, Focus, Status)
             ZStack {
                 Color.white.opacity(0.08)
@@ -166,7 +177,7 @@ extension IslandView {
                     }
                 }
             }
-            .frame(width: 250, height: 146).clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))
+            .frame(width: cam.width, height: cam.height).clipShape(RoundedRectangle(cornerRadius: CTL.cardRadius))
             VStack(alignment: .leading, spacing: Space.l) {
                 HStack(spacing: Space.m) {
                     Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill").font(UI.icon).foregroundStyle(mr.flip ? Island.accent : UI.hint).frame(width: UI.iconColumn)

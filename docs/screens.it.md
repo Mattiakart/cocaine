@@ -20,7 +20,8 @@ Impostazioni → **Isola** → **Schermate** organizza le pagine dell'isola ("sc
 
 ## La dimensione fissa
 
-L'isola non cresce mai. Due colonne sono 250 pt e il resto (la colonna larga va al modulo che ne ha bisogno, altrimenti a quella con
+La pagina dell'isola ha la misura scelta in Impostazioni → Isola → Notch (640 × 214 di default; il contenuto cresce con
+un'isola più grande, vedi docs/notch-animations.it.md). Due colonne sono 250 pt (di più in un'isola più grande, in proporzione) e il resto (la colonna larga va al modulo che ne ha bisogno, altrimenti a quella con
 il modulo più grande; a parità a destra, come nelle pagine originali); una colonna sola prende tutta la larghezza. Se i moduli di
 una colonna non ci stanno, il più basso che può rimpicciolirsi si rimpicciolisce, altrimenti il più basso resta fuori; un modulo che
 occupa tutta la schermata (Calendario, Focus, Multimedia, Specchio, Monitor) lascia fuori l'altra colonna; due moduli che chiedono la

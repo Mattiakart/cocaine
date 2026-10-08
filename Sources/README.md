@@ -62,8 +62,9 @@ Where things are:
 - The notch (docs/notch-animations.en.md): NotchPower.swift (the battery HUD: ChargeEvents, the IOKit watch, the glyph),
   NotchGestures.swift (two-finger swipes), NotchSizing.swift (sizes; NotchPrefs keeps the notch's settings), NotchControls.swift
   (the "controls" module), IslandReminders.swift (EventKit reminders, the "reminders" module), NotchSettings.swift (Settings →
-  Island → Notch), NotchWiring.swift (attached by IslandController), NotchTests.swift (--notch-test, --notch-fixture). Strings:
-  Localization/<lang>.lproj/Notch.strings.
+  Island → Notch), NotchWiring.swift (attached by IslandController), NotchTests.swift (--notch-test, --notch-fixture),
+  IslandScale.swift (the content growing with a bigger island), IslandReviewTests.swift (--island-review-test: round 7's
+  brightness-vs-charging rule, swipe to open, content scale, module fit). Strings: Localization/<lang>.lproj/Notch.strings.
 - Music, keyboard backlight and shelf extras (docs/music-and-backlight.en.md): MusicPlayers.swift (players' pure rules, AppleScript,
   Pear Desktop's API client), IslandMusic.swift (MusicWatch and the page), KeyboardBacklight.swift (CoreBrightness, auto-off, the
   island row and module), MediaSettings.swift (Settings → Island → Music and keyboard, MediaWiring, --media-fixture),

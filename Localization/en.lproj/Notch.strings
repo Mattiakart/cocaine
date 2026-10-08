@@ -43,8 +43,8 @@
 "Open Privacy Settings" = "Open Privacy Settings";
 "Open island" = "Open island";
 "Overdue" = "Overdue";
-"Plug in the charger now" = "Plug in the charger now";
-"Plug in the charger soon" = "Plug in the charger soon";
+"Charge now" = "Charge now";
+"Charge soon" = "Charge soon";
 "Plugged in" = "Plugged in";
 "Reminders" = "Reminders";
 "Reset sizes" = "Reset sizes";
@@ -57,7 +57,7 @@
 "Swipe up to close" = "Swipe up to close";
 "Swipes" = "Swipes";
 "Today and overdue" = "Today and overdue";
-"Two fingers down on the closed notch" = "Two fingers down on the closed notch";
+"Two fingers down just below the closed notch" = "Two fingers down just below the closed notch";
 "Two fingers left or right on the open island, not over a list that scrolls" = "Two fingers left or right on the open island, not over a list that scrolls";
 "Two fingers up on the open island; it stays closed until the pointer leaves the notch" = "Two fingers up on the open island; it stays closed until the pointer leaves the notch";
 "Upcoming" = "Upcoming";

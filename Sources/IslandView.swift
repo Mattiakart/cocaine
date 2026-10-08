@@ -90,6 +90,10 @@ struct IslandView: View {
         .animation(Motion.island(open), value: open)
         .animation(Motion.animation(.wing), value: model.leftW)
         .animation(Motion.animation(.wing), value: model.rightW)
+        // No focus ring on the island's buttons when it takes the keyboard for a dialog, a shelf form or the search field (the
+        // window becomes key and AppKit focused its first button: a stray border). Opened from the keyboard (⌃⌥⌘I), where Tab
+        // moves between controls, the ring shows where the keyboard is.
+        .focusEffectDisabled(!model.keyboard)
         .environment(\.colorScheme, .dark)
         .environment(\.locale, Language.locale)
         .preferredColorScheme(.dark)

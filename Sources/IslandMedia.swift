@@ -70,8 +70,13 @@ private struct MediaApp: Identifiable {
 }
 
 extension IslandView {
-    var mediaTab: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
+    /// The tiles and their icons grow with the module's box (38 pt icons, 66 pt tiles in the standard island), as tall as fits.
+    func mediaModule(_ b: ModuleBox) -> some View {
+        // The tiles' rows and the line under them always fit the box (a 38 pt menu bar left 9 pt of the tiles outside it).
+        let rows = CGFloat((MediaApp.all.count + 4) / 5)
+        let tile = min(IslandScale.grow(66, b.factor), ((b.height - Space.m - 15 - Space.m * (rows - 1)) / rows).rounded(.down))
+        let icon = min(IslandScale.grow(38, b.factor), tile - 20)
+        return VStack(alignment: .leading, spacing: Space.m) {
             // Five equal tiles flush with both page edges (fixed 104 pt tiles left a 24 pt hole on the right).
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 5), alignment: .leading, spacing: Space.m) {
                 ForEach(MediaApp.all) { app in
@@ -79,16 +84,16 @@ extension IslandView {
                     Button { Haptic.tap(.generic); app.open() } label: {
                         VStack(spacing: 5) {
                             ZStack(alignment: .bottomTrailing) {
-                                if let url { Image(nsImage: IconCache.icon(url.path)).resizable().frame(width: 38, height: 38) }
+                                if let url { Image(nsImage: IconCache.icon(url.path)).resizable().frame(width: icon, height: icon) }
                                 else {
-                                    RoundedRectangle(cornerRadius: 9).fill(app.color.opacity(0.9)).frame(width: 38, height: 38)
-                                        .overlay(Image(systemName: app.symbol).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white))
+                                    RoundedRectangle(cornerRadius: (icon * 9 / 38).rounded()).fill(app.color.opacity(0.9)).frame(width: icon, height: icon)
+                                        .overlay(Image(systemName: app.symbol).font(.system(size: (icon * 17 / 38).rounded(), weight: .semibold)).foregroundStyle(.white))
                                     Image(systemName: "globe").font(.system(size: 9, weight: .bold)).padding(2).background(Circle().fill(.black)).foregroundStyle(.white).offset(x: 3, y: 3)
                                 }
                             }
                             Text(app.name).font(UI.detail).lineLimit(1).foregroundStyle(UI.primary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 66)
+                        .frame(maxWidth: .infinity, minHeight: tile)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
                         .contentShape(Rectangle())
                     }

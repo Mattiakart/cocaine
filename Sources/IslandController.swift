@@ -320,6 +320,7 @@ final class IslandController {
     }
 
     private var suspended: CGDirectDisplayID?
+    private var suspendGen = MotionGeneration()       // the island going away behind the settings panel after its close morph
     private var pointerMonitors: [Any] = []
 
     /// Watches the pointer itself (in every app, and over the islands), so one opens as soon as you touch its notch.
@@ -345,16 +346,31 @@ final class IslandController {
     func setSuspended(_ on: Bool) {
         if on {
             guard let s = activeSpot else { return }
+            let wasOpen = model.open && state.open == s.id
             setOpen(false)
             state.pointerLeft()
             suspended = s.id
-            s.panel.orderOut(nil)
+            // Open, it closes behind the panel (which is above it) with its own morph, and goes once that has settled: the
+            // island's sides retract under the panel instead of vanishing the moment it appears. Closed, it goes at once.
+            if wasOpen && Motion.island(false) != nil {
+                let gen = suspendGen.begin()
+                DispatchQueue.main.asyncAfter(deadline: .now() + Motion.islandSettle) { [weak self, weak s] in
+                    guard let self, let s, self.suspendGen.isCurrent(gen), self.suspended == s.id else { return }
+                    s.panel.orderOut(nil)
+                }
+            } else {
+                s.panel.orderOut(nil)
+            }
         } else {
+            suspendGen.cancel()
             guard let id = suspended else { return }
             suspended = nil
             guard enabled, let s = spots[id] else { return }
-            // Not over a full-screen app (it would only vanish again at the next check) nor under a hidden menu bar.
-            s.covered = Self.fullScreenCovers(s.g, windows: Self.windowList())
+            // Not over a full-screen app when the user hides it there (it would only vanish again at the next check) nor under a
+            // hidden menu bar. (2.8.0 took any full-screen app for "covered" here, whatever the setting: back from the settings
+            // over a full-screen Space the island stayed away for a few seconds, with no HUD and no swipes, until the failsafe.)
+            s.covered = IslandRouting.hidden(fullScreen: Self.fullScreenCovers(s.g, windows: Self.windowList()),
+                                             hideInFullScreen: Settings().islandHidesInFullScreen)
             if !s.covered && !s.g.menuBarHidden { s.panel.orderFrontRegardless() }
         }
     }
@@ -457,10 +473,14 @@ final class IslandController {
         if suspended != nil && !settingsOpen() { setSuspended(false) }    // never left hidden behind a settings panel that is gone
         if ticks % 4 == 0 {
             relayout()
-            let windows = Self.windowList()                                 // read once for every screen
             let hide = Settings().islandHidesInFullScreen
+            // The window server's list (read once for every screen) only when something depends on a full-screen app: the
+            // setting, or a screen whose menu bar hides itself. Otherwise the island stays whatever is in front of it, and
+            // this 1.2 s check no longer copies every window's info for nothing.
+            let needWindows = IslandRouting.needsWindowList(hideInFullScreen: hide, menuBarHidden: spots.values.contains { $0.g.menuBarHidden })
+            let windows = needWindows ? Self.windowList() : []
             for s in spots.values {
-                let fullScreen = Self.fullScreenCovers(s.g, windows: windows)
+                let fullScreen = needWindows && Self.fullScreenCovers(s.g, windows: windows)
                 // Moving between full-screen Spaces must not make the island disappear: it hides under a full-screen app only
                 // when the user asked for that (General → Island → *Hide in full-screen apps*, off by default).
                 s.covered = IslandRouting.hidden(fullScreen: fullScreen, hideInFullScreen: hide)
@@ -572,6 +592,7 @@ final class IslandController {
         apply(state.openNow(s.id), haptic: false)
         s.panel.keyable = true
         s.panel.makeKey()
+        s.panel.makeFirstResponder(nil)        // no control focused (and ringed) until Tab is pressed: ←/→ change tabs
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             guard let self, self.keyboardOpen, !DialogCenter.shared.isShowing(on: .island) else { return }
             self.setOpen(false)
@@ -612,11 +633,11 @@ final class IslandController {
 
     // MARK: swipes on the notch (Sources/NotchGestures.swift)
 
-    /// The island under a point where a swipe may act: closed, its notch (and the screen's top edge); open, the open island.
+    /// The island under a point where a swipe may act: closed, its notch and the band below it; open, the open island.
     func gestureTarget(at p: CGPoint) -> NotchGestureTarget? {
         guard enabled, let s = spot(at: p), s.panel.isVisible, suspended != s.id, !s.covered else { return nil }
         let open = state.open == s.id && model.open
-        guard IslandRouting.hoverZone(s.g, open: open, leftW: model.leftW, rightW: model.rightW).contains(p) else { return nil }
+        guard IslandRouting.swipeZone(s.g, open: open, leftW: model.leftW, rightW: model.rightW).contains(p) else { return nil }
         return NotchGestureTarget(display: s.id, open: open, window: s.panel)
     }
 
@@ -644,6 +665,10 @@ enum IslandRouting {
     /// Is an island hidden because a full-screen app covers its screen? Only when the user chose to hide it there: by default it stays
     /// put, through every move between full-screen Spaces.
     static func hidden(fullScreen: Bool, hideInFullScreen: Bool) -> Bool { fullScreen && hideInFullScreen }
+
+    /// Does the watch need the window server's list of windows (is a full-screen app on a screen worth knowing)? Only when the
+    /// island hides there, or a screen's menu bar hides itself (its pill stays tucked except in a full-screen Space).
+    static func needsWindowList(hideInFullScreen: Bool, menuBarHidden: Bool) -> Bool { hideInFullScreen || menuBarHidden }
 
     /// Which island is open and which one the pointer is over. Only one island is open at a time (there is one pointer); hovering
     /// the notch of screen B opens B's island and closes A's. An island with a dialog in it stays (and keeps the others closed)
@@ -719,6 +744,18 @@ enum IslandRouting {
         }
         let m: CGFloat = 3, minY = top - g.height - 2
         return CGRect(x: g.centerX - g.notchWidth / 2 - leftW - m, y: minY, width: g.notchWidth + leftW + rightW + 2 * m, height: top - minY)
+    }
+
+    /// Where a two-finger swipe acts. Open: the open island (its hover zone). Closed: the notch and its wings and a band below
+    /// and beside them. The pointer on the closed notch itself opens the island at once (hover), so a swipe down to open has to
+    /// start just under it: 2.8.0 took the hover zone here, which made "swipe down to open" impossible except right after a
+    /// swipe up (and the menu bar strip over the notch may not even pass scroll events on to other apps).
+    static let swipeBand: CGFloat = 64
+    static let swipeSide: CGFloat = 48
+    static func swipeZone(_ g: NotchGeometry, open: Bool, leftW: CGFloat, rightW: CGFloat) -> CGRect {
+        let h = hoverZone(g, open: open, leftW: leftW, rightW: rightW)
+        guard !open else { return h }
+        return CGRect(x: h.minX - swipeSide, y: h.minY - swipeBand, width: h.width + 2 * swipeSide, height: h.height + swipeBand)
     }
 
     /// The screen whose island shows a HUD. A key that acted on one display (brightness: the backlit display under the pointer,

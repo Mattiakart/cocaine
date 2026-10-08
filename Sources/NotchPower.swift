@@ -107,7 +107,7 @@ struct ChargeEvents {
         case .full: title = L("Fully charged")
         case .low(let t):
             title = L("Low battery")
-            g.detail = t <= critical ? L("Plug in the charger now") : L("Plug in the charger soon")
+            g.detail = t <= critical ? L("Charge now") : L("Charge soon")
         case .lowPower(let on): title = on ? L("Low Power Mode on") : L("Low Power Mode off")
         }
         let icon = g.badge ?? (e == .disconnected ? "bolt.slash.fill" : g.state == .low ? "battery.25percent" : "battery.75percent")
@@ -218,16 +218,22 @@ struct ChargeHUDContent: View {
             .frame(width: 18)
             .scaleEffect(pop)
             .animation(Motion.animation(.chargeIn, reduce: reduce), value: glyph.badge)
+            // The words get the whole column: the title (two lines when there is no detail: "Mode Économie d'énergie activé") and
+            // the detail; the level sits under the battery. 2.8.0 put "62% · Carica tra 48 min" on one line and cut it to
+            // "Carica tra 4…" under a 185 pt notch, and cut Low Power Mode's title in it/es/fr.
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.85)
-                HStack(spacing: 3) {
-                    Text("\(glyph.percent)%").font(.system(size: 10, weight: .medium).monospacedDigit()).motionNumber(glyph.percent)
-                    if let d = glyph.detail { Text("·"); Text(d).lineLimit(1).truncationMode(.tail) }
+                Text(item.text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    .lineLimit(glyph.detail == nil ? 2 : 1).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
+                if let d = glyph.detail {
+                    Text(d).font(.system(size: 10)).foregroundStyle(UI.secondary).lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.85)
                 }
-                .font(.system(size: 10)).foregroundStyle(UI.secondary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            ChargeGlyphView(glyph: glyph, reduce: reduce, reveal: reveal)
+            VStack(spacing: 2) {
+                ChargeGlyphView(glyph: glyph, reduce: reduce, reveal: reveal)
+                Text("\(glyph.percent)%").font(.system(size: 10, weight: .medium).monospacedDigit()).foregroundStyle(UI.secondary)
+                    .lineLimit(1).fixedSize().motionNumber(glyph.percent)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.text + ", \(glyph.percent)%")
