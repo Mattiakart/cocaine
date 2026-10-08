@@ -22,6 +22,7 @@ USO
   l'isola con la tastiera dentro. Si cambiano in Generale → Scorciatoie da tastiera.
 - Trackpad: due dita in su sull'isola aperta la chiudono, in giù sul notch la aprono, di lato cambiano schermo. Misure,
   gesti, avvisi di ricarica e il modulo Controlli: Impostazioni → Isola → Notch.
+- Control-Comando-V apre gli appunti da qualsiasi app: scrivi per cercare, A capo incolla nell'app in cui eri (Isola → Appunti).
 - Nel pannello, l'interruttore in alto attiva o spegne Cocaine.
 - Bustina piena = Cocaine attivo: il Mac non va in stop, nemmeno col coperchio chiuso.
 - Bustina vuota = Cocaine spento: il Mac si comporta normalmente.

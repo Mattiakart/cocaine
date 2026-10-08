@@ -156,6 +156,13 @@ struct ClipQuery: Equatable {
         }
         return ClipHistoryCore.matches(item, words: words, describe: describe)
     }
+
+    /// Every filter but the words (the search modes look at those: Sources/ClipKeyboard.swift).
+    func matchesFilters(_ item: ClipItem, boards: [ClipBoard], appName: (String?) -> String?) -> Bool {
+        var q = self
+        q.words = []
+        return q.matches(item, boards: boards, appName: appName, describe: { _ in "" })
+    }
 }
 
 extension ClipboardHistory {
@@ -163,11 +170,14 @@ extension ClipboardHistory {
     func listed(board: UUID?, kind: ClipQuery.Kind?) -> [ClipItem] {
         let q = ClipQuery.parse(query, now: now())
         let bs = boards
-        return items.filter { c in
+        let passed = items.filter { c in
             if let board, !c.boards.contains(board) { return false }
             if let kind, !q.kind(of: c).contains(kind) { return false }
-            return q.matches(c, boards: bs, appName: ClipboardHistory.appName, describe: describe)
+            return q.matchesFilters(c, boards: bs, appName: ClipboardHistory.appName)
         }
+        // The words, as the search mode says (words, fuzzy, a regular expression, mixed), in the order chosen.
+        return ClipSearch.run(passed, words: q.words, mode: ClipSearchMode(rawValue: settings.searchMode) ?? .words,
+                              order: ClipSortOrder(rawValue: settings.sortOrder) ?? .recent, describe: describe)
     }
 }
 

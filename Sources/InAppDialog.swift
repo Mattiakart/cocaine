@@ -10,7 +10,7 @@ import AppKit
 import SwiftUI
 
 /// Where a dialog shows: over the settings panel, or inside the open island.
-enum DialogSurface: Equatable { case panel, island }
+enum DialogSurface: Equatable { case panel, island, popup }   // popup: the floating clipboard (Sources/ClipKeyboard.swift)
 
 enum DialogButtonRole: Equatable { case normal, destructive, cancel }
 

@@ -87,8 +87,8 @@ Non c'è un link `cocaine://` per gli appunti: una pagina web non può mai legge
 
 Il filtro dei segreti e i tuoi pattern valgono anche per `put`.
 
-**Tastiera** (con l'isola aperta da ⌃⌥⌘I, o il campo di ricerca attivo): ↑ ↓ si spostano, A capo / ⇧A capo incollano, ⌘1…9
-incolla rapido, ⇧↑ ⇧↓ ⌘A selezionano, Spazio dettagli, ⌘C copia, ⌘E modifica, ⌘R rinomina, Elimina elimina (o corregge ciò che
+**Tastiera** (con gli appunti aperti da ⌃⌘V, l'isola aperta da ⌃⌥⌘I, o il campo di ricerca attivo; tutti i tasti, il pannello mobile vicino al puntatore e i modi di ricerca: [clipboard-keyboard.it.md](clipboard-keyboard.it.md)): ↑ ↓ si spostano, A capo / ⇧A capo incollano, ⌘1…9
+incolla rapido, ⇧↑ ⇧↓ ⌘A selezionano, Spazio (senza testo) o ⌘Y dettagli, ⌥P preferito, ⌘P fissa, ⌥A capo solo copia, ⌘C copia, ⌘E modifica, ⌘R rinomina, Elimina elimina (o corregge ciò che
 hai digitato), ⌘Z annulla, ⌥0…9 e ⌘[ ⌘] bacheche, Esc toglie la selezione, esce dai dettagli o chiude. VoiceOver: attivare una
 riga la incolla; le sue azioni sono Copia, Dettagli, Seleziona, Fissa in…, Elimina. Il modulo può essere S (gli elementi più
 recenti), M (ricerca ed elenco) o L.

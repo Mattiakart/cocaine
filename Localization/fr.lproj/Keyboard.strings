@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "Pointeur";
+"Centre" = "Centre";
+"Last place" = "Dernier endroit";
+"In the island" = "Dans l'île";
+"Near the pointer" = "Près du pointeur";
+"In the middle of the screen" = "Au milieu de l'écran";
+"Where it was last left" = "Là où il a été laissé";
+"Words" = "Mots";
+"Fuzzy" = "Approchée";
+"Regex" = "Regex";
+"Mixed" = "Mixte";
+"Every word, anywhere" = "Chaque mot, n'importe où";
+"Letters in order, gaps allowed" = "Lettres dans l'ordre, avec des écarts";
+"Words, then regular expression, then fuzzy" = "Mots, puis expression régulière, puis approchée";
+"Newest" = "Récents";
+"Most pasted" = "Plus collés";
+"A–Z" = "A–Z";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "Presse-papiers, %d éléments. Tapez pour chercher, flèches pour choisir, Retour colle, Échap ferme.";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ choisir · ↩ coller · ⇧↩ brut · ⌥↩ copier · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ coller · ⇧↩ brut · esc";
+"Close (Esc)" = "Fermer (Échap)";
+"Added to favorites" = "Ajouté aux favoris";
+"Removed from favorites" = "Retiré des favoris";
+"History cleared" = "Historique effacé";
+"Paste with formatting" = "Coller avec la mise en forme";
+"Command %d pastes it" = "Commande %d le colle";
+"Open the clipboard" = "Ouvrir le presse-papiers";
+"From any app, with the keyboard in it: type to search, Return pastes" = "Depuis n'importe quelle app, clavier inclus : tapez pour chercher, Retour colle";
+"Opens" = "S'ouvre";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "La page Presse-papiers de l'île, ou un panneau flottant de Cocaine (déplacez-le ; Dernier endroit l'y rouvre)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "Mixte : d'abord les mots ; sinon une expression régulière ; puis les lettres dans l'ordre";
+"Order" = "Ordre";
+"Show ⌘1…9 on the rows" = "Afficher ⌘1…9 sur les lignes";
+"While the clipboard was opened with the keyboard" = "Quand le presse-papiers est ouvert au clavier";

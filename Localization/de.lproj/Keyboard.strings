@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "Zeiger";
+"Centre" = "Mitte";
+"Last place" = "Zuletzt";
+"In the island" = "In der Insel";
+"Near the pointer" = "Beim Zeiger";
+"In the middle of the screen" = "In der Bildschirmmitte";
+"Where it was last left" = "Wo es zuletzt war";
+"Words" = "Wörter";
+"Fuzzy" = "Unscharf";
+"Regex" = "Regex";
+"Mixed" = "Gemischt";
+"Every word, anywhere" = "Jedes Wort, irgendwo";
+"Letters in order, gaps allowed" = "Buchstaben in Reihenfolge, Lücken erlaubt";
+"Words, then regular expression, then fuzzy" = "Wörter, dann regulärer Ausdruck, dann unscharf";
+"Newest" = "Neueste";
+"Most pasted" = "Meist eingesetzt";
+"A–Z" = "A–Z";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "Zwischenablage, %d Objekte. Tippen sucht, Pfeile wählen, Zeilenschalter setzt ein, Esc schließt.";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ wählen · ↩ einsetzen · ⇧↩ ohne Format · ⌥↩ kopieren · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ einsetzen · ⇧↩ ohne Format · esc";
+"Close (Esc)" = "Schließen (Esc)";
+"Added to favorites" = "Zu Favoriten hinzugefügt";
+"Removed from favorites" = "Aus Favoriten entfernt";
+"History cleared" = "Verlauf gelöscht";
+"Paste with formatting" = "Mit Formatierung einsetzen";
+"Command %d pastes it" = "Befehl %d setzt es ein";
+"Open the clipboard" = "Zwischenablage öffnen";
+"From any app, with the keyboard in it: type to search, Return pastes" = "Aus jeder App, mit der Tastatur darin: tippen sucht, Zeilenschalter setzt ein";
+"Opens" = "Öffnet";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "Die Seite Zwischenablage der Insel oder ein schwebendes Fenster von Cocaine (verschiebbar; Zuletzt öffnet es dort)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "Gemischt: zuerst Wörter; ohne Treffer ein regulärer Ausdruck; dann Buchstaben in Reihenfolge";
+"Order" = "Reihenfolge";
+"Show ⌘1…9 on the rows" = "⌘1…9 an den Zeilen zeigen";
+"While the clipboard was opened with the keyboard" = "Wenn die Zwischenablage per Tastatur geöffnet wurde";

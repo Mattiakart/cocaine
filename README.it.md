@@ -196,7 +196,9 @@ pagine:
   primo piano, copie da altri dispositivi riconosciute, e `cocaine clip` (spento di default). **Bacheche** (raccolte con nome) e
   **snippet** con segnaposto sono sempre salvati, cifrati; il resto solo in memoria, a meno che attivi *Salva su questo Mac*
   (cifrato, con limiti di conservazione, esclusioni e *Elimina tutto*); mai dai gestori di password.
-  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md).
+  [Dettagli e limiti](docs/clipboard.it.md), [bacheche](docs/pinboards.it.md). **Dalla tastiera**: ⌃⌘V li apre da qualsiasi app
+  (nell'isola, o in un pannello mobile vicino al puntatore), scrivi per cercare (parole, approssimata, regex), A capo incolla
+  nell'app in cui eri, ⇧A capo senza formattazione. [Tasti](docs/clipboard-keyboard.it.md).
 - **Contesto AI (MCP)** (disattivo di serie): metti nel *contesto AI* elementi degli appunti, file dello scaffale e note, e lascia
   che Claude Code, Claude Desktop, Codex, Cursor o Gemini CLI leggano **solo quelli**, dopo che hai consentito ogni strumento nella
   notch; un clic collega uno strumento (mostrato prima, reversibile), un registro annota ogni lettura senza il contenuto. Un server

@@ -27,6 +27,7 @@ final class ClipPageState: ObservableObject {
     @Published var dragging: UUID?
     @Published var dropBoard: UUID?
     @Published var recognized: [UUID: String] = [:]   // text read from an image on demand (not kept)
+    @Published var keyboardHints = false           // opened with the keyboard: ⌘1…⌘9 shown on the first rows (Sources/ClipKeyboard.swift)
 
     /// What the list shows now: the search, the chips, newest first.
     func list(_ h: ClipboardHistory) -> [ClipItem] { h.listed(board: board, kind: kind) }
@@ -72,6 +73,40 @@ enum ClipActions {
         guard let c = picked.first ?? list.first(where: { $0.id == h.hovered }) ?? list.first else { return false }
         paste(c, invert: invert)
         return true
+    }
+
+    /// ⌥Return: the other way than Return. Return pastes: copy only (and close). Return copies only: paste into the app.
+    static func otherAction(_ c: ClipItem, shift: Bool) {
+        let plain: Bool? = shift ? !h.settings.pastePlain : nil
+        if h.settings.directPaste {
+            guard h.copy(c, plain: plain) else { engine.notify("exclamationmark.triangle.fill", c.kind == .files ? L("The file is no longer there") : L("Can't copy it")); return }
+            Haptic.tap(.generic)
+            ui.selection.clear()
+            if ui.detail != nil { ui.closeDetail() }
+            engine.closeIsland()
+            engine.notify("doc.on.clipboard.fill", L("Copied"))
+        } else {
+            Haptic.tap(.generic)
+            SnippetPaste.paste(c, engine: engine, plain: plain, direct: true)
+            ui.selection.clear()
+            if ui.detail != nil { ui.closeDetail() }
+        }
+    }
+
+    /// ⌥P: on or off Favorites (the row's star).
+    static func toggleFavorite(_ c: ClipItem) {
+        Haptic.tap(.alignment)
+        let on = !c.isFavorite
+        h.togglePin(c.id)
+        A11y.announce(on ? L("Added to favorites") : L("Removed from favorites"))
+    }
+
+    /// ⌥⌘⌫: the same choice as the toolbar's trash (history only, or everything), in the surface that asked.
+    static func clearMenu() {
+        IslandChoices.ask(L("Clear"), icon: "trash", IslandChoices.clipboardTrash) { id in
+            if id == "clear" { Motion.with(.appear) { h.clearHistory() }; A11y.announce(L("History cleared")) }
+            else { DispatchQueue.main.async { ClipboardUI.confirmDeleteEverything(h, from: ClipPopup.shared.isOpen ? .popup : .island) } }
+        }
     }
 
     static func copy(_ c: ClipItem) {
@@ -230,14 +265,23 @@ enum ClipActions {
 
 enum ClipboardKeys {
     /// True when the key was used. `editing`: a text field or editor has the keyboard.
-    static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel) -> Bool {
+    static func handle(_ code: UInt16, flags: NSEvent.ModifierFlags, editing: Bool, model: IslandModel?) -> Bool {
         if ClipShortcutRecorder.shared.recording != nil { return ClipShortcutRecorder.shared.handle(keyCode: code, flags: flags) }
-        if DialogCenter.shared.isShowing(on: .island) { return false }
+        if DialogCenter.shared.isShowing(on: .island) || DialogCenter.shared.isShowing(on: .popup) { return false }
         let h = ClipActions.h, ui = ClipActions.ui
         let mods = flags.intersection([.command, .option, .control, .shift])
         let cmd = mods == .command, shiftCmd = mods == [.command, .shift], opt = mods == .option, shift = mods == .shift, none = mods.isEmpty
         if ui.editing { if code == 53 && none { ui.editing = false; ClipboardWiring.keyable(false); return true }; return false }   // the editor's keys
+        let command = ClipKeyCommand.interpret(code, flags: flags, char: ShortcutNames.translate(UInt32(code)), editing: editing)
         if let id = ui.detail, let c = h.items.first(where: { $0.id == id }) {
+            switch command {                                                                                     // Sources/ClipKeyboard.swift
+            case .otherAction(let shift)?: ClipActions.otherAction(c, shift: shift); return true                // ⌥Return
+            case .toggleFavorite?: ClipActions.toggleFavorite(c); return true                                    // ⌥P
+            case .pinMenu?: ClipActions.pinMenu([c.id]); return true                                            // ⌘P
+            case .details?: ui.closeDetail(); return true                                                       // ⌘Y again: back
+            case .deleteItem?: ClipActions.delete([id]); return true                                            // ⌥⌫
+            default: break
+            }
             switch code {
             case 53 where none, 123 where none && !editing: ui.closeDetail(); return true                       // Esc, ←: back
             case 36 where none || shift, 76 where none || shift: ClipActions.paste(c, invert: shift); return true // Return
@@ -255,6 +299,21 @@ enum ClipboardKeys {
             if opt { let b = n == 0 ? nil : n <= h.boards.count ? h.boards[n - 1].id : ui.board; ClipActions.pickBoard(b); return true }
         }
         if digit(code) == 0 && opt { ClipActions.pickBoard(nil); return true }
+        if let command {                                                                                         // Sources/ClipKeyboard.swift
+            let selected = ui.selection.isEmpty ? current(list).map { [$0.id] } ?? [] : ui.selection.ids
+            switch command {
+            case .otherAction(let shift): if let c = current(list) { ClipActions.otherAction(c, shift: shift) }
+            case .toggleFavorite: if let c = current(list) { ClipActions.toggleFavorite(c) }
+            case .pinMenu: ClipActions.pinMenu(selected)
+            case .deleteItem: ClipActions.delete(selected)
+            case .clearHistory: ClipActions.clearMenu()
+            case .first: if let f = list.first { h.hovered = f.id; A11y.announce(h.spokenTitle(f)) }
+            case .last: if let l = list.last { h.hovered = l.id; A11y.announce(h.spokenTitle(l)) }
+            case .page(let n): h.step(n, in: list)
+            case .details: if let c = current(list) { ClipActions.open(c) }
+            }
+            return true
+        }
         switch code {
         case 125 where none, 126 where none:                                                                    // ↓ ↑
             h.step(code == 125 ? 1 : -1, in: list); return true
@@ -274,7 +333,7 @@ enum ClipboardKeys {
         case 8 where cmd && !editing: if let c = current(list) { ClipActions.copy(c) }; return true            // ⌘C
         case 14 where cmd: if let c = current(list), c.kind == .text { ClipActions.open(c); ClipDetail.beginEdit(c) }; return true   // ⌘E
         case 15 where cmd: if let c = current(list) { ClipActions.rename(c) }; return true                     // ⌘R
-        case 49 where none && !editing: if let c = current(list) { ClipActions.open(c) }; return true          // Space: details
+        case 49 where none && !editing && h.query.isEmpty: if let c = current(list) { ClipActions.open(c) }; return true   // Space: details (typing: a space)
         case 53 where none && !ui.selection.isEmpty: ui.selection.clear(); A11y.announce(L("Selection cleared")); return true
         case 51 where none && !editing, 117 where none && !editing:                                            // Delete
             if !h.query.isEmpty && code == 51 { h.query.removeLast(); return true }                              // the typed filter first
@@ -616,6 +675,11 @@ struct ClipRow: View {
         .accessibilityAddTraits(ui.selection.contains(c.id) ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { ClipActions.paste(c) }
         .accessibilityAction(named: L("Copy")) { ClipActions.copy(c) }
+        .accessibilityActions {
+            if c.kind == .text && c.hasRich {
+                Button(h.settings.pastePlain ? L("Paste with formatting") : L("Paste without formatting")) { ClipActions.paste(c, invert: true) }
+            }
+        }
         .accessibilityAction(named: L("Details")) { ClipActions.open(c) }
         .accessibilityAction(named: ui.selection.contains(c.id) ? L("Deselect") : L("Select")) { ui.selection.toggle(c.id) }
         .accessibilityAction(named: L("Pin to…")) { ClipActions.pinMenu(ui.selection.contains(c.id) ? ui.selection.ids : [c.id]) }
@@ -637,8 +701,17 @@ struct ClipRow: View {
             ForEach(c.boards.filter { $0 != ClipBoard.favoritesID }.prefix(3), id: \.self) { b in
                 Circle().fill(BoardColor.color(h.board(b)?.color ?? 0)).frame(width: 6, height: 6).help(h.board(b)?.displayName ?? "")
             }
+            if let n = quickNumber {                                     // opened with the keyboard: ⌘1…⌘9 (Sources/ClipKeyboard.swift)
+                Text("⌘\(n)").font(UI.detail.monospacedDigit()).foregroundStyle(UI.hint).fixedSize().accessibilityHidden(true)
+            }
         }
         .padding(.trailing, Space.xs)
+    }
+
+    /// The number ⌘ pastes this row with, shown while the keyboard is in the clipboard (the first nine rows).
+    private var quickNumber: Int? {
+        guard !compact, ui.keyboardHints, h.settings.numberHints, let i = list.firstIndex(where: { $0.id == c.id }), i < 9 else { return nil }
+        return i + 1
     }
 
     private var spokenValue: String {
@@ -649,6 +722,7 @@ struct ClipRow: View {
         if c.snippet != nil { parts.append(L("Snippet")) }
         if c.remote { parts.append(L("From another device")) } else if c.fromIPhone { parts.append(L("From your iPhone")) }
         else if let app = ClipboardHistory.appName(c.source) { parts.append(app) }
+        if let n = quickNumber { parts.append(String(format: L("Command %d pastes it"), n)) }
         return parts.joined(separator: ", ")
     }
 
@@ -808,6 +882,13 @@ private struct CaptureGuard: NSViewRepresentable {
             if w.sharingType != t { w.sharingType = t }
         }
     }
+}
+
+/// The page in the floating clipboard (Sources/ClipKeyboard.swift): the same page as the island's, at its L size.
+struct ClipboardPopupContent: View {
+    let box: ModuleBox
+    let keyable: (Bool) -> Void
+    var body: some View { ClipboardPage(h: .shared, ui: .shared, engine: .shared, box: box, keyable: keyable) }
 }
 
 extension IslandView {

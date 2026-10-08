@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "ポインタ";
+"Centre" = "中央";
+"Last place" = "前回の位置";
+"In the island" = "アイランド内";
+"Near the pointer" = "ポインタの近く";
+"In the middle of the screen" = "画面の中央";
+"Where it was last left" = "最後に置いた場所";
+"Words" = "単語";
+"Fuzzy" = "あいまい";
+"Regex" = "正規表現";
+"Mixed" = "混合";
+"Every word, anywhere" = "すべての単語(どこでも)";
+"Letters in order, gaps allowed" = "文字が順番どおり(間があっても可)";
+"Words, then regular expression, then fuzzy" = "単語、次に正規表現、次にあいまい";
+"Newest" = "新しい順";
+"Most pasted" = "貼付回数順";
+"A–Z" = "名前順";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "クリップボード、%d 項目。入力で検索、矢印で選択、Return でペースト、Esc で閉じます。";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ 選択 · ↩ ペースト · ⇧↩ 書式なし · ⌥↩ コピー · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ ペースト · ⇧↩ 書式なし · esc";
+"Close (Esc)" = "閉じる (Esc)";
+"Added to favorites" = "お気に入りに追加しました";
+"Removed from favorites" = "お気に入りから削除しました";
+"History cleared" = "履歴を消去しました";
+"Paste with formatting" = "書式付きでペースト";
+"Command %d pastes it" = "Command %d でペースト";
+"Open the clipboard" = "クリップボードを開く";
+"From any app, with the keyboard in it: type to search, Return pastes" = "どのアプリからでもキーボードで:入力で検索、Return でペースト";
+"Opens" = "開く場所";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "アイランドのクリップボードページ、または Cocaine のフローティングパネル(ドラッグ可、「前回の位置」でそこに開く)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "混合:まず単語、見つからなければ正規表現、次に順番どおりの文字";
+"Order" = "並び順";
+"Show ⌘1…9 on the rows" = "行に ⌘1…9 を表示";
+"While the clipboard was opened with the keyboard" = "キーボードでクリップボードを開いたとき";

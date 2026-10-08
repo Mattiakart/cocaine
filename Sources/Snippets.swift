@@ -110,13 +110,13 @@ enum SnippetPaste {
     /// Asks for the values of {input:…} placeholders (nil: cancelled). The app asks in the island; tests answer at once.
     static var ask: (_ names: [String], _ done: @escaping ([String: String]?) -> Void) -> Void = askInIsland
 
-    static func paste(_ item: ClipItem, engine: PasteEngine, plain: Bool? = nil, target: String? = nil, completion: ((PasteEngine.Outcome) -> Void)? = nil) {
-        guard item.snippet != nil, item.kind == .text else { engine.paste(item, plain: plain, target: target, completion: completion); return }
+    static func paste(_ item: ClipItem, engine: PasteEngine, plain: Bool? = nil, target: String? = nil, direct: Bool? = nil, completion: ((PasteEngine.Outcome) -> Void)? = nil) {
+        guard item.snippet != nil, item.kind == .text else { engine.paste(item, plain: plain, target: target, direct: direct, completion: completion); return }
         let target = target ?? engine.frontApp()
         let names = SnippetExpander.inputs(in: item.text)
         let go: ([String: String]) -> Void = { inputs in
             let c = SnippetExpander.Context(clipboard: engine.history.board.currentText(), now: engine.history.now(), locale: Language.locale, inputs: inputs)
-            engine.paste(item, plain: true, text: SnippetExpander.expand(item.text, c), target: target, completion: completion)
+            engine.paste(item, plain: true, text: SnippetExpander.expand(item.text, c), target: target, direct: direct, completion: completion)
         }
         if names.isEmpty { go([:]); return }
         ask(names) { answers in if let answers { go(answers) } }
@@ -144,6 +144,7 @@ enum SnippetPaste {
 
 /// What one of the clipboard's global shortcuts does.
 enum ClipHotKeyTarget: Hashable {
+    case open                        // the clipboard, keyboard in it (Sources/ClipKeyboard.swift)
     case pasteNext
     case board(UUID)
     case snippet(UUID)
@@ -170,9 +171,10 @@ final class ClipHotKeys: ObservableObject {
         self.unregister = unregister
     }
 
-    /// The shortcuts wanted now: "Paste next" while a stack waits, each pinboard's and each snippet's.
+    /// The shortcuts wanted now: "Open the clipboard", "Paste next" while a stack waits, each pinboard's and each snippet's.
     static func wanted(settings: ClipSettings, stackActive: Bool, boards: [ClipBoard], items: [ClipItem]) -> [(ClipHotKeyTarget, Shortcut)] {
         var out: [(ClipHotKeyTarget, Shortcut)] = []
+        if let s = settings.openShortcut { out.append((.open, s)) }
         if stackActive, let s = settings.pasteNext { out.append((.pasteNext, s)) }
         for b in boards { if let s = b.hotkey { out.append((.board(b.id), s)) } }
         for i in items where i.pinned { if let s = i.snippet?.hotkey { out.append((.snippet(i.id), s)) } }

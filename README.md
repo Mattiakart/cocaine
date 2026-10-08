@@ -188,7 +188,9 @@ it, or click it, and it opens at once (and closes as soon as the pointer leaves)
   devices labelled, and `cocaine clip` (off by default). **Pinboards** (named collections) and **snippets** with placeholders are
   always saved, encrypted; the rest is kept in memory only unless you turn on *Save on this Mac* (encrypted, with retention
   limits, exclusions and *Delete everything*); never from password managers. [Details and limits](docs/clipboard.en.md),
-  [pinboards](docs/pinboards.en.md).
+  [pinboards](docs/pinboards.en.md). **From the keyboard**: ⌃⌘V opens it from any app (in the island, or a floating panel near
+  the pointer), type to search (words, fuzzy, regex), Return pastes into the app you were in, ⇧Return without formatting.
+  [Keys](docs/clipboard-keyboard.en.md).
 - **AI context (MCP)** (off by default): put clipboard items, shelf files and notes in the *AI context* and let Claude Code,
   Claude Desktop, Codex, Cursor or Gemini CLI read **only those**, after you allow each tool in the notch; one click connects a
   tool (shown first, reversible), an activity log records every read without its content. A local stdio MCP server, no network

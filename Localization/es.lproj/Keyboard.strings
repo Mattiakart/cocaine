@@ -1,0 +1,36 @@
+/* The keyboard-only clipboard and the exact way back to agent sessions (Sources/ClipKeyboard.swift, Sources/AgentFocus.swift). */
+
+"Pointer" = "Puntero";
+"Centre" = "Centro";
+"Last place" = "Último lugar";
+"In the island" = "En la isla";
+"Near the pointer" = "Junto al puntero";
+"In the middle of the screen" = "En el centro de la pantalla";
+"Where it was last left" = "Donde se dejó la última vez";
+"Words" = "Palabras";
+"Fuzzy" = "Aproximada";
+"Regex" = "Regex";
+"Mixed" = "Mixta";
+"Every word, anywhere" = "Cada palabra, en cualquier lugar";
+"Letters in order, gaps allowed" = "Letras en orden, con huecos";
+"Words, then regular expression, then fuzzy" = "Palabras, luego expresión regular, luego aproximada";
+"Newest" = "Recientes";
+"Most pasted" = "Más pegados";
+"A–Z" = "A–Z";
+"Clipboard, %d items. Type to search, arrows to pick, Return pastes, Escape closes." = "Portapapeles, %d elementos. Escribe para buscar, flechas para elegir, Retorno pega, Escape cierra.";
+"↑↓ pick · ↩ paste · ⇧↩ plain · ⌥↩ copy · ⌘1–9 · esc" = "↑↓ elegir · ↩ pegar · ⇧↩ sin formato · ⌥↩ copiar · ⌘1–9 · esc";
+"↩ paste · ⇧↩ plain · esc" = "↩ pegar · ⇧↩ sin formato · esc";
+"Close (Esc)" = "Cerrar (Esc)";
+"Added to favorites" = "Añadido a favoritos";
+"Removed from favorites" = "Quitado de favoritos";
+"History cleared" = "Historial borrado";
+"Paste with formatting" = "Pegar con formato";
+"Command %d pastes it" = "Comando %d lo pega";
+"Open the clipboard" = "Abrir el portapapeles";
+"From any app, with the keyboard in it: type to search, Return pastes" = "Desde cualquier app, con el teclado dentro: escribe para buscar, Retorno pega";
+"Opens" = "Se abre";
+"The island's Clipboard page, or a floating panel of Cocaine's own (drag it; Last place opens it there)" = "La página Portapapeles de la isla, o un panel flotante de Cocaine (arrástralo; Último lugar lo abre ahí)";
+"Mixed: whole words first; if nothing matches, a regular expression; then letters in order" = "Mixta: primero palabras; si nada coincide, una expresión regular; luego letras en orden";
+"Order" = "Orden";
+"Show ⌘1…9 on the rows" = "Mostrar ⌘1…9 en las filas";
+"While the clipboard was opened with the keyboard" = "Cuando el portapapeles se abre con el teclado";

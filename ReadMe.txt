@@ -21,6 +21,7 @@ USE
   keyboard in it. Change them in General > Keyboard shortcuts.
 - Trackpad: two fingers up on the open island close it, down on the notch open it, sideways change screens. Sizes, swipes,
   charging notices and the Controls module: Settings > Island > Notch.
+- Control-Command-V opens the clipboard from any app: type to search, Return pastes into the app you were in (Island > Clipboard).
 - In the panel, the switch at the top turns Cocaine on or off.
 - Full baggie = Cocaine is on: your Mac doesn't sleep, not even with the lid closed.
 - Empty baggie = Cocaine is off: your Mac behaves normally.

@@ -63,11 +63,12 @@ final class PasteEngine: ObservableObject {
 
     /// Pastes `item` into the app in front (`target`: that app, as seen when the island opened). `plain`: without formatting
     /// (nil: as the settings say). `text`: this text instead of the item's (a transformation, a filled-in snippet, a merge).
-    func paste(_ item: ClipItem, plain: Bool? = nil, text: String? = nil, target: String? = nil, completion: ((Outcome) -> Void)? = nil) {
+    /// `direct`: paste even when Return only copies (⌥Return, Sources/ClipKeyboard.swift); nil: as the settings say.
+    func paste(_ item: ClipItem, plain: Bool? = nil, text: String? = nil, target: String? = nil, direct: Bool? = nil, completion: ((Outcome) -> Void)? = nil) {
         let target = target ?? frontApp()
         guard history.copy(item, plain: plain, text: text) else { finish(.failed, item: item, completion) ; return }
         closeIsland()
-        guard history.settings.directPaste else { finish(.copied(.directOff), item: item, completion); return }
+        guard direct ?? history.settings.directPaste else { finish(.copied(.directOff), item: item, completion); return }
         guard trusted() else { finish(.copied(.noPermission), item: item, completion); return }
         guard let target, target != ownBundle else { finish(.copied(.noTarget), item: item, completion); return }
         // The island lets go of the keyboard first; the keys of the shortcut that asked are let go of; the app is still there.
