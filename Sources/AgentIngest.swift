@@ -8,6 +8,8 @@
 //      a less trusted one just joins the row it found;
 //   3. a web chat's tab address (same environment);
 //   4. otherwise a new row: the session id, else "<env>|pid:<pid>", else "<env>|<address>", else "<env>|<project>".
+// A session on an SSH host (Sources/SSH*.swift) comes in through the same door with its own key, "ssh.<host id>:<session id>",
+// and an origin that names only remote things (AgentOrigin.remoteHost…): it never matches a local row by pid or folder.
 // Precedence of sources: hook > session file > process > app > browser tab. A less trusted source changes the state only
 // when the row's state came from it or a less trusted one, or the better source has been silent for 10 minutes; it always
 // adds what it knows of where the session runs. "Ended" (process gone, app quit, tab closed, SessionEnd) always counts, and
@@ -100,6 +102,7 @@ extension AgentBoard {
         }
         var e = entries[i]
         let old = e.state
+        e.unreachable = nil                                                // heard from: its host is reachable (SSH hosts)
         // Refreshed once a minute at most: the board (and state.json, and the island) changes only when something does.
         if s.source != .hook, t - (e.seen ?? 0) >= 60 { e.seen = t }
         let o = (e.origin ?? AgentOrigin()).merged(with: origin)

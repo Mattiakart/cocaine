@@ -514,6 +514,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         review.focus = { [weak self] origin, name in self?.goToSession(origin, name) }
         do { try server.start(); approvalServer = server }
         catch { log.error("approvals: socket not started: \(String(describing: error), privacy: .public)") }   // hooks fall back to the terminal
+        startSSHHosts()
+    }
+
+    /// SSH hosts (Sources/SSH*.swift): remote sessions come in through the same doors as local ones (the board, the alerts, the
+    /// notch's review); their answers go back over that host's connection (sendReply).
+    private func startSSHHosts() {
+        let ssh = SSHHostManager.shared
+        ssh.onRequest = { [weak self] r in self?.holdRequest(r) }
+        ssh.onAlert = { [weak self] p, extra in
+            if let extra { AgentExtras.shared.take(session: p.sessionKey, event: extra) }
+            self?.handleAlert(p, trusted: false)
+        }
+        ssh.onBoard = { [weak self] session, from, project, state, origin in self?.boardSet(session, from, project, state, origin) }
+        ssh.onGone = { [weak self] id in
+            guard let self else { return }
+            self.approvals.gone(id, now: Date())
+            self.publishApprovals()
+        }
+        ssh.onReachable = { [weak self] host, reachable in
+            guard let self else { return }
+            self.board.setReachable(host: host, reachable)
+            self.writeBoard()
+        }
+        ssh.onRemoved = { [weak self] host in
+            guard let self, !self.board.removeHost(host).isEmpty else { return }
+            self.writeBoard()
+        }
+        ssh.remotePids = { [weak self] host in self?.board.remotePids(host: host) ?? [] }
+        ssh.start()
+    }
+
+    /// An answer (or "none": the terminal asks) to the hook that waits for it, on this Mac or on an SSH host.
+    private func sendReply(_ id: String, decision: String, content: String?, done: @escaping (Bool) -> Void = { _ in }) {
+        if SSHHostManager.shared.owns(id) { SSHHostManager.shared.reply(id, decision: decision, content: content, done: done) }
+        else if let server = approvalServer { server.reply(id, decision: decision, content: content, done: done) }
+        else { done(false) }
     }
 
     /// A hook's news with text (Sources/AgentEvents.swift): the session card's details (in memory), then the usual alert path.
@@ -549,10 +585,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func approvalArrived(_ id: String, _ nonce: String, _ tool: String, _ input: [String: Any], _ origin: AgentOrigin) {
         guard let server = approvalServer else { return }
-        guard var r = ApprovalRequest.make(id: id, nonce: nonce, tool: tool, input: input, origin: AgentProcess.complete(origin), now: Date()) else {
+        guard let r = ApprovalRequest.make(id: id, nonce: nonce, tool: tool, input: input, origin: AgentProcess.complete(origin), now: Date()) else {
             server.reply(id, decision: "none", content: nil)
             return
         }
+        holdRequest(r)
+    }
+
+    /// A request, local or from an SSH host: held in the notch, or handed straight back to its terminal.
+    private func holdRequest(_ request: ApprovalRequest) {
+        var r = request
+        let id = r.id
         handedBack = handedBack.filter { Date().timeIntervalSince($0.value) < 900 }
         if r.event == "PermissionRequest", let t = r.toolUseID, handedBack[t] != nil { r.answerable = false }
         let session = r.session ?? "\(r.from)|\(r.project ?? "")"
@@ -561,7 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         guard ApprovalPolicy.hold(enabled: settings.agentApprovals, answerable: r.answerable, origin: r.origin, frontmost: front,
                                   idleSeconds: System.idleSeconds), approvals.add(r) else {
-            server.reply(id, decision: "none", content: nil)     // the terminal asks; Claude Code's Notification hook alerts then
+            sendReply(id, decision: "none", content: nil)        // the terminal asks; Claude Code's Notification hook alerts then
             if r.tool == "codex" { approvalAlert(r) }           // Codex has no other "needs you" hook
             return
         }
@@ -581,7 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func expireApprovals() {
         for id in approvals.expire(now: Date()) {                                       // the terminal asks now
-            approvalServer?.reply(id, decision: "none", content: nil)
+            sendReply(id, decision: "none", content: nil)
             if let t = approvals.requests[id]?.toolUseID { handedBack[t] = Date() }
         }
         publishApprovals()
@@ -604,14 +647,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let r = approvals.requests[id]
         switch approvals.answer(id, reply: reply, now: Date()) {
         case .send(let decision, let content):
-            approvalServer?.reply(id, decision: decision, content: content) { [weak self] sent in
+            sendReply(id, decision: decision, content: content) { [weak self] sent in
                 guard let self else { return }
                 if !sent { self.showAgentNotice(L("That request was no longer waiting: answer it in the terminal.")) }
                 else if let r, let s = r.session { self.boardSet(s, r.from, r.project, "working") }
             }
             log.notice("approval \(id, privacy: .public): \(decision, privacy: .public) from the notch")
         case .expired:
-            approvalServer?.reply(id, decision: "none", content: nil)
+            sendReply(id, decision: "none", content: nil)
             showAgentNotice(L("That request had expired: the terminal asks for it now."))
         case .alreadyAnswered: break                                  // a second click on the same request
         case .unknown: showAgentNotice(L("That request was no longer waiting: answer it in the terminal."))
@@ -621,7 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func releaseApproval(_ id: String) {
         if approvals.release(id, now: Date()) {
-            approvalServer?.reply(id, decision: "none", content: nil)
+            sendReply(id, decision: "none", content: nil)
             if let t = approvals.requests[id]?.toolUseID { handedBack[t] = Date() }
         }
         publishApprovals()
@@ -663,6 +706,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What a click could do, said plainly when it's less than the exact tab. nil = it got there.
     static func focusMessage(_ r: AgentFocus.Result, _ name: String) -> String? {
         let app = r.appName ?? name
+        if r.note == .sshTabNotFound {                       // a session on an SSH host (Sources/SSHJump.swift)
+            return r.level == .app ? String(format: L("Brought %@ forward: the tab with that ssh connection wasn't found (opened from another app, a jump host, or a background connection)."), app)
+                : L("The terminal with that ssh connection wasn't found on this Mac.")
+        }
         switch r.level {
         case .exact: return nil
         case .window: return String(format: L("Opened the project in %@ (its terminal panel can't be selected from outside)."), app)
@@ -847,6 +894,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ n: Notification) {
         systemHUD.disable()                      // macOS draws its own volume and brightness HUD again
         approvalServer?.stop()                   // waiting hooks see the socket close: their terminals ask as usual
+        SSHHostManager.shared.stop()             // the same on SSH hosts: their relays end with the connection
         board.write(cocaineOn: System.cocaineOn, until: settings.onUntil)   // the board as it was, for the next launch
         mediaKeys.stop()
         ClipboardHistory.shared.flush()          // a saved history gets its last change

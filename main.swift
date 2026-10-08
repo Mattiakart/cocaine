@@ -44,6 +44,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--share-test" 
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-shortcut" { cliMakeShortcut() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--relay-test" { cliRelayTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--remote-test" { cliRemoteTest() }
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--ssh-test" { cliSSHTest() }                 // Sources/SSHTests.swift
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--selftest" { cliSelfTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--display-test" { cliDisplayTest() }
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--dialogs-test" { cliDialogsTest() }

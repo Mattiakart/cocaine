@@ -107,6 +107,7 @@ struct AgentListView: View {
     static func stateLine(_ e: AgentEntry, _ x: AgentExtra?) -> String {
         var parts = [name(e.state)]
         if let p = e.project { parts.append(p) }
+        if e.unreachable == true { parts.append(agentsL("host unreachable")) }      // an SSH host's session, its connection down
         if let x, x.background > 0, e.state != "idle" { parts.append(String(format: agentsL("%d in the background"), x.background)) }
         if let x, !x.steps.isEmpty {
             parts.append(String(format: agentsL("plan %d/%d"), x.steps.filter { $0.status == "completed" }.count, x.steps.count))

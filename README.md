@@ -94,6 +94,11 @@ while the island has the keyboard (⌃⌥⌘I), never globally. It uses only the
 its own: no answer within 2 minutes, Cocaine not running, or any error, and the tool asks in the terminal as usual. Other tools
 in the table only alert. Details: [Plan review](docs/ai-plans.en.md), [AI sessions](docs/ai-sessions.en.md).
 
+**SSH hosts** (Settings → AI): agents running on your servers show up the same way — alerts, sessions, plans, questions and
+approvals in the notch — through your own `ssh` (host keys checked, nothing forwarded, no port opened) and a small perl relay that
+Cocaine installs there only after your OK, with every change to the tools' settings there shown first. Details:
+[SSH hosts](docs/ssh-hosts.en.md).
+
 **Plan limits.** The island's Status page shows Claude's 5-hour and weekly limits (Pro/Max, from Claude Code's own statusline,
 when you turn on *Claude plan limits*; your statusline keeps working) and Codex's windows, named by their real length, with the
 time to each reset. No passwords, Keychain or network: [Plan limits](docs/ai-quotas.en.md).

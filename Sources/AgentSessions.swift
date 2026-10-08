@@ -29,6 +29,15 @@ struct AgentOrigin: Codable, Equatable {
     var zellijSession: String? = nil   // $ZELLIJ_SESSION_NAME
     var zellijPane: String? = nil      // $ZELLIJ_PANE_ID
     var ghosttyTerminal: String? = nil // Ghostty's id of the terminal (asked at the session's start, only if already allowed)
+    // A session on an SSH host (Sources/SSH*.swift): none of the fields above (they would name things on this Mac).
+    var remoteHost: String? = nil      // the host's id in Cocaine's list (6 hex)
+    var remoteCwd: String? = nil       // its folder there (shown, never opened here)
+    var remotePid: Int32? = nil        // its process there (the relay says whether it still runs)
+    var sshConnection: String? = nil   // $SSH_CONNECTION there: "<client ip> <client port> <server ip> <server port>"
+    var remoteTmuxPane: String? = nil  // tmux there ($TMUX_PANE, $TMUX's socket): selected through the relay
+    var remoteTmuxSocket: String? = nil
+
+    var isRemote: Bool { remoteHost != nil }
 
     var isEmpty: Bool { self == AgentOrigin() }
 
@@ -71,7 +80,16 @@ struct AgentOrigin: Codable, Equatable {
         o.zellijSession = Self.matches(zellijSession, #"^[A-Za-z0-9._-]{1,64}$"#)
         o.zellijPane = Self.matches(zellijPane, #"^[0-9]{1,6}$"#)
         o.ghosttyTerminal = Self.matches(ghosttyTerminal, #"^[A-Za-z0-9-]{1,64}$"#)
-        return o
+        guard let host = Self.matches(remoteHost, #"^[0-9a-f]{6}$"#) else { return o }
+        // A remote session: nothing of this Mac's (a pid, a tty, a folder would name things here), only what was checked.
+        var r = AgentOrigin()
+        r.remoteHost = host
+        if let c = remoteCwd, c.hasPrefix("/"), c.count <= 1024, !c.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) { r.remoteCwd = c }
+        if let p = remotePid, p > 1 { r.remotePid = p }
+        r.sshConnection = Self.matches(sshConnection, #"^[0-9A-Za-z.:%]{2,64} [0-9]{1,5} [0-9A-Za-z.:%]{2,64} [0-9]{1,5}$"#)
+        r.remoteTmuxPane = Self.matches(remoteTmuxPane, #"^%[0-9]{1,6}$"#)
+        if let sock = Self.matches(remoteTmuxSocket, #"^/[A-Za-z0-9._/-]{1,200}$"#), !sock.contains("..") { r.remoteTmuxSocket = sock }
+        return r
     }
 
     /// `newer`'s fields where it has them, ours elsewhere: a later event of the same session can be less complete.
@@ -87,6 +105,9 @@ struct AgentOrigin: Codable, Equatable {
         o.cmuxSurface = n.cmuxSurface ?? cmuxSurface; o.cmuxWorkspace = n.cmuxWorkspace ?? cmuxWorkspace; o.cmuxSocket = n.cmuxSocket ?? cmuxSocket
         o.zellijSession = n.zellijSession ?? zellijSession; o.zellijPane = n.zellijPane ?? zellijPane
         o.ghosttyTerminal = n.ghosttyTerminal ?? ghosttyTerminal
+        o.remoteHost = n.remoteHost ?? remoteHost; o.remoteCwd = n.remoteCwd ?? remoteCwd; o.remotePid = n.remotePid ?? remotePid
+        o.sshConnection = n.sshConnection ?? sshConnection
+        o.remoteTmuxPane = n.remoteTmuxPane ?? remoteTmuxPane; o.remoteTmuxSocket = n.remoteTmuxSocket ?? remoteTmuxSocket
         return o
     }
 }
@@ -107,6 +128,8 @@ struct AgentEntry: Codable, Identifiable, Equatable {
     var src: Int? = nil
     var srcAt: Double? = nil
     var seen: Double? = nil
+    /// A session on an SSH host whose connection is down: kept (not dropped) until it is back, then checked again.
+    var unreachable: Bool? = nil
     var isLive: Bool { state == "working" || state == "waiting" }
     var needsYou: Bool { state == "waiting" || state == "error" }
 
@@ -156,6 +179,7 @@ enum AgentProcess {
 
     /// Completes an origin the app got from a hook while the agent is still running: its start time, terminal and app.
     static func complete(_ o: AgentOrigin) -> AgentOrigin {
+        if o.isRemote { return o.sanitized() }                       // its pid is the remote machine's, not this Mac's
         var o = o
         guard let pid = o.pid, let i = info(pid), i.uid == getuid() else { o.pid = nil; o.pidStart = nil; return o }
         o.pidStart = i.start
@@ -176,7 +200,37 @@ final class AgentBoard {
     init(file: URL = AgentBoard.defaultFile) { self.file = file }
 
     /// Is the session's agent still running? nil when the board can't tell (no pid known).
-    static func liveness(_ e: AgentEntry) -> Bool? { AgentProcess.alive(pid: e.origin?.pid, start: e.origin?.pidStart) }
+    static func liveness(_ e: AgentEntry) -> Bool? {
+        if e.origin?.isRemote == true { return remoteLiveness(e) }
+        return AgentProcess.alive(pid: e.origin?.pid, start: e.origin?.pidStart)
+    }
+    /// A remote session's process, as its host's relay last said (Sources/SSHConnection.swift fills it in): true while its
+    /// host is unreachable (kept, marked), false once the relay says it ended, nil when unknown.
+    static var remoteLiveness: (AgentEntry) -> Bool? = { e in e.unreachable == true ? true : nil }
+
+    /// A host's connection went down (or came back): its sessions are marked, not dropped. Returns whether anything changed.
+    @discardableResult
+    func setReachable(host: String, _ reachable: Bool) -> Bool {
+        var changed = false
+        for i in entries.indices where entries[i].origin?.remoteHost == host {
+            let want: Bool? = reachable ? nil : true
+            if entries[i].unreachable != want { entries[i].unreachable = want; changed = true }
+        }
+        return changed
+    }
+
+    /// The remote processes of a host's sessions (to ask its relay whether they still run).
+    func remotePids(host: String) -> [Int32] {
+        Array(Set(entries.compactMap { $0.origin?.remoteHost == host ? $0.origin?.remotePid : nil })).sorted()
+    }
+
+    /// A host removed from the list: its sessions go. Returns the rows removed.
+    @discardableResult
+    func removeHost(_ host: String) -> [String] {
+        let gone = entries.filter { $0.origin?.remoteHost == host }.map(\.id)
+        entries.removeAll { gone.contains($0.id) }
+        return gone
+    }
 
     /// Records a session's new state (its time restarts only when the state changes, or when it was only restored).
     func set(_ id: String, from: String, project: String?, state: String, origin: AgentOrigin? = nil, now: Date = Date(),

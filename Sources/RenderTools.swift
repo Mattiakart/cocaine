@@ -305,6 +305,7 @@ func cliRenderPanel() {
     ClipboardFixtures.apply(CommandLine.arguments, nil)         // --clipboard-fixture settings: sample pinboards in Settings → Island
     CloudShareFixtures.apply(CommandLine.arguments)             // --cloud-fixture <name>: Settings → Island → Sharing samples
     AIContextFixtures.apply(CommandLine.arguments)              // --aicontext-fixture l: a filled AI context card in Settings → AI
+    SSHHostManager.shared.applyFixture(CommandLine.arguments)   // --ssh-sample / --ssh-review: sample SSH hosts in Settings → AI
     if CommandLine.arguments.contains("--island") { model.island = true }
     if CommandLine.arguments.contains("--no-island") { model.island = false }
     if let i = CommandLine.arguments.firstIndex(of: "--notch-width"), i + 1 < CommandLine.arguments.count, let w = Double(CommandLine.arguments[i + 1]) {

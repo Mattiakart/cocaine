@@ -98,6 +98,11 @@ approvato da solo: nessuna risposta entro 2 minuti, Cocaine non in esecuzione o 
 terminale come sempre. Gli altri strumenti della tabella avvisano soltanto. Dettagli: [Revisione dei piani](docs/ai-plans.it.md),
 [Sessioni AI](docs/ai-sessions.it.md).
 
+**Host SSH** (Impostazioni → AI): gli agenti che girano sui tuoi server compaiono allo stesso modo — avvisi, sessioni, piani,
+domande e approvazioni nel notch — attraverso il tuo `ssh` (chiavi degli host verificate, nessun inoltro, nessuna porta aperta) e un
+piccolo relay in perl che Cocaine installa là solo dopo il tuo OK, mostrandoti prima ogni modifica alle impostazioni degli
+strumenti. Dettagli: [Host SSH](docs/ssh-hosts.it.md).
+
 **Limiti del piano.** La pagina Stato dell'isola mostra i limiti di 5 ore e settimanali di Claude (Pro/Max, dalla statusline di
 Claude Code stesso, quando attivi *Limiti del piano Claude*; la tua statusline continua a funzionare) e le finestre di Codex,
 chiamate con la loro durata reale, con il tempo a ogni azzeramento. Niente password, Portachiavi o rete:

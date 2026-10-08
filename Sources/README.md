@@ -42,6 +42,11 @@ Where things are:
   call may do), AIContextWiring.swift (hooks, the notch questions), AIContextViews.swift (the "aicontext" module, Settings → AI
   card), MCPRegister.swift (connecting Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI; `--mcp-register`),
   AIContextFixtures.swift (renders), MCPTests.swift (`--mcp-test`). Strings: Localization/<lang>.lproj/MCP.strings.
+- SSH hosts (AI agents on remote machines; not the iPhone's "Remote"): SSHHosts.swift (the list, ~/.ssh/config names, keys,
+  audit log), SSHProtocol.swift (the signed wire, remote hook → request/alert/board), SSHConnection.swift (ssh's command lines,
+  the state machine, one connection), SSHManager.swift (every host, answers, relay install, hooks review/apply), SSHInstall.swift
+  (the remote hooks' plan and diff, through AIHooks), SSHJump.swift (the local ssh tab), SSHHostsView.swift (Settings → AI card),
+  SSHTests*.swift (--ssh-test). The remote side: relay/cocaine-relay (perl, copied into the bundle). Strings: SSH.strings.
 - The phone: Phone.swift, Remote*.swift. Updates and signing: Update*.swift, Updater.swift, SigningTier.swift, DistCLI.swift.
 - Motion.swift: the one motion system (tokens, roles, Reduce Motion, .pressable/.motionAppear/page slides/loading; docs/motion.en.md);
   MotionTests.swift: --motion-test (in --selftest) and --render-motion (transition contact sheets).
