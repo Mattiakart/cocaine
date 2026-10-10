@@ -615,7 +615,9 @@ private struct SearchFieldBox: NSViewRepresentable {
             f.stringValue = text
             (f.currentEditor() as? NSTextView)?.moveToEndOfDocument(nil)
         }
-        if f.placeholderAttributedString != placeholderText {        // the language or the contrast changed (not on every keystroke)
+        let look = placeholder + (DisplayOptions.contrast ? "|contrast" : "")
+        if context.coordinator.placeholderLook != look {             // the language or the contrast changed (not on every keystroke)
+            context.coordinator.placeholderLook = look
             f.placeholderAttributedString = placeholderText
             f.setAccessibilityLabel(placeholder)
         }
@@ -630,6 +632,7 @@ private struct SearchFieldBox: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: SearchFieldBox
+        var placeholderLook: String?                                 // what the field shows now (makeNSView's own is the first)
         init(_ p: SearchFieldBox) { parent = p }
         func controlTextDidChange(_ n: Notification) {
             if let f = n.object as? NSTextField, parent.text != f.stringValue { parent.text = f.stringValue }
