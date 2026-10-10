@@ -146,7 +146,7 @@ enum AIHooks {
             if relay != nil {                             // on an SSH host: its relay reads everything, its own Claude Code's version
                 return events.filter { e in e.minVersion.map { need in remoteVersion.map { !$0.lexicographicallyPrecedes(need) } ?? false } ?? true }
             }
-            return events.filter { ($0.minVersion.map { AIHooks.claudeVersion(atLeast: $0) } ?? true) && runnable($0) }
+            return events.filter { ($0.minVersion.map { claudeVersionCheck($0) == true } ?? true) && runnable($0) }
         }
         /// Events this app can run at all (a request or a plan needs the installed app's binary, Codex's alert aside).
         private func runnable(_ e: Event) -> Bool {
@@ -270,7 +270,6 @@ enum AIHooks {
         guard let have = claudeVersionCache ?? nil else { return nil }
         return have.lexicographicallyPrecedes(need) == false
     }
-    static func claudeVersion(atLeast need: [Int]) -> Bool { claudeVersionCheck(need) == true }
 
     static func parseVersion(_ out: String) -> [Int]? {
         guard let r = out.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression) else { return nil }

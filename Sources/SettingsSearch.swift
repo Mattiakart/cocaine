@@ -46,9 +46,9 @@ enum SearchText {
     /// Words that carry no meaning in a query, in the app's languages (folded).
     static let stopwords: Set<String> = [
         "the", "a", "an", "of", "to", "for", "and", "or", "in", "on", "my", "is", "how", "do", "i", "when", "with", "settings", "setting",
-        "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "del", "della", "da", "per", "e", "o", "come", "con", "mio", "impostazioni", "impostazione",
-        "el", "los", "las", "de", "y", "en", "mi", "con", "ajustes", "ajuste", "configuracion",
-        "le", "les", "des", "du", "et", "ou", "mon", "ma", "avec", "pour", "reglages", "parametres",
+        "il", "lo", "la", "gli", "le", "un", "uno", "una", "di", "del", "della", "da", "per", "e", "o", "come", "con", "mio", "impostazioni", "impostazione",
+        "el", "los", "las", "de", "y", "en", "mi", "ajustes", "ajuste", "configuracion",
+        "les", "des", "du", "et", "ou", "mon", "ma", "avec", "pour", "reglages", "parametres",
         "der", "die", "das", "den", "ein", "eine", "und", "oder", "mit", "fur", "mein", "einstellungen", "einstellung",
     ]
 
@@ -333,7 +333,10 @@ final class SettingsSearch: ObservableObject {
     @Published private(set) var results: [SearchHit] = []
     @Published var selected = 0
     /// The row or card lit up after a jump (its anchor key), fading out by itself.
-    @Published private(set) var lit: String?
+    private(set) var lit: String? {
+        get { SearchLight.shared.key }
+        set { SearchLight.shared.key = newValue }
+    }
     /// The field has the keyboard (the results list then follows ↑↓).
     @Published var editing = false
 
@@ -356,9 +359,7 @@ final class SettingsSearch: ObservableObject {
     private func currentEngine() -> SearchEngine {
         let lang = Language.current
         if let e = engine, engineLang == lang { return e }
-        let e = SearchEngine(entries: SettingsIndex.entries, languages: Language.codes, lang: lang,
-                             text: SearchStrings.text, concepts: SearchStrings.concept,
-                             related: SearchSemantics.enabled ? SearchSemantics.related : nil)
+        let e = Self.testEngine(lang: lang, semantic: SearchSemantics.enabled)
         engine = e; engineLang = lang
         return e
     }
@@ -492,16 +493,23 @@ struct SettingsFrames: PreferenceKey {
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { a, _ in a } }
 }
 
+/// The lit row, in an object of its own: the anchors (one per row and card) watch only this, so a keystroke or an arrow press
+/// in the search doesn't redraw all of them.
+final class SearchLight: ObservableObject {
+    static let shared = SearchLight()
+    @Published var key: String?
+}
+
 /// Reports a row's (or, with `row` nil, a card's) frame in the panel's page, and draws the light after a search jump.
 struct SettingsAnchor: ViewModifier {
     let row: String?
     var card: String? = nil
     @Environment(\.settingsCard) private var envCard
-    @ObservedObject private var search = SettingsSearch.shared
+    @ObservedObject private var light = SearchLight.shared
 
     func body(content: Content) -> some View {
         let key = (card ?? envCard) + "|" + (row ?? "")
-        let on = search.lit == key
+        let on = light.key == key
         return content
             .background(GeometryReader { r in
                 Color.clear.preference(key: SettingsFrames.self, value: [key: r.frame(in: .named(PickerCenter.space))])
@@ -586,8 +594,7 @@ private struct SearchFieldBox: NSViewRepresentable {
         f.focusRingType = .none                                   // the box's own accent edge shows the focus
         f.font = .systemFont(ofSize: 12)
         f.textColor = .white
-        f.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-            .foregroundColor: NSColor.white.withAlphaComponent(DisplayOptions.contrast ? 0.72 : 0.5), .font: NSFont.systemFont(ofSize: 12)])
+        f.placeholderAttributedString = placeholderText
         f.cell?.isScrollable = true; f.cell?.wraps = false; f.lineBreakMode = .byClipping
         f.delegate = context.coordinator
         f.setAccessibilityLabel(placeholder)
@@ -608,10 +615,15 @@ private struct SearchFieldBox: NSViewRepresentable {
             f.stringValue = text
             (f.currentEditor() as? NSTextView)?.moveToEndOfDocument(nil)
         }
-        f.placeholderString = nil
-        f.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+        if f.placeholderAttributedString != placeholderText {        // the language or the contrast changed (not on every keystroke)
+            f.placeholderAttributedString = placeholderText
+            f.setAccessibilityLabel(placeholder)
+        }
+    }
+
+    private var placeholderText: NSAttributedString {
+        NSAttributedString(string: placeholder, attributes: [
             .foregroundColor: NSColor.white.withAlphaComponent(DisplayOptions.contrast ? 0.72 : 0.5), .font: NSFont.systemFont(ofSize: 12)])
-        f.setAccessibilityLabel(placeholder)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }

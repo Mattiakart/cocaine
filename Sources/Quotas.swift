@@ -304,16 +304,18 @@ struct QuotaBar: View {
 
     /// What VoiceOver reads: "23%, Resets in 2 h", or the percent alone when no reset time is known (no dangling comma).
     static func spoken(_ w: QuotaWindow, now: Date) -> String {
-        let reset = QuotaBar(provider: "", window: w).resetText(now)
+        let reset = resetText(w, now)
         return "\(Int(w.percent.rounded()))%" + (reset.isEmpty ? "" : ", " + reset)
     }
 
-    func resetText(_ now: Date) -> String {
-        if window.wasReset { return L("Reset: no new reading yet") }
-        guard let r = window.resets else { return "" }
+    static func resetText(_ w: QuotaWindow, _ now: Date) -> String {
+        if w.wasReset { return L("Reset: no new reading yet") }
+        guard let r = w.resets else { return "" }
         if r <= now { return L("Reset: no new reading yet") }          // passed while shown: never "resets in now" for good
         return String(format: L("Resets in %@"), Quotas.resetsIn(Int(r.timeIntervalSince(now))))
     }
+
+    func resetText(_ now: Date) -> String { Self.resetText(window, now) }
 }
 
 // MARK: - Tests (part of --agents-test): temporary homes and folders only, never ~/.claude

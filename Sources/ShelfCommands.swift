@@ -185,8 +185,8 @@ final class ShelfCenter: ObservableObject {
     }
 
     func report(added: Int, refused: Int, collection: UUID? = nil) {
-        let name = (collection.flatMap { store.library.collection($0) } ?? store.current).title
         let target = collection.flatMap { store.library.collection($0) } ?? store.current
+        let name = target.title
         if refused > 0 && target.items.count < ShelfLimits.itemsPerCollection { fail(L("The shelf is full: remove some items first")) }   // its size
         else if refused > 0 { fail(String(format: L("%1$@ is full (%2$d items at most)"), name, ShelfLimits.itemsPerCollection)) }
         else if added > 0 {

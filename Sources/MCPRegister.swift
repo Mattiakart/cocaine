@@ -235,11 +235,10 @@ enum MCPRegistration {
         guard p.after != nil, p.after != p.before else { return true }
         // The question may have stayed open a while, and the tool may have rewritten its own file meanwhile: the same change is
         // planned again on what is there now (nothing written since is lost, the backup is what was really there).
-        let now = FileManager.default.fileExists(atPath: p.path) ? try? String(contentsOfFile: p.path, encoding: .utf8) : nil
-        if now != p.before {
+        func read() -> String? { FileManager.default.fileExists(atPath: p.path) ? try? String(contentsOfFile: p.path, encoding: .utf8) : nil }
+        if read() != p.before {
             guard case .success(let fresh) = plan(p.client, on: p.on), fresh.command == nil else { return false }
-            let current = FileManager.default.fileExists(atPath: p.path) ? try? String(contentsOfFile: p.path, encoding: .utf8) : nil
-            guard current == fresh.before else { return false }                     // still moving: left as it is
+            guard read() == fresh.before else { return false }                      // still moving: left as it is
             return write(fresh)
         }
         return write(p)

@@ -185,7 +185,7 @@ enum SettingsIndex {
             r("Paste without formatting", "Plain text unless ⇧ is held; off: formatted unless ⇧ is held", ["paste"]),
             r("Between items pasted together", "Used by Paste all and Merge", ["paste"]),
             r("Paste next (Paste Stack)", nil, ["paste", "hotkey"]),
-            r("Copies from other devices", "Universal Clipboard: shown as Another device", ["sync"]),
+            r("Copies from other devices", "Off: Universal Clipboard is left untouched. On: their plain text, a few seconds later", ["sync"]),
             r("Find text in images", "Read on this Mac when an image is copied; secrets masked", ["ocr"]),
             r("Suggestions for the app in front", nil, ["clipboard", "apps"]),
             r("Hide from screen sharing", nil, ["sharingscreen", "privacy"]),

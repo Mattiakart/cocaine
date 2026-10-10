@@ -17,8 +17,6 @@ enum IslandScale {
         guard open.width.isFinite, open.height.isFinite, open.width > 0, open.height > 0 else { return 1 }
         return max(1, min(open.width / standardOpen.width, open.height / standardOpen.height))
     }
-    /// …for the island as set now.
-    static var factor: CGFloat { factor(open: Island.openSize) }
 
     /// The hero numbers (the focus timer): UI.hero, grown with the module (display figures, not running text).
     static func hero(_ f: CGFloat) -> Font {

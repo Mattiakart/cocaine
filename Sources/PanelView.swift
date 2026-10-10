@@ -282,7 +282,7 @@ struct PanelView: View {
     /// Who is doing what: the AI sessions at work, or, when none is, the latest alerts.
     @ViewBuilder private var activityCard: some View {
         if !m.board.isEmpty || !m.approvals.isEmpty || m.agentNotice != nil {
-            card("sparkles", L("Agents"), anchor: L("Agents"), trailing: { SSHHostsBadge() }) {   // all of them, those that need you first; a click goes to the session
+            card("sparkles", L("Agents"), trailing: { SSHHostsBadge() }) {   // all of them, those that need you first; a click goes to the session
                 AgentListView(entries: m.board, approvals: m.approvals, notice: m.agentNotice, island: false, accent: Island.accent,
                               warning: warningColor, maxHeight: 260, focus: m.focusAgent, answer: m.answerApproval, release: m.releaseApproval)
                     .padding(.horizontal, -AgentListView.inset)   // the rows' icons on the content edge, request cards into the padding

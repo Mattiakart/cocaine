@@ -303,7 +303,7 @@ final class DriveAliveRunner {
     /// The method changed to "Read only" (nothing written from now on): the tiny files already written go too.
     func methodChanged(to method: String, names: [String]) {
         guard method == "read", !names.isEmpty else { return }
-        queue.async { Self.removeFiles(names: names, mounted: DriveAlive.mounted()) }
+        removed(names)
     }
 
     /// Deletes the tiny file (if it is ours) on each of `names` that is mounted and writable. Returns how many went.
